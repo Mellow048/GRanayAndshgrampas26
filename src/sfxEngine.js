@@ -225,109 +225,68 @@ export class SfxEngine {
   }
 
   // ---------------------------------------------------------------------------
-  // High-Retention Cartoon SFX Pacer Hooks (1.0s – 2.0s comedic audio cadence)
+  // Context-Matched Action & Footstep Foley (No Random SFX Spam)
   // ---------------------------------------------------------------------------
-  notifyCameraCut(mode, cutType, simTime) {
-    if (!this.pacerEnabled) return;
-    if (simTime - this.lastAnySfxTime < 0.45) return;
-
-    if (mode === "dramatic_zoom" || mode === "closeup") {
-      this.play(cutType === "whip" ? "swoosh" : "vine_boom", {
-        volume: 0.62,
-        pitchJitter: 0.08,
-        simTime,
-      });
-    } else if (cutType === "whip") {
-      this.play("whoosh", { volume: 0.58, pitchJitter: 0.1, simTime });
-    } else {
-      this.play("swoosh", { volume: 0.52, pitchJitter: 0.1, simTime });
-    }
+  notifyCameraCut(_mode, _cutType, _simTime) {
+    // Intentionally silent unless explicitly scripted via an "sfx" timeline event.
   }
 
-  notifyDialogue(actorId, simTime) {
-    if (!this.pacerEnabled) return;
-    if (simTime - this.lastAnySfxTime < 0.35) return;
-    const key = actorId === "granny" ? "pop" : "ding";
-    this.play(key, { volume: 0.65, pitchJitter: 0.1, simTime });
+  notifyDialogue(_actorId, _simTime) {
+    // Intentionally silent unless explicitly scripted via an "sfx" timeline event.
   }
 
   notifyAction(animName, simTime) {
     if (!this.pacerEnabled) return;
-    if (simTime - this.lastAnySfxTime < 0.45) return;
 
     const map = {
-      jump: "whoosh",
-      punch: "bonk",
-      terrified: "glitch",
-      laugh: "granny_laugh",
-      sit: "aww",
+      jump: { key: "whoosh", volume: 0.48, pitch: 1.08, maxDuration: 0.55 },
+      punch: { key: "bonk", volume: 0.78, pitch: 1.0, maxDuration: 0.9 },
+      laugh: { key: "granny_laugh", volume: 0.75, pitch: 1.0, maxDuration: 1.4 },
     };
-    const key = map[animName];
-    if (key) {
-      this.play(key, {
-        volume: 0.62,
-        pitchJitter: 0.08,
+    const spec = map[animName];
+    if (spec) {
+      this.play(spec.key, {
+        volume: spec.volume,
+        pitch: spec.pitch,
+        pitchJitter: 0.05,
         simTime,
-        maxDuration: 1.6,
+        cooldown: 0.35,
+        maxDuration: spec.maxDuration,
       });
     }
   }
 
   /**
-   * Called every simulation step while characters are active; keeps footsteps
-   * and idle comedic pops landing every ~1.0 to 2.0 seconds.
+   * Called every simulation step; plays rhythmic walking/running footsteps
+   * strictly while actors are actively moving across the floor.
    */
   tickPacer(simDt, simTime, { anyMoving = false, moveAnim = "walk" } = {}) {
     if (!this.pacerEnabled) return;
 
-    // Context footsteps during walk/run/sneak
-    if (anyMoving) {
-      const stepPeriod =
-        moveAnim === "run" || moveAnim === "run2"
-          ? CONFIG.sfxPacer.footstepIntervalRun
-          : moveAnim === "sneak"
-            ? CONFIG.sfxPacer.footstepIntervalSneak
-            : CONFIG.sfxPacer.footstepIntervalWalk;
-
-      this.stepAccumulator += simDt;
-      if (
-        this.stepAccumulator >= stepPeriod &&
-        simTime - this.lastPacerTime >= 0.95
-      ) {
-        this.stepAccumulator = 0;
-        const stepSfx = moveAnim === "sneak" ? "squidward_walk" : "click";
-        if (
-          this.play(stepSfx, {
-            volume: moveAnim === "sneak" ? 0.48 : 0.36,
-            pitchJitter: 0.14,
-            simTime,
-            maxDuration: 0.65,
-          })
-        ) {
-          this.lastPacerTime = simTime;
-        }
-      }
+    if (!anyMoving) {
+      this.stepAccumulator = 0;
+      return;
     }
 
-    // Idle-gap filler ensuring a punchy cartoon SFX lands every 1.0–1.85s
-    const gap = simTime - this.lastAnySfxTime;
-    if (gap >= this.nextGapThreshold) {
-      const accents = ["pop", "ding", "discord", "click", "checkmark", "rizz"];
-      const choice = accents[Math.floor(Math.random() * accents.length)];
-      if (
-        this.play(choice, {
-          volume: 0.5,
-          pitchJitter: 0.12,
-          simTime,
-          maxDuration: 0.9,
-        })
-      ) {
-        this.lastPacerTime = simTime;
-        this.nextGapThreshold =
-          CONFIG.sfxPacer.minIntervalSec +
-          Math.random() *
-            (CONFIG.sfxPacer.maxIntervalSec - CONFIG.sfxPacer.minIntervalSec);
-      }
+    const isRun = moveAnim === "run" || moveAnim === "run2";
+    const isSneak = moveAnim === "sneak";
+    const stepPeriod = isRun
+      ? CONFIG.sfxPacer.footstepIntervalRun
+      : isSneak
+        ? CONFIG.sfxPacer.footstepIntervalSneak
+        : CONFIG.sfxPacer.footstepIntervalWalk;
+
+    this.stepAccumulator += simDt;
+    if (this.stepAccumulator >= stepPeriod) {
+      this.stepAccumulator -= stepPeriod;
+      this.play("squidward_walk", {
+        volume: isRun ? 0.5 : isSneak ? 0.36 : 0.44,
+        pitch: isRun ? 1.28 : isSneak ? 0.8 : 0.96,
+        pitchJitter: 0.06,
+        simTime,
+        cooldown: 0.2,
+        maxDuration: isRun ? 0.24 : 0.36,
+      });
     }
   }
 }

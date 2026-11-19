@@ -14,14 +14,15 @@ function easeOutCubic(t) {
  * 9:16 Vertical Shorts Camera Director + Free Orbit Inspector toggle.
  */
 export class CameraDirector {
-  constructor(domElement) {
+  constructor(domElement, house = null) {
+    this.house = house;
     this.camera = new THREE.PerspectiveCamera(
       48,
       CONFIG.shortsAspect,
       0.08,
       120
     );
-    this.camera.position.set(0, 1.85, 5.2);
+    this.camera.position.set(0, 1.65, -0.5);
 
     this.orbitControls = new OrbitControls(this.camera, domElement);
     this.orbitControls.enableDamping = true;
@@ -135,11 +136,20 @@ export class CameraDirector {
     };
   }
 
+  setHouse(house) {
+    this.house = house;
+  }
+
   _resolvePositionAndForward(ref, resolver, outPos, outForward) {
     outForward.set(0, 0, 1);
     if (!ref || !resolver) {
-      outPos.set(0, 0, 2);
+      outPos.set(0, 0, -2.6);
       return false;
+    }
+
+    if (ref === "cast" && typeof resolver.getCastMidpoint === "function") {
+      resolver.getCastMidpoint(outPos);
+      return true;
     }
 
     const actor = resolver.getActor(ref);
@@ -227,27 +237,39 @@ export class CameraDirector {
         // Dynamic trailing-side chase camera staying safely below 2.84m house ceiling
         outPos
           .copy(this._targetPos)
-          .addScaledVector(this._forward, -2.35)
-          .addScaledVector(this._right, 0.85);
-        outPos.y += 1.78;
+          .addScaledVector(this._forward, -2.1)
+          .addScaledVector(this._right, 0.72);
+        outPos.y += 1.62;
 
-        outLook.copy(this._targetPos).addScaledVector(this._forward, 0.6);
-        outLook.y += 1.15;
-        this.shot.fov = 50;
+        outLook.copy(this._targetPos).addScaledVector(this._forward, 0.45);
+        outLook.y += 1.05;
+        this.shot.fov = 52;
         break;
       }
 
       case "wide":
       default: {
-        outPos.set(
-          this._targetPos.x + 1.65,
-          this._targetPos.y + 1.95,
-          this._targetPos.z + 3.25
-        );
-        outLook.set(this._targetPos.x, this._targetPos.y + 1.1, this._targetPos.z);
-        this.shot.fov = 52;
+        outLook.set(this._targetPos.x, this._targetPos.y + 1.05, this._targetPos.z);
+        const preferredOffset = new THREE.Vector3(1.15, 0, 2.75);
+        if (this.house && typeof this.house.findClearCameraPosition === "function") {
+          outPos.copy(
+            this.house.findClearCameraPosition(outLook, preferredOffset, 3.05, 1.62)
+          );
+        } else {
+          outPos.set(
+            this._targetPos.x + 1.15,
+            this._targetPos.y + 1.62,
+            this._targetPos.z + 2.75
+          );
+        }
+        this.shot.fov = 54;
         break;
       }
+    }
+
+    // Never allow walls, furniture, ceiling, or exterior geometry to block camera sightlines
+    if (this.house && typeof this.house.clampCameraPosition === "function") {
+      outPos.copy(this.house.clampCameraPosition(outLook, outPos, 0.8));
     }
   }
 

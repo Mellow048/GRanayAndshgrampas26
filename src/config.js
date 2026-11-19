@@ -54,8 +54,8 @@ export const ASSET_MANIFEST = {
       targetHeight: 1.65,
       // Raw GrannyTest6 faces +X; rotate -90 deg on Y so forward aligns with +Z
       forwardYawOffset: -Math.PI * 0.5,
-      // Granny SkinnedMesh binds at world scale unless forced to DetachedBindMode
-      forceDetachedBindMode: true,
+      // Bake raw SkinnedMesh bindMatrix to its world transform before normalizing scale
+      fixBindMatrixToWorld: true,
       headBoneName: "Bip01_Head",
       rigType: "bip01",
       boneMap: {
@@ -232,43 +232,44 @@ export const SFX_MANIFEST = {
 };
 
 /**
- * Calibrated room waypoints inside the normalized Granny 1 House (y = 0 is Main Ground Floor).
- * Episode scripts MUST reference these waypoint names rather than raw coordinates.
+ * Calibrated INDOOR room waypoints inside the normalized Granny 1 House
+ * (y = 0 is Main Ground Floor; every waypoint sits indoors under ceiling with clear floor).
  */
 export const SET_MAP = {
-  front_door: { x: 0.21, y: 0.0, z: 4.70, label: "Front Door" },
-  front_door_left: { x: -0.48, y: 0.0, z: 4.10, label: "Front Door Left" },
-  front_door_right: { x: 0.48, y: 0.0, z: 4.10, label: "Front Door Right" },
-  hallway: { x: 0.0, y: 0.0, z: 2.31, label: "Main Hallway" },
-  hallway_left: { x: -0.52, y: 0.0, z: 2.31, label: "Hallway Left" },
-  hallway_right: { x: 0.52, y: 0.0, z: 2.31, label: "Hallway Right" },
-  living_room_entry: { x: 3.15, y: 0.0, z: 1.68, label: "Living Room Entry" },
-  living_room: { x: 4.41, y: 0.0, z: 1.68, label: "Living Room" },
-  kitchen: { x: -6.09, y: 0.0, z: 0.84, label: "Kitchen" },
-  dining_nook: { x: -3.99, y: 0.0, z: 3.36, label: "Dining Nook" },
-  stairs: { x: -3.15, y: 0.0, z: -1.89, label: "Stair Hall" },
-  back_hall: { x: 0.0, y: 0.0, z: -1.89, label: "Back Hall" },
-  back_hall_left: { x: -0.48, y: 0.0, z: -1.89, label: "Back Hall Left" },
-  back_hall_right: { x: 0.48, y: 0.0, z: -1.89, label: "Back Hall Right" },
-  bedroom: { x: -4.20, y: 2.85, z: 2.10, label: "Upstairs Bedroom" },
+  foyer: { x: -0.8, y: 0.0, z: 0.2, label: "Front Foyer" },
+  hallway: { x: 0.8, y: 0.0, z: -2.4, label: "Main Back Hall" },
+  back_hall: { x: 0.0, y: 0.0, z: -2.6, label: "Back Room Center" },
+  back_hall_left: { x: -0.6, y: 0.0, z: -2.8, label: "Back Room Left" },
+  back_hall_right: { x: 0.6, y: 0.0, z: -2.8, label: "Back Room Right" },
+  back_room_east: { x: 3.8, y: 0.0, z: -1.6, label: "Back Hall East" },
+  back_room_east_right: { x: 4.4, y: 0.0, z: -1.6, label: "Back Hall East Right" },
+  doorway_living: { x: 4.0, y: 0.0, z: -1.0, label: "Living Room Doorway" },
+  living_room_entry: { x: 4.2, y: 0.0, z: 0.4, label: "Living Room Entry" },
+  living_room_left: { x: 4.0, y: 0.0, z: 0.4, label: "Living Room Left" },
+  living_room_right: { x: 4.9, y: 0.0, z: 0.4, label: "Living Room Right" },
+  living_room: { x: 5.4, y: 0.0, z: 2.2, label: "Living Room" },
+  kitchen: { x: -5.5, y: 0.0, z: 0.8, label: "Kitchen" },
+  dining_nook: { x: -3.4, y: 0.0, z: -1.6, label: "Dining Doorway" },
+  stairs: { x: -3.4, y: 0.0, z: -2.6, label: "Stair Hall" },
+  bedroom: { x: -4.2, y: 2.85, z: 2.1, label: "Upstairs Bedroom" },
 };
 
 /**
- * 6-second Jump (0-2s) -> Run (2-4.5s) -> Walk (4.5-6s) Short inside Granny 1 House.
+ * 6-second Jump (0-2s) -> Run (2-4.5s) -> Walk (4.5-6s) Short strictly inside Granny 1 House.
  */
 export const JUMP_RUN_WALK_EPISODE = {
   title: "Granny & Grandpa: Jump, Run, Walk (6s)",
   duration: 6.0,
   cast: [
-    { id: "granny", asset: "granny", spawn: "back_hall_left", facing: "front_door_left" },
-    { id: "grandpa", asset: "grandpa", spawn: "back_hall_right", facing: "front_door_right" },
+    { id: "granny", asset: "granny", spawn: "back_hall_left", facing: "back_room_east" },
+    { id: "grandpa", asset: "grandpa", spawn: "back_hall_right", facing: "back_room_east_right" },
   ],
   timeline: [
     {
       time: 0.0,
       type: "camera",
       mode: "wide",
-      target: "back_hall",
+      target: "cast",
       cut: "instant",
     },
     {
@@ -289,22 +290,10 @@ export const JUMP_RUN_WALK_EPISODE = {
     },
     {
       time: 0.1,
-      type: "sfx",
-      sound: "pop",
-      volume: 0.8,
-    },
-    {
-      time: 0.1,
       type: "dialogue",
       actor: "granny",
       text: "1-2s: JUMPING!",
       duration: 1.85,
-    },
-    {
-      time: 0.95,
-      type: "sfx",
-      sound: "whoosh",
-      volume: 0.72,
     },
     {
       time: 2.0,
@@ -317,7 +306,7 @@ export const JUMP_RUN_WALK_EPISODE = {
       time: 2.0,
       type: "move",
       actor: "granny",
-      to: "hallway_left",
+      to: "back_room_east",
       anim: "run",
       duration: 2.5,
     },
@@ -325,15 +314,9 @@ export const JUMP_RUN_WALK_EPISODE = {
       time: 2.0,
       type: "move",
       actor: "grandpa",
-      to: "hallway_right",
+      to: "back_room_east_right",
       anim: "run2",
       duration: 2.5,
-    },
-    {
-      time: 2.05,
-      type: "sfx",
-      sound: "granny_chase",
-      volume: 0.36,
     },
     {
       time: 2.1,
@@ -343,23 +326,17 @@ export const JUMP_RUN_WALK_EPISODE = {
       duration: 2.3,
     },
     {
-      time: 3.3,
-      type: "sfx",
-      sound: "swoosh",
-      volume: 0.7,
-    },
-    {
       time: 4.5,
       type: "camera",
       mode: "wide",
-      target: "front_door",
+      target: "cast",
       cut: "whip",
     },
     {
       time: 4.5,
       type: "move",
       actor: "granny",
-      to: "front_door_left",
+      to: "living_room_left",
       anim: "walk",
       duration: 1.5,
     },
@@ -367,15 +344,9 @@ export const JUMP_RUN_WALK_EPISODE = {
       time: 4.5,
       type: "move",
       actor: "grandpa",
-      to: "front_door_right",
+      to: "living_room_right",
       anim: "walk",
       duration: 1.5,
-    },
-    {
-      time: 4.55,
-      type: "sfx",
-      sound: "squidward_walk",
-      volume: 0.7,
     },
     {
       time: 4.6,
@@ -384,25 +355,19 @@ export const JUMP_RUN_WALK_EPISODE = {
       text: "LAST SECOND: WALKING!",
       duration: 1.4,
     },
-    {
-      time: 5.7,
-      type: "sfx",
-      sound: "checkmark",
-      volume: 0.75,
-    },
   ],
 };
 
 /**
  * Full 18-second comedy Short inside Granny 1 House exercising multiple Mixamo
- * clips, camera modes, captions, and 1-2s SFX cadence.
+ * clips, wall-safe pathfinding, indoor camera framing, captions, and contextual SFX.
  */
 export const COOKIES_CHASE_EPISODE = {
   title: "Grandpa Stole Granny's Cookies",
   duration: 18.0,
   cast: [
     { id: "grandpa", asset: "grandpa", spawn: "kitchen", facing: "dining_nook" },
-    { id: "granny", asset: "granny", spawn: "front_door", facing: "hallway" },
+    { id: "granny", asset: "granny", spawn: "back_hall", facing: "dining_nook" },
   ],
   timeline: [
     {
