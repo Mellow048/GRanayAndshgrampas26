@@ -69,6 +69,7 @@ function extractJumpArc(clip) {
 
   const arc = [];
   const duration = Math.max(0.01, clip.duration);
+  let rawMax = 0;
   for (let i = 0; i < sampleCount; i++) {
     const targetT = (i / (sampleCount - 1)) * duration;
     let idx = 0;
@@ -78,7 +79,16 @@ function extractJumpArc(clip) {
     const y = values[idx * 3 + 1];
     // Mixamo FBX is in centimeters (~100cm = 1m); convert relative lift above rest height
     const liftMeters = Math.max(0, (y - Math.max(baseY, minY)) * 0.01);
+    if (liftMeters > rawMax) rawMax = liftMeters;
     arc.push(liftMeters);
+  }
+  // Cap vertical hop at 0.32m so characters clear the floor cleanly without hitting the 2.84m ceiling
+  const maxHopMeters = 0.32;
+  if (rawMax > maxHopMeters) {
+    const scale = maxHopMeters / rawMax;
+    for (let i = 0; i < arc.length; i++) {
+      arc[i] *= scale;
+    }
   }
   return arc;
 }

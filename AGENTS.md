@@ -30,7 +30,8 @@ All `.fbx` assets in `./Assets/` have specific quirks discovered during inspecti
 
 1. **Granny (`./Assets/granny-animated-fbx/source/GrannyTest6.fbx`)**:
    - **Rig**: 3ds Max Biped (`Bip01_Pelvis`, `Bip01_Spine*`, `Bip01_L_UpperArm`, etc.). Raw rig faces `+X` (`forwardYawOffset: -Math.PI * 0.5`). Normalized to `1.65m`, feet at `y = 0`, facing `+Z`.
-   - **Skinning Fix**: `Granny` `SkinnedMesh` explodes to ~361 units if left in `AttachedBindMode`. `assetLoader.js` **must** call `mesh.bindMode = THREE.DetachedBindMode; mesh.bind(mesh.skeleton, mesh.matrixWorld.clone());` immediately after FBX load and re-apply `DetachedBindMode` on clones.
+   - **Skinning Fix**: `Granny` `SkinnedMesh` explodes if left with its default identity `bindMatrix`, and using `DetachedBindMode` double-applies the normalization transform. `assetLoader.js` **must** keep `AttachedBindMode` and bake `node.bindMatrix.copy(node.matrixWorld); node.bindMatrixInverse.copy(node.matrixWorld).invert();` BEFORE wrapping in `orientationHolder`.
+   - **Texture Color Fix**: Both `GrannyTest6.fbx` and `grandpach3.fbx` export dark `mat.color` diffuse factors (`#242424` / `#2d3237`). `configureMaterialsAndShadows()` resets `mat.color.setHex(0xffffff)` whenever `mat.map` exists and awaits `LoadingManager.onLoad` before resolving.
    - **Texture Alias**: The FBX requests `TexturesCom_WoodFine0077_6_seamless_S_Normal.png`, while disk has `..._Norm.png`. Keep this alias in `ASSET_MANIFEST.characters.granny.textureAliases`.
    - **Embedded Clips**: `idle`, `Hit`, `Walk`, `arrowHit`, `Look`, `lookBed`, `idle_1`. They include non-bone `.scale`/`.position` tracks (`Granny.scale`, `SlendrinaMom.*`) which `animationLibrary.js` strips down to valid bone `.quaternion` tracks.
 
@@ -55,17 +56,20 @@ All `.fbx` assets in `./Assets/` have specific quirks discovered during inspecti
 
 Episodes **must** reference named `SET_MAP` waypoints (never raw `{ x, y, z }` coordinates in JSON scripts).
 
-### Valid `SET_MAP` Waypoints
-- **Central Corridor (wall-free north-south path, `z = -1.89` to `+4.70`)**:
-  - `back_hall` `(0.0, 0, -1.89)`, `back_hall_left` `(-0.48, 0, -1.89)`, `back_hall_right` `(0.48, 0, -1.89)`
-  - `hallway` `(0.0, 0, 2.31)`, `hallway_left` `(-0.52, 0, 2.31)`, `hallway_right` `(0.52, 0, 2.31)`
-  - `front_door` `(0.21, 0, 4.70)`, `front_door_left` `(-0.48, 0, 4.10)`, `front_door_right` `(0.48, 0, 4.10)`
-- **Other Calibrated Rooms**:
-  - `stairs` `(-3.15, 0, -1.89)`
-  - `dining_nook` `(-3.99, 0, 3.36)`
-  - `kitchen` `(-6.09, 0, 0.84)`
-  - `living_room_entry` `(3.15, 0, 1.68)`, `living_room` `(4.41, 0, 1.68)`
-  - `bedroom` `(-4.20, 2.85, 2.10)` *(2nd floor)*
+### Valid `SET_MAP` Waypoints (Verified Indoor Only)
+- **Back Room & East Corridor (wall-free indoor hall)**:
+  - `back_hall` `(0.0, 0, -2.6)`, `back_hall_left` `(-0.6, 0, -2.8)`, `back_hall_right` `(0.6, 0, -2.8)`
+  - `hallway` `(0.8, 0, -2.4)`
+  - `back_room_east` `(3.8, 0, -1.6)`, `back_room_east_right` `(4.4, 0, -1.6)`
+  - `doorway_living` `(4.0, 0, -1.0)` *(open doorway into Living Room)*
+- **Living Room**:
+  - `living_room_entry` `(4.2, 0, 0.4)`, `living_room_left` `(4.0, 0, 0.4)`, `living_room_right` `(4.9, 0, 0.4)`, `living_room` `(5.4, 0, 2.2)`
+- **West Rooms & Foyer**:
+  - `stairs` `(-3.4, 0, -2.6)`, `dining_nook` `(-3.4, 0, -1.6)`, `kitchen` `(-5.5, 0, 0.8)`, `foyer` `(-0.8, 0, 0.2)`
+- **Upstairs**:
+  - `bedroom` `(-4.2, 2.85, 2.1)` *(2nd floor)*
+
+*(Note: `EpisodeRunner` automatically uses `house.findPath()` indoor A* pathfinding across doorways, and `CameraDirector` clamps every shot inside walls/ceilings via `house.clampCameraPosition()`. Use `"target": "cast"` on `"wide"` shots to frame both actors.)*
 
 ### Valid Cast Assets & Actions
 - **Cast `asset`**: `"granny"` | `"grandpa"`

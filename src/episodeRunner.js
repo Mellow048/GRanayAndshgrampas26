@@ -17,6 +17,7 @@ function easeInOutSine(t) {
 export class EpisodeRunner {
   constructor({
     scene,
+    house = null,
     characterTemplates,
     animationLibrary,
     sfxEngine,
@@ -27,6 +28,7 @@ export class EpisodeRunner {
     onEpisodeEnd = null,
   }) {
     this.scene = scene;
+    this.house = house;
     this.characterTemplates = characterTemplates;
     this.animationLibrary = animationLibrary;
     this.sfxEngine = sfxEngine;
@@ -59,6 +61,14 @@ export class EpisodeRunner {
     this._resolver = {
       getActor: (id) => this.actors.get(id) || null,
       getWaypoint: (name) => this.waypoints[name] || null,
+      getCastMidpoint: (out = new THREE.Vector3()) => {
+        if (this.actors.size === 0) return out.set(0, 0, 0);
+        out.set(0, 0, 0);
+        for (const a of this.actors.values()) {
+          out.add(a.root.position);
+        }
+        return out.divideScalar(this.actors.size);
+      },
     };
   }
 
@@ -259,10 +269,24 @@ export class EpisodeRunner {
         if (!actor) break;
         const dest = this.getWaypoint(evt.to);
         const from = actor.root.position.clone();
+        const destVec = new THREE.Vector3(dest.x, dest.y, dest.z);
         const anim = evt.anim || "walk";
         const duration = Math.max(0.1, evt.duration ?? 2.0);
 
-        actor.lookAt(dest);
+        const path =
+          this.house && typeof this.house.findPath === "function"
+            ? this.house.findPath(from, destVec)
+            : [from, destVec];
+
+        const cumDist = [0];
+        let totalLength = 0;
+        for (let i = 1; i < path.length; i += 1) {
+          totalLength += path[i].distanceTo(path[i - 1]);
+          cumDist.push(totalLength);
+        }
+
+        const firstTarget = path[1] || destVec;
+        actor.lookAt(firstTarget);
         actor.playAnimation(
           anim,
           CONFIG.defaultFadeDuration,
@@ -271,8 +295,10 @@ export class EpisodeRunner {
         );
 
         this.activeMoves.set(evt.actor, {
-          from,
-          to: new THREE.Vector3(dest.x, dest.y, dest.z),
+          path,
+          cumDist,
+          totalLength,
+          to: destVec,
           startTime: evt.time,
           duration,
           anim,
@@ -352,9 +378,22 @@ export class EpisodeRunner {
       }
 
       const rawT = clamp((this.simTime - move.startTime) / move.duration, 0, 1);
-      const t = easeInOutSine(rawT);
-      actor.root.position.lerpVectors(move.from, move.to, t);
-      actor.lookAt(move.to);
+      const t = rawT * 0.85 + easeInOutSine(rawT) * 0.15;
+      const targetDist = t * move.totalLength;
+
+      if (move.totalLength < 1e-4 || move.path.length < 2) {
+        actor.root.position.copy(move.to);
+      } else {
+        let seg = 0;
+        while (seg < move.cumDist.length - 2 && move.cumDist[seg + 1] < targetDist) {
+          seg += 1;
+        }
+        const segStartDist = move.cumDist[seg];
+        const segLen = Math.max(1e-5, move.cumDist[seg + 1] - segStartDist);
+        const segAlpha = clamp((targetDist - segStartDist) / segLen, 0, 1);
+        actor.root.position.lerpVectors(move.path[seg], move.path[seg + 1], segAlpha);
+        actor.lookAt(move.path[seg + 1]);
+      }
 
       if (rawT >= 1) {
         actor.root.position.copy(move.to);

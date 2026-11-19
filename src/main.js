@@ -8,13 +8,13 @@ import { EpisodeRunner } from "./episodeRunner.js";
 import { StudioUI } from "./studioUI.js";
 
 function setupLighting(scene) {
-  const hemi = new THREE.HemisphereLight(0xfff4e6, 0x334155, 1.35);
+  const hemi = new THREE.HemisphereLight(0xfff8ef, 0x64748b, 1.85);
   scene.add(hemi);
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.9);
   scene.add(ambient);
 
-  const sunKey = new THREE.DirectionalLight(0xfff1d6, 1.45);
+  const sunKey = new THREE.DirectionalLight(0xfff4e0, 1.15);
   sunKey.position.set(6, 14, 9);
   sunKey.castShadow = true;
   sunKey.shadow.mapSize.set(2048, 2048);
@@ -27,14 +27,16 @@ function setupLighting(scene) {
   sunKey.shadow.bias = -0.0005;
   scene.add(sunKey);
 
-  // Warm interior room lights inside Granny 1 House so characters pop cleanly
+  // Evenly distributed interior ceiling lights so every indoor room in Granny 1 House is well-lit
   const roomLights = [
-    { pos: [0.0, 2.55, 2.3], color: 0xffd6a5, intensity: 4.5, dist: 12 }, // Hallway
-    { pos: [-5.5, 2.55, 1.4], color: 0xffe8cc, intensity: 4.2, dist: 11 }, // Kitchen
-    { pos: [4.2, 2.55, 1.6], color: 0xffdfb3, intensity: 4.2, dist: 11 }, // Living room
+    { pos: [0.0, 2.5, -2.6], color: 0xffe8cc, intensity: 7.5, dist: 14 }, // Back room
+    { pos: [3.8, 2.5, -1.8], color: 0xffdfb3, intensity: 6.5, dist: 12 }, // East corridor & doorway
+    { pos: [5.2, 2.5, 2.8], color: 0xffe4c4, intensity: 7.5, dist: 14 }, // Living room
+    { pos: [-5.5, 2.5, 0.8], color: 0xffe8cc, intensity: 7.0, dist: 12 }, // Kitchen
+    { pos: [-0.8, 2.5, 0.2], color: 0xffe8cc, intensity: 6.0, dist: 11 }, // Front foyer
   ];
   for (const rl of roomLights) {
-    const pt = new THREE.PointLight(rl.color, rl.intensity, rl.dist, 1.4);
+    const pt = new THREE.PointLight(rl.color, rl.intensity, rl.dist, 1.2);
     pt.position.set(...rl.pos);
     scene.add(pt);
   }
@@ -90,6 +92,10 @@ async function bootstrap() {
     const [house, grannyTpl, grandpaTpl] = await Promise.all(preloadTasks);
 
     scene.add(house.root);
+    cameraDirector.setHouse(house);
+
+    const camFill = new THREE.PointLight(0xfff4e6, 2.2, 8, 1.2);
+    scene.add(camFill);
 
     const characterTemplates = new Map([
       ["granny", grannyTpl],
@@ -106,6 +112,7 @@ async function bootstrap() {
 
     const episodeRunner = new EpisodeRunner({
       scene,
+      house,
       characterTemplates,
       animationLibrary,
       sfxEngine,
@@ -162,6 +169,7 @@ async function bootstrap() {
             episodeRunner.accumulator = 0;
           }
         }
+        camFill.position.copy(cameraDirector.camera.position);
         renderer.render(scene, cameraDirector.camera);
         studioUI.captureCompositeFrame(true);
         return {
@@ -206,12 +214,14 @@ async function bootstrap() {
         lastNow = now;
 
         episodeRunner.update(rawDt);
+        camFill.position.copy(cameraDirector.camera.position);
         renderer.render(scene, cameraDirector.camera);
         studioUI.captureCompositeFrame();
       }
 
       requestAnimationFrame(frameLoop);
     } else {
+      camFill.position.copy(cameraDirector.camera.position);
       renderer.render(scene, cameraDirector.camera);
     }
   } catch (err) {
