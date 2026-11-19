@@ -504,8 +504,8 @@ export class StudioUI {
   /**
    * Composites WebGL scene + bold TikTok/Shorts caption onto the 720x1280 export canvas.
    */
-  captureCompositeFrame() {
-    if (!this.isRecording) return;
+  captureCompositeFrame(force = false) {
+    if (!this.isRecording && !force) return;
     const ctx = this.compositeCtx;
     const w = this.compositeCanvas.width;
     const h = this.compositeCanvas.height;

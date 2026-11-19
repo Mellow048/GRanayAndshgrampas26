@@ -10,6 +10,14 @@ python3 -m http.server 8000
 
 Open `http://localhost:8000/` in a browser.
 
+## Cloud Video Export (GitHub Actions — Zero Laptop Load)
+
+To render a 720×1280 30fps `.mp4` / `.webm` video with mixed Web Audio SFX in the cloud instead of using your laptop's CPU/GPU:
+
+1. Open **Actions → Export 9:16 Short (Cloud Render)** on GitHub (or run via `gh workflow run export-video.yml`).
+2. Pick a preset (`jump_run_walk_6s` or `cookies_chase_18s`), or select `custom_json` and paste any Episode JSON.
+3. Download the rendered `.mp4` / `.webm` from the workflow run's **Artifacts**.
+
 ## Architecture (`./src/`)
 
 | Module | Responsibility |
