@@ -1,446 +1,549 @@
 import * as THREE from "three";
 import { CONFIG, SET_MAP } from "./config.js";
-import { instantiateCharacter } from "./assetLoader.js";
-
-function clamp(v, min, max) {
-  return Math.max(min, Math.min(max, v));
-}
-
-function easeInOutSine(t) {
-  return -(Math.cos(Math.PI * t) - 1) / 2;
-}
 
 /**
- * Deterministic 60Hz Fixed-Timestep Episode Timeline Runner.
- * Resolves all spatial targets strictly via SET_MAP waypoint names.
+ * Deterministic 60Hz POV Episode & Multi-Skit Beat Runner.
+ * Supports multi-skit POV JSON (`skits[].beats` with `at` or `after`) and legacy `actions`.
  */
 export class EpisodeRunner {
   constructor({
-    scene,
-    house = null,
-    characterTemplates,
-    animationLibrary,
+    characters,
+    playerCamera,
+    cameraDirector = null,
+    comedyProps,
     sfxEngine,
-    cameraDirector,
-    waypoints = SET_MAP,
-    onCaptionChange = null,
-    onTimeUpdate = null,
-    onEpisodeEnd = null,
+    house = null,
   }) {
-    this.scene = scene;
-    this.house = house;
-    this.characterTemplates = characterTemplates;
-    this.animationLibrary = animationLibrary;
-    this.sfxEngine = sfxEngine;
+    this.characters = characters;
+    this.playerCamera = playerCamera;
     this.cameraDirector = cameraDirector;
-    this.waypoints = waypoints;
-
-    this.onCaptionChange = onCaptionChange;
-    this.onTimeUpdate = onTimeUpdate;
-    this.onEpisodeEnd = onEpisodeEnd;
-
-    this.actorsGroup = new THREE.Group();
-    this.actorsGroup.name = "EpisodeCast";
-    this.scene.add(this.actorsGroup);
+    this.comedyProps = comedyProps;
+    this.sfxEngine = sfxEngine;
+    this.house = house;
 
     this.episode = null;
-    this.actors = new Map();
-    this.sortedEvents = [];
+    this.events = [];
+    this.activeCharMoves = [];
 
     this.simTime = 0;
-    this.accumulator = 0;
-    this.nextEventIdx = 0;
-    this.playing = false;
-    this.ended = false;
-    this.speedScale = 1.0;
+    this.duration = 0;
+    this.isPlaying = false;
+    this.isFinished = false;
+    this.nextEventIndex = 0;
 
-    this.activeMoves = new Map(); // actorId -> { from, to, startTime, duration, anim }
-    this.activeDialogues = []; // { actorId, text, endTime }
-    this.lastCaptionKey = "";
+    this.onStateChange = null;
+    this.onFinish = null;
 
-    this._resolver = {
-      getActor: (id) => this.actors.get(id) || null,
-      getWaypoint: (name) => this.waypoints[name] || null,
-      getCastMidpoint: (out = new THREE.Vector3()) => {
-        if (this.actors.size === 0) return out.set(0, 0, 0);
-        out.set(0, 0, 0);
-        for (const a of this.actors.values()) {
-          out.add(a.root.position);
-        }
-        return out.divideScalar(this.actors.size);
-      },
+    this.resolver = {
+      getActor: (id) => this.characters[id] || null,
+      getProp: (id) => this.comedyProps?.getProp(id) || null,
+      getWaypoint: (id) => (typeof id === "string" ? SET_MAP[id] || null : id),
     };
   }
 
-  getWaypoint(name) {
-    const wp = this.waypoints[name];
-    if (!wp) {
-      throw new Error(
-        `Unknown SET_MAP waypoint "${name}". Available: ${Object.keys(this.waypoints).join(", ")}`
-      );
-    }
-    return wp;
+  setHouse(house) {
+    this.house = house;
+    this.playerCamera?.setHouse(house);
   }
 
-  loadEpisode(episodeData) {
-    if (!episodeData || !Array.isArray(episodeData.cast) || !Array.isArray(episodeData.timeline)) {
-      throw new Error("Episode JSON must include 'cast' array and 'timeline' array.");
-    }
-
-    this.disposeCast();
-    this.episode = structuredClone(episodeData);
-    this.sortedEvents = [...this.episode.timeline].sort((a, b) => a.time - b.time);
-
-    // Instantiate each cast member cleanly via SkeletonUtils.clone
-    for (const member of this.episode.cast) {
-      const template = this.characterTemplates.get(member.asset);
-      if (!template) {
-        throw new Error(`Unknown character asset "${member.asset}" in cast.`);
+  resolveWaypoint(target) {
+    if (!target) return { x: 0, y: 0, z: 0 };
+    if (typeof target === "string") {
+      if (SET_MAP[target]) return { ...SET_MAP[target] };
+      const actor = this.characters[target];
+      if (actor) {
+        return {
+          x: actor.root.position.x,
+          y: actor.root.position.y,
+          z: actor.root.position.z,
+        };
       }
-      const clips = this.animationLibrary.buildClipsForCharacter(template);
-      const actor = instantiateCharacter(member.id, template, clips);
-      this.actors.set(member.id, actor);
-      this.actorsGroup.add(actor.root);
+      const prop = this.comedyProps?.getProp(target);
+      if (prop) {
+        return {
+          x: prop.mesh.position.x,
+          y: prop.mesh.position.y,
+          z: prop.mesh.position.z,
+        };
+      }
+      console.warn(`[EpisodeRunner] Unknown target "${target}"`);
+      return { x: 0, y: 0, z: 0 };
     }
-
-    this.resetToStart();
+    return { x: target.x ?? 0, y: target.y ?? 0, z: target.z ?? 0 };
   }
 
-  resetToStart({ emitInitialSfx = false } = {}) {
+  computePath(fromPos, toPos) {
+    const startVec = new THREE.Vector3(fromPos.x, fromPos.y ?? 0, fromPos.z);
+    const goalVec = new THREE.Vector3(toPos.x, toPos.y ?? 0, toPos.z);
+
+    if (
+      this.house &&
+      typeof this.house.findPath === "function" &&
+      Math.abs(startVec.y) < 0.25 &&
+      Math.abs(goalVec.y) < 0.25
+    ) {
+      const path = this.house.findPath(startVec, goalVec);
+      if (path && path.length >= 2) {
+        return path.map((p) =>
+          p instanceof THREE.Vector3 ? p : new THREE.Vector3(p.x, p.y ?? 0, p.z)
+        );
+      }
+    }
+    return [startVec, goalVec];
+  }
+
+  compileTimeline(episode) {
+    const rawEvents = [];
+
+    if (Array.isArray(episode.skits)) {
+      let skitCursor = 0;
+      for (const skit of episode.skits) {
+        let beatCursor = skit.startAt ?? skitCursor;
+        let skitMaxEnd = beatCursor;
+        for (const beat of skit.beats || []) {
+          let at = beatCursor;
+          if (typeof beat.at === "number") {
+            at = beat.at;
+          } else if (typeof beat.after === "number") {
+            at = beatCursor + beat.after;
+          }
+          const duration = Math.max(0, beat.duration ?? 0);
+          rawEvents.push({ ...beat, at, duration });
+          beatCursor = at;
+          skitMaxEnd = Math.max(skitMaxEnd, at + duration);
+        }
+        skitCursor = skitMaxEnd;
+      }
+    } else if (Array.isArray(episode.actions)) {
+      for (const act of episode.actions) {
+        rawEvents.push({
+          ...act,
+          at: act.at ?? 0,
+          duration: Math.max(0, act.duration ?? 0),
+        });
+      }
+    }
+
+    rawEvents.sort((a, b) => a.at - b.at);
+    return rawEvents;
+  }
+
+  loadEpisode(episodeJson) {
+    const episode =
+      typeof episodeJson === "string" ? JSON.parse(episodeJson) : episodeJson;
+
+    this.episode = episode;
+    this.events = this.compileTimeline(episode);
+
+    let maxEnd = 1.0;
+    for (const ev of this.events) {
+      maxEnd = Math.max(maxEnd, ev.at + (ev.duration ?? 0));
+    }
+    this.duration = maxEnd;
+    this.reset();
+    return {
+      title: episode.title ?? "Untitled Episode",
+      duration: this.duration,
+      eventCount: this.events.length,
+    };
+  }
+
+  reset() {
+    this.simTime = 0;
+    this.nextEventIndex = 0;
+    this.activeCharMoves = [];
+    this.isPlaying = false;
+    this.isFinished = false;
+    this.sfxEngine?.stopAll();
+    this.sfxEngine?.resetPacerClock(0);
+
     if (!this.episode) return;
 
-    this.sfxEngine.stopAll();
-    this.sfxEngine.resetPacerClock(0);
-    this.cameraDirector.reset();
+    if (this.episode.aspect && this.playerCamera) {
+      this.playerCamera.setAspect(this.episode.aspect);
+    }
 
-    this.simTime = 0;
-    this.accumulator = 0;
-    this.nextEventIdx = 0;
-    this.ended = false;
-    this.activeMoves.clear();
-    this.activeDialogues = [];
-    this._emitCaption(null);
+    // Reset cast
+    for (const char of Object.values(this.characters)) {
+      char.resetPose();
+      char.root.visible = false;
+    }
 
-    for (const member of this.episode.cast) {
-      const actor = this.actors.get(member.id);
-      if (!actor) continue;
-      actor.resetPose();
+    for (const castEntry of this.episode.cast || []) {
+      const char = this.characters[castEntry.id];
+      if (!char) continue;
+      char.root.visible = true;
+      const spawn = this.resolveWaypoint(castEntry.spawn || "back_hall");
+      char.root.position.set(spawn.x, spawn.y ?? 0, spawn.z);
 
-      const spawnWp = this.getWaypoint(member.spawn);
-      actor.root.position.set(spawnWp.x, spawnWp.y, spawnWp.z);
-      if (member.facing && this.waypoints[member.facing]) {
-        actor.lookAt(this.waypoints[member.facing]);
+      if (castEntry.facing) {
+        const facePt = this.resolveWaypoint(castEntry.facing);
+        char.lookAt(facePt);
       } else {
-        actor.root.rotation.set(0, 0, 0);
+        char.root.rotation.y = 0;
       }
-      actor.playAnimation("idle", 0);
-      actor.update(0);
+      char.playAnim(castEntry.anim || "idle", 0.01, null, true);
+      char.mixer.update(0.016);
     }
 
-    // Trigger t=0 events immediately so initial frame is already posed & framed
-    this._dispatchEventsUpTo(0, { silent: !emitInitialSfx });
-    this._updateDialogues();
-    this.cameraDirector.update(0, this._resolver);
+    // Reset 3D comedy props
+    this.comedyProps?.loadProps(this.episode.props || []);
 
-    if (this.onTimeUpdate) {
-      this.onTimeUpdate(this.simTime, this.episode.duration);
+    // Reset PlayerCamera spawn
+    if (this.playerCamera) {
+      const pSpawn = this.resolveWaypoint(this.episode.playerSpawn || "back_hall");
+      const pLook = this.episode.playerFacing
+        ? this.resolveWaypoint(this.episode.playerFacing)
+        : null;
+      const lookVec = pLook
+        ? new THREE.Vector3(pLook.x, (pLook.y ?? 0) + 1.35, pLook.z)
+        : null;
+      this.playerCamera.reset(pSpawn, lookVec);
+      this.playerCamera.setInspectionMode(false);
     }
+
+    this.dispatchDueEvents(0);
+    this.playerCamera?.update(0, this.resolver);
+    this.emitState();
   }
 
   play() {
     if (!this.episode) return;
-    if (this.ended) {
-      this.resetToStart();
-    }
-    this.playing = true;
+    if (this.isFinished) this.reset();
+    this.isPlaying = true;
+    this.emitState();
   }
 
   pause() {
-    this.playing = false;
-    this.sfxEngine.stopAll();
+    this.isPlaying = false;
+    this.sfxEngine?.stopAll();
+    this.emitState();
   }
 
-  restart({ autoplay = true } = {}) {
-    this.resetToStart();
-    this.playing = autoplay;
+  stop() {
+    this.isPlaying = false;
+    this.reset();
   }
 
-  setSpeed(speed) {
-    this.speedScale = clamp(Number(speed) || 1.0, 0.25, 3.0);
-  }
-
-  /**
-   * Deterministically scrubs to any timestamp in [0, duration] using fixed 60Hz steps.
-   */
   seek(targetTime) {
     if (!this.episode) return;
-    const clampedTarget = clamp(targetTime, 0, this.episode.duration);
-    const wasPlaying = this.playing;
-    this.playing = false;
+    const clamped = Math.max(0, Math.min(this.duration, targetTime));
+    const wasPlaying = this.isPlaying;
+    const wasExport = this.sfxEngine?.exportMode;
 
-    this.resetToStart();
+    if (this.sfxEngine) {
+      this.sfxEngine.exportMode = true;
+      const savedEvents = [...this.sfxEngine.recordedEvents];
+      this.reset();
+      const dt = CONFIG.fixedDt;
+      const steps = Math.floor(clamped / dt);
+      for (let i = 0; i < steps; i++) {
+        this.step(dt, { silentSeek: true });
+      }
+      const rem = clamped - steps * dt;
+      if (rem > 1e-5) {
+        this.step(rem, { silentSeek: true });
+      }
+      this.sfxEngine.recordedEvents = savedEvents;
+      this.sfxEngine.exportMode = Boolean(wasExport);
+    }
 
-    const step = CONFIG.fixedDt;
-    while (this.simTime + step <= clampedTarget + 1e-6) {
-      this._stepFixed(step, { silent: true });
-    }
-    const remainder = clampedTarget - this.simTime;
-    if (remainder > 1e-5) {
-      this._stepFixed(remainder, { silent: true });
-    }
-
-    if (this.onTimeUpdate) {
-      this.onTimeUpdate(this.simTime, this.episode.duration);
-    }
-    this.playing = wasPlaying && !this.ended;
+    this.isPlaying = wasPlaying;
+    this.emitState();
   }
 
-  update(rawDt) {
+  step(dt, { silentSeek = false } = {}) {
     if (!this.episode) return;
 
-    if (!this.playing) {
-      this.cameraDirector.update(Math.min(rawDt, CONFIG.maxFrameDt), this._resolver);
+    this.simTime = Math.min(this.duration, this.simTime + dt);
+
+    // 1. Dispatch beats scheduled <= simTime
+    this.dispatchDueEvents(this.simTime, { silentSeek });
+
+    // 2. Advance character polyline moves
+    let anyCharMoving = false;
+    let fastestMoveAnim = "walk";
+    for (let i = this.activeCharMoves.length - 1; i >= 0; i--) {
+      const m = this.activeCharMoves[i];
+      const t =
+        m.duration <= 0
+          ? 1
+          : Math.min(1, (this.simTime - m.startTime) / m.duration);
+      const targetDist = m.totalLength * t;
+
+      let segIdx = 0;
+      while (
+        segIdx < m.cumLengths.length - 2 &&
+        m.cumLengths[segIdx + 1] < targetDist
+      ) {
+        segIdx++;
+      }
+
+      const segStart = m.points[segIdx];
+      const segEnd = m.points[segIdx + 1];
+      const segLen = Math.max(
+        1e-5,
+        m.cumLengths[segIdx + 1] - m.cumLengths[segIdx]
+      );
+      const localT = Math.max(
+        0,
+        Math.min(1, (targetDist - m.cumLengths[segIdx]) / segLen)
+      );
+
+      m.actor.root.position.lerpVectors(segStart, segEnd, localT);
+
+      const dx = segEnd.x - segStart.x;
+      const dz = segEnd.z - segStart.z;
+      if (dx * dx + dz * dz > 1e-6) {
+        m.actor.faceTarget(segEnd, 14);
+      }
+
+      anyCharMoving = true;
+      if (m.anim === "run" || m.anim === "run2") fastestMoveAnim = m.anim;
+
+      if (t >= 1) {
+        if (!m.endAnim || m.endAnim === "idle") {
+          m.actor.playAnim("idle", 0.2, null, true);
+        }
+        this.activeCharMoves.splice(i, 1);
+      }
+    }
+
+    // 3. Advance PlayerCamera
+    this.playerCamera?.update(dt, this.resolver);
+    const playerMoving = Boolean(this.playerCamera?.isWalking);
+
+    // 4. Update Characters (with live player camera world position for eye contact)
+    const playerCamPos = this.playerCamera?.camera?.position || null;
+    for (const char of Object.values(this.characters)) {
+      if (!char.root.visible) continue;
+      char.update(dt, playerCamPos);
+    }
+
+    // 5. Update 3D Comedy Props
+    this.comedyProps?.update(dt);
+
+    // 6. Advance SFX Pacer & movement footsteps
+    if (!silentSeek && this.sfxEngine) {
+      const anyMoving = playerMoving || anyCharMoving;
+      const moveAnim = playerMoving ? "walk" : fastestMoveAnim;
+      this.sfxEngine.tickPacer(dt, this.simTime, { anyMoving, moveAnim });
+    }
+
+    // 7. Check completion
+    if (this.simTime >= this.duration - 1e-5 && !this.isFinished) {
+      this.isFinished = true;
+      this.isPlaying = false;
+      this.sfxEngine?.stopBgm(this.simTime);
+      this.emitState();
+      if (this.onFinish) this.onFinish();
+    } else {
+      this.emitState();
+    }
+  }
+
+  dispatchDueEvents(currentTime, { silentSeek = false } = {}) {
+    while (
+      this.nextEventIndex < this.events.length &&
+      this.events[this.nextEventIndex].at <= currentTime + 1e-6
+    ) {
+      const ev = this.events[this.nextEventIndex];
+      this.nextEventIndex += 1;
+      this.executeBeat(ev, { silentSeek });
+    }
+  }
+
+  executeBeat(ev, { silentSeek = false } = {}) {
+    const type = ev.type;
+
+    if (type === "player_walk" && this.playerCamera) {
+      const from = {
+        x: this.playerCamera.playerPos.x,
+        y: this.playerCamera.playerPos.y,
+        z: this.playerCamera.playerPos.z,
+      };
+      const to = this.resolveWaypoint(ev.to);
+      const points = this.computePath(from, to);
+      this.playerCamera.startWalk({
+        points,
+        duration: ev.duration ?? 2.0,
+        autoLook: ev.lookAhead !== false,
+      });
       return;
     }
 
-    const scaledDt = Math.min(rawDt, CONFIG.maxFrameDt) * this.speedScale;
-    this.accumulator += scaledDt;
-
-    while (this.accumulator >= CONFIG.fixedDt && !this.ended) {
-      this._stepFixed(CONFIG.fixedDt, { silent: false });
-      this.accumulator -= CONFIG.fixedDt;
+    if (type === "player_look" && this.playerCamera) {
+      const dur = ev.duration ?? 0.2;
+      this.playerCamera.lookAt(
+        ev.target,
+        { duration: dur, track: Boolean(ev.track) },
+        this.resolver
+      );
+      if (!silentSeek) {
+        this.sfxEngine?.notifyWhipPan(dur, this.simTime);
+      }
+      return;
     }
 
-    if (this.onTimeUpdate) {
-      this.onTimeUpdate(this.simTime, this.episode.duration);
-    }
-  }
-
-  _stepFixed(dt, { silent = false } = {}) {
-    this.simTime += dt;
-
-    this._dispatchEventsUpTo(this.simTime, { silent });
-    this._updateMoves(dt);
-    this._updateDialogues();
-
-    for (const actor of this.actors.values()) {
-      actor.update(dt);
+    if (type === "player_gesture" && this.playerCamera) {
+      this.playerCamera.triggerGesture(ev.gesture, ev.duration ?? 0.8);
+      return;
     }
 
-    this.cameraDirector.update(dt, this._resolver);
+    if (type === "player_crouch" && this.playerCamera) {
+      this.playerCamera.crouch({
+        crouched: Boolean(ev.crouched),
+        duration: ev.duration ?? 0.35,
+      });
+      return;
+    }
 
-    if (!silent) {
-      const firstMove = this.activeMoves.values().next().value;
-      this.sfxEngine.tickPacer(dt, this.simTime, {
-        anyMoving: this.activeMoves.size > 0,
-        moveAnim: firstMove ? firstMove.anim : "walk",
+    if (type === "player_hold" && this.playerCamera) {
+      if (ev.prop !== undefined && ev.prop !== this.playerCamera.heldPropType) {
+        this.playerCamera.holdProp(ev.prop ?? null);
+        if (!silentSeek && ev.prop) {
+          this.sfxEngine?.notifyPickup(ev.prop, this.simTime);
+        }
+      }
+      if (ev.use) {
+        this.playerCamera.useHeldProp();
+      }
+      return;
+    }
+
+    if (type === "fade" && this.playerCamera) {
+      this.playerCamera.startFade({
+        to: ev.to ?? 0,
+        duration: ev.duration ?? 0.6,
+      });
+      return;
+    }
+
+    if (type === "char_anim" || type === "anim") {
+      const actor = this.characters[ev.actor];
+      if (!actor) return;
+      actor.playAnim(
+        ev.anim,
+        ev.fadeDuration ?? 0.16,
+        ev.speed ?? null,
+        ev.loop !== undefined ? ev.loop : null
+      );
+      if (!silentSeek) {
+        this.sfxEngine?.notifyAction(ev.anim, this.simTime);
+      }
+      return;
+    }
+
+    if (type === "char_move" || type === "move") {
+      const actor = this.characters[ev.actor];
+      if (!actor) return;
+
+      this.activeCharMoves = this.activeCharMoves.filter((m) => m.actor !== actor);
+      const from = ev.from
+        ? this.resolveWaypoint(ev.from)
+        : {
+            x: actor.root.position.x,
+            y: actor.root.position.y,
+            z: actor.root.position.z,
+          };
+      const to = this.resolveWaypoint(ev.to);
+      const points = this.computePath(from, to);
+
+      const cumLengths = [0];
+      let totalLength = 0;
+      for (let i = 1; i < points.length; i++) {
+        totalLength += points[i].distanceTo(points[i - 1]);
+        cumLengths.push(totalLength);
+      }
+
+      const anim = ev.anim || "walk";
+      actor.root.position.set(from.x, from.y ?? 0, from.z);
+      actor.playAnim(anim, 0.14, ev.speed ?? null, true);
+
+      this.activeCharMoves.push({
+        actor,
+        points,
+        cumLengths,
+        totalLength,
+        anim,
+        endAnim: ev.endAnim || "idle",
+        startTime: ev.at,
+        duration: Math.max(0.05, ev.duration ?? 1.5),
+      });
+      return;
+    }
+
+    if (type === "char_face" || type === "face") {
+      const actor = this.characters[ev.actor];
+      if (!actor) return;
+      if (typeof ev.followPlayer === "boolean") {
+        actor.lookAtPlayer(ev.followPlayer);
+      }
+      if (ev.target === "player" && this.playerCamera) {
+        actor.faceTarget(this.playerCamera.camera.position, 12);
+      } else if (ev.target) {
+        actor.faceTarget(this.resolveWaypoint(ev.target), 12);
+      }
+      return;
+    }
+
+    if (type === "char_bubble") {
+      const actor = this.characters[ev.actor];
+      if (!actor) return;
+      actor.showBubble(ev.icon || "question", ev.duration ?? 2.0);
+      if (!silentSeek) {
+        this.sfxEngine?.notifyBubblePop(ev.icon, this.simTime);
+      }
+      return;
+    }
+
+    if (type === "char_prop") {
+      const actor = this.characters[ev.actor];
+      if (!actor) return;
+      actor.setProp(ev.prop ?? null);
+      return;
+    }
+
+    if (type === "prop_action") {
+      this.comedyProps?.performAction(ev.prop, ev.action, {
+        at: ev.waypoint || ev.to,
+        yOffset: ev.yOffset ?? 0.25,
+      });
+      return;
+    }
+
+    if (type === "bgm" && !silentSeek) {
+      this.sfxEngine?.playBgm(ev.sound, {
+        volume: ev.volume ?? 0.24,
+        simTime: this.simTime,
+      });
+      return;
+    }
+
+    if (type === "stop_bgm" && !silentSeek) {
+      this.sfxEngine?.stopBgm(this.simTime);
+      return;
+    }
+
+    if (type === "sfx" && !silentSeek) {
+      this.sfxEngine?.play(ev.sound, {
+        volume: ev.volume,
+        pitch: ev.pitch ?? 1.0,
+        simTime: this.simTime,
+        cutBgm: Boolean(ev.cutBgm),
+        cutBgmDuration: ev.cutBgmDuration ?? 1.4,
       });
     }
-
-    if (this.simTime >= this.episode.duration && !this.ended) {
-      this.simTime = this.episode.duration;
-      this.ended = true;
-      this.playing = false;
-      this._emitCaption(null);
-      for (const actor of this.actors.values()) {
-        actor.setSpeaking(false);
-      }
-      if (!silent && this.onEpisodeEnd) {
-        this.onEpisodeEnd();
-      }
-    }
   }
 
-  _dispatchEventsUpTo(timeSec, { silent = false } = {}) {
-    while (
-      this.nextEventIdx < this.sortedEvents.length &&
-      this.sortedEvents[this.nextEventIdx].time <= timeSec + 1e-6
-    ) {
-      const evt = this.sortedEvents[this.nextEventIdx];
-      this.nextEventIdx += 1;
-      this._executeEvent(evt, { silent });
+  emitState() {
+    if (this.onStateChange) {
+      this.onStateChange({
+        simTime: this.simTime,
+        duration: this.duration,
+        isPlaying: this.isPlaying,
+        isFinished: this.isFinished,
+      });
     }
-  }
-
-  _executeEvent(evt, { silent = false } = {}) {
-    switch (evt.type) {
-      case "move": {
-        const actor = this.actors.get(evt.actor);
-        if (!actor) break;
-        const dest = this.getWaypoint(evt.to);
-        const from = actor.root.position.clone();
-        const destVec = new THREE.Vector3(dest.x, dest.y, dest.z);
-        const anim = evt.anim || "walk";
-        const duration = Math.max(0.1, evt.duration ?? 2.0);
-
-        const path =
-          this.house && typeof this.house.findPath === "function"
-            ? this.house.findPath(from, destVec)
-            : [from, destVec];
-
-        const cumDist = [0];
-        let totalLength = 0;
-        for (let i = 1; i < path.length; i += 1) {
-          totalLength += path[i].distanceTo(path[i - 1]);
-          cumDist.push(totalLength);
-        }
-
-        const firstTarget = path[1] || destVec;
-        actor.lookAt(firstTarget);
-        actor.playAnimation(
-          anim,
-          CONFIG.defaultFadeDuration,
-          evt.speed ?? null,
-          true
-        );
-
-        this.activeMoves.set(evt.actor, {
-          path,
-          cumDist,
-          totalLength,
-          to: destVec,
-          startTime: evt.time,
-          duration,
-          anim,
-        });
-        break;
-      }
-
-      case "action": {
-        const actor = this.actors.get(evt.actor);
-        if (!actor) break;
-        this.activeMoves.delete(evt.actor);
-        if (evt.facing) {
-          const lookTarget = this.actors.get(evt.facing)?.root.position || this.getWaypoint(evt.facing);
-          actor.lookAt(lookTarget);
-        }
-        actor.playAnimation(
-          evt.anim || "idle",
-          evt.fade ?? CONFIG.defaultFadeDuration,
-          evt.speed ?? null,
-          evt.loop ?? null
-        );
-        if (!silent) {
-          this.sfxEngine.notifyAction(evt.anim, this.simTime);
-        }
-        break;
-      }
-
-      case "dialogue": {
-        const actor = this.actors.get(evt.actor);
-        if (actor) {
-          actor.setSpeaking(true);
-        }
-        const dur = evt.duration ?? 2.0;
-        this.activeDialogues.push({
-          actorId: evt.actor,
-          speakerLabel: actor ? actor.spec.label : evt.actor,
-          text: evt.text || "",
-          endTime: evt.time + dur,
-        });
-        if (!silent) {
-          this.sfxEngine.notifyDialogue(evt.actor, this.simTime);
-        }
-        break;
-      }
-
-      case "camera": {
-        this.cameraDirector.applyShot(evt, this._resolver);
-        if (!silent) {
-          this.sfxEngine.notifyCameraCut(evt.mode, evt.cut, this.simTime);
-        }
-        break;
-      }
-
-      case "sfx": {
-        if (!silent) {
-          this.sfxEngine.play(evt.sound, {
-            volume: evt.volume ?? null,
-            pitch: evt.pitch ?? 1.0,
-            pitchJitter: evt.pitchJitter ?? 0.05,
-            simTime: this.simTime,
-          });
-        }
-        break;
-      }
-
-      default:
-        break;
-    }
-  }
-
-  _updateMoves() {
-    for (const [actorId, move] of this.activeMoves.entries()) {
-      const actor = this.actors.get(actorId);
-      if (!actor) {
-        this.activeMoves.delete(actorId);
-        continue;
-      }
-
-      const rawT = clamp((this.simTime - move.startTime) / move.duration, 0, 1);
-      const t = rawT * 0.85 + easeInOutSine(rawT) * 0.15;
-      const targetDist = t * move.totalLength;
-
-      if (move.totalLength < 1e-4 || move.path.length < 2) {
-        actor.root.position.copy(move.to);
-      } else {
-        let seg = 0;
-        while (seg < move.cumDist.length - 2 && move.cumDist[seg + 1] < targetDist) {
-          seg += 1;
-        }
-        const segStartDist = move.cumDist[seg];
-        const segLen = Math.max(1e-5, move.cumDist[seg + 1] - segStartDist);
-        const segAlpha = clamp((targetDist - segStartDist) / segLen, 0, 1);
-        actor.root.position.lerpVectors(move.path[seg], move.path[seg + 1], segAlpha);
-        actor.lookAt(move.path[seg + 1]);
-      }
-
-      if (rawT >= 1) {
-        actor.root.position.copy(move.to);
-        this.activeMoves.delete(actorId);
-        actor.playAnimation("idle", CONFIG.defaultFadeDuration);
-      }
-    }
-  }
-
-  _updateDialogues() {
-    this.activeDialogues = this.activeDialogues.filter(
-      (d) => this.simTime < d.endTime
-    );
-
-    const speakingActors = new Set(this.activeDialogues.map((d) => d.actorId));
-    for (const [id, actor] of this.actors.entries()) {
-      actor.setSpeaking(speakingActors.has(id));
-    }
-
-    const latest =
-      this.activeDialogues.length > 0
-        ? this.activeDialogues[this.activeDialogues.length - 1]
-        : null;
-    this._emitCaption(latest);
-  }
-
-  _emitCaption(captionObj) {
-    const key = captionObj ? `${captionObj.speakerLabel}:${captionObj.text}` : "";
-    if (key === this.lastCaptionKey) return;
-    this.lastCaptionKey = key;
-    if (this.onCaptionChange) {
-      this.onCaptionChange(captionObj);
-    }
-  }
-
-  disposeCast() {
-    this.playing = false;
-    this.sfxEngine.stopAll();
-    for (const actor of this.actors.values()) {
-      this.actorsGroup.remove(actor.root);
-      actor.dispose();
-    }
-    this.actors.clear();
-  }
-
-  dispose() {
-    this.disposeCast();
-    this.scene.remove(this.actorsGroup);
   }
 }

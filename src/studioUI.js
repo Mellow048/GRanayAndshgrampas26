@@ -1,567 +1,403 @@
-import * as THREE from "three";
-import { CONFIG, EPISODE_PRESETS, SFX_MANIFEST } from "./config.js";
+import { CONFIG, EPISODE_PRESETS, SET_MAP, SFX_MANIFEST } from "./config.js";
 
 /**
- * Builds and manages the Granny 3D Cartoon Studio UI:
- * - Transport (Play/Pause/Restart/Scrubber/Speed)
- * - Director vs Free Orbit toggle
- * - Waypoint Calibrator (3D markers + floor raycast click + Copy SET_MAP JSON)
- * - Live Episode JSON Editor ("Apply JSON")
- * - SFX Pacer toggle + Quick SFX Test Pad
- * - Record Episode (WebM) combining 9:16 canvas + captions + Web Audio SFX
+ * Interactive Studio UI controller:
+ * - Transport bar + Aspect (16:9 / 9:16) + POV / Orbit toggle
+ * - Character & Player POV test controls (animations, bubbles, held props, gestures)
+ * - 25-clip Soundboard
+ * - Waypoint Calibrator (click-to-teleport + live coordinate readout)
+ * - Live Multi-Skit JSON Editor
+ * - Real-time WebM export (MediaRecorder) + Fade-to-black overlay
  */
 export class StudioUI {
   constructor({
-    scene,
-    renderer,
-    house,
-    cameraDirector,
-    episodeRunner,
+    runner,
     sfxEngine,
-    waypoints,
-    initialEpisode,
+    playerCamera,
+    cameraDirector,
+    characters,
+    renderer,
+    onLoadEpisode,
+    onAspectChange,
+    onExportStateChange,
   }) {
-    this.scene = scene;
-    this.renderer = renderer;
-    this.house = house;
-    this.cameraDirector = cameraDirector;
-    this.episodeRunner = episodeRunner;
+    this.runner = runner;
     this.sfxEngine = sfxEngine;
-    this.waypoints = waypoints;
+    this.playerCamera = playerCamera;
+    this.cameraDirector = cameraDirector;
+    this.characters = characters;
+    this.renderer = renderer;
+    this.onLoadEpisode = onLoadEpisode;
+    this.onAspectChange = onAspectChange;
+    this.onExportStateChange = onExportStateChange;
 
-    this.activeCaption = null;
-    this.isScrubbing = false;
-    this.calibratorEnabled = false;
-    this.selectedWaypoint = Object.keys(this.waypoints)[0] || "hallway";
-    this.calibratorFloor = "ground"; // "ground" | "upper"
-
-    this.markerGroup = new THREE.Group();
-    this.markerGroup.name = "WaypointCalibratorMarkers";
-    this.markerGroup.visible = false;
-    this.scene.add(this.markerGroup);
-    this.markersByKey = new Map();
-
-    this.raycaster = new THREE.Raycaster();
-    this.pointerNdc = new THREE.Vector2();
-    this.pointerDownPos = { x: 0, y: 0 };
-
-    // WebM Recording state
     this.isRecording = false;
-    this.mediaRecorder = null;
-    this.recordedChunks = [];
-    this.compositeCanvas = document.createElement("canvas");
-    this.compositeCanvas.width = CONFIG.exportWidth;
-    this.compositeCanvas.height = CONFIG.exportHeight;
-    this.compositeCtx = this.compositeCanvas.getContext("2d");
+    this.activeTab = "director";
 
-    this._bindDom();
-    this._buildWaypointMarkers();
-    this._buildSfxPad();
-    this._populateEpisodeEditor(initialEpisode);
-  }
-
-  _bindDom() {
     this.els = {
-      playPauseBtn: document.getElementById("playPauseBtn"),
-      restartBtn: document.getElementById("restartBtn"),
-      scrubber: document.getElementById("timelineScrubber"),
-      timeReadout: document.getElementById("timeReadout"),
-      speedSlider: document.getElementById("speedSlider"),
-      speedReadout: document.getElementById("speedReadout"),
-      orbitToggleBtn: document.getElementById("orbitToggleBtn"),
-      calibratorToggleBtn: document.getElementById("calibratorToggleBtn"),
-      calibratorControls: document.getElementById("calibratorControls"),
-      waypointSelect: document.getElementById("waypointSelect"),
-      floorSelect: document.getElementById("floorSelect"),
-      copySetMapBtn: document.getElementById("copySetMapBtn"),
-      pacerToggle: document.getElementById("pacerToggle"),
-      muteToggle: document.getElementById("muteToggle"),
-      recordBtn: document.getElementById("recordBtn"),
-      jsonEditor: document.getElementById("episodeJsonInput"),
       presetSelect: document.getElementById("presetSelect"),
+      playPauseBtn: document.getElementById("playPauseBtn"),
+      stopBtn: document.getElementById("stopBtn"),
+      timelineSlider: document.getElementById("timelineSlider"),
+      timeReadout: document.getElementById("timeReadout"),
+      aspectToggleBtn: document.getElementById("aspectToggleBtn"),
+      camModeBtn: document.getElementById("camModeBtn"),
+      pacerToggleBtn: document.getElementById("pacerToggleBtn"),
+      muteBtn: document.getElementById("muteBtn"),
+      exportBtn: document.getElementById("exportBtn"),
+      panelToggleBtn: document.getElementById("panelToggleBtn"),
+      studioPanel: document.getElementById("studioPanel"),
+      episodeEditor: document.getElementById("episodeEditor"),
       applyJsonBtn: document.getElementById("applyJsonBtn"),
-      statusBanner: document.getElementById("statusBanner"),
-      sfxPadGrid: document.getElementById("sfxPadGrid"),
-      captionOverlay: document.getElementById("captionOverlay"),
-      captionSpeaker: document.getElementById("captionSpeaker"),
-      captionText: document.getElementById("captionText"),
-      loadingOverlay: document.getElementById("loadingOverlay"),
-      loadingText: document.getElementById("loadingText"),
+      soundboardGrid: document.getElementById("soundboardGrid"),
+      waypointList: document.getElementById("waypointList"),
+      coordReadout: document.getElementById("coordReadout"),
+      copyCoordBtn: document.getElementById("copyCoordBtn"),
+      statusToast: document.getElementById("statusToast"),
+      fadeOverlay: document.getElementById("fadeOverlay"),
+      stageContainer: document.getElementById("stageContainer"),
     };
 
-    this.els.playPauseBtn.addEventListener("click", async () => {
+    this.bindEvents();
+    this.populatePresets();
+    this.populateSoundboard();
+    this.populateWaypoints();
+    this.syncButtons();
+  }
+
+  bindEvents() {
+    this.els.playPauseBtn?.addEventListener("click", async () => {
       await this.sfxEngine.resume();
-      if (this.episodeRunner.playing) {
-        this.episodeRunner.pause();
+      if (this.runner.isPlaying) {
+        this.runner.pause();
       } else {
-        this.episodeRunner.play();
+        this.runner.play();
       }
-      this.syncPlayButton();
+      this.syncButtons();
     });
 
-    this.els.restartBtn.addEventListener("click", async () => {
-      await this.sfxEngine.resume();
-      this.episodeRunner.restart({ autoplay: true });
-      this.syncPlayButton();
+    this.els.stopBtn?.addEventListener("click", () => {
+      this.runner.stop();
+      this.syncButtons();
     });
 
-    this.els.scrubber.addEventListener("pointerdown", () => {
-      this.isScrubbing = true;
-    });
-    this.els.scrubber.addEventListener("input", () => {
-      const target = parseFloat(this.els.scrubber.value);
-      this.episodeRunner.seek(target);
-    });
-    this.els.scrubber.addEventListener("change", () => {
-      this.isScrubbing = false;
-    });
-    window.addEventListener("pointerup", () => {
-      this.isScrubbing = false;
+    this.els.timelineSlider?.addEventListener("input", (e) => {
+      const val = parseFloat(e.target.value);
+      this.runner.seek(val);
     });
 
-    this.els.speedSlider.addEventListener("input", () => {
-      const val = parseFloat(this.els.speedSlider.value);
-      this.episodeRunner.setSpeed(val);
-      this.els.speedReadout.textContent = `${val.toFixed(2).replace(/\.00$/, "")}x`;
+    this.els.presetSelect?.addEventListener("change", (e) => {
+      const key = e.target.value;
+      const preset = EPISODE_PRESETS[key];
+      if (!preset) return;
+      this.els.episodeEditor.value = JSON.stringify(preset, null, 2);
+      this.onLoadEpisode(preset);
+      this.toast(`Loaded "${preset.title}"`);
     });
 
-    this.els.orbitToggleBtn.addEventListener("click", () => {
-      const nextOrbit = this.cameraDirector.mode !== "orbit";
-      if (!nextOrbit && this.calibratorEnabled) {
-        this.setCalibratorEnabled(false);
-      }
-      this.cameraDirector.setInspectionMode(nextOrbit);
-      this.syncCameraButtons();
+    this.els.aspectToggleBtn?.addEventListener("click", () => {
+      const next =
+        this.playerCamera.aspectKey === "16:9" ? "9:16" : "16:9";
+      this.playerCamera.setAspect(next);
+      this.onAspectChange?.(next);
+      this.syncButtons();
+      this.toast(`Aspect switched to ${next}`);
     });
 
-    this.els.calibratorToggleBtn.addEventListener("click", () => {
-      this.setCalibratorEnabled(!this.calibratorEnabled);
-    });
-
-    this.els.waypointSelect.addEventListener("change", () => {
-      this.selectedWaypoint = this.els.waypointSelect.value;
-      this._refreshMarkerHighlight();
-    });
-
-    this.els.floorSelect.addEventListener("change", () => {
-      this.calibratorFloor = this.els.floorSelect.value;
-    });
-
-    this.els.copySetMapBtn.addEventListener("click", async () => {
-      const formatted = `export const SET_MAP = ${JSON.stringify(this.waypoints, null, 2)};`;
-      try {
-        await navigator.clipboard.writeText(formatted);
-        this.setStatus("Copied calibrated SET_MAP JSON to clipboard!");
-      } catch {
-        this.els.jsonEditor.value = formatted;
-        this.setStatus("Clipboard blocked — printed SET_MAP JSON into editor.");
-      }
-    });
-
-    this.els.pacerToggle.checked = this.sfxEngine.pacerEnabled;
-    this.els.pacerToggle.addEventListener("change", () => {
-      this.sfxEngine.setPacerEnabled(this.els.pacerToggle.checked);
-    });
-
-    this.els.muteToggle.addEventListener("change", () => {
-      this.sfxEngine.setMuted(this.els.muteToggle.checked);
-    });
-
-    if (this.els.presetSelect) {
-      for (const [key, preset] of Object.entries(EPISODE_PRESETS)) {
-        const opt = document.createElement("option");
-        opt.value = key;
-        opt.textContent = preset.title || key;
-        this.els.presetSelect.appendChild(opt);
-      }
-      this.els.presetSelect.addEventListener("change", async () => {
-        await this.sfxEngine.resume();
-        const preset = EPISODE_PRESETS[this.els.presetSelect.value];
-        if (!preset) return;
-        this._populateEpisodeEditor(preset);
-        this.episodeRunner.loadEpisode(preset);
-        this.episodeRunner.play();
-        this.syncPlayButton();
-        this.setStatus(`Loaded preset "${preset.title}" (${preset.duration}s)`);
-      });
-    }
-
-    this.els.applyJsonBtn.addEventListener("click", async () => {
-      await this.sfxEngine.resume();
-      try {
-        const parsed = JSON.parse(this.els.jsonEditor.value);
-        this.episodeRunner.loadEpisode(parsed);
-        this.episodeRunner.play();
-        this.syncPlayButton();
-        this.setStatus(`Loaded "${parsed.title || "Untitled Episode"}" (${parsed.duration}s)`);
-      } catch (err) {
-        this.setStatus(`JSON Error: ${err.message}`, true);
-      }
-    });
-
-    this.els.recordBtn.addEventListener("click", async () => {
-      await this.sfxEngine.resume();
-      if (this.isRecording) {
-        this.stopRecording();
-      } else {
-        this.startRecording();
-      }
-    });
-
-    // Raycast click on canvas for Waypoint Calibrator (distinguish click vs orbit drag)
-    const canvas = this.renderer.domElement;
-    canvas.addEventListener("pointerdown", (e) => {
-      this.pointerDownPos = { x: e.clientX, y: e.clientY };
-    });
-    canvas.addEventListener("pointerup", (e) => {
-      if (!this.calibratorEnabled) return;
-      const dragDist = Math.hypot(
-        e.clientX - this.pointerDownPos.x,
-        e.clientY - this.pointerDownPos.y
+    this.els.camModeBtn?.addEventListener("click", () => {
+      const nextIsOrbit = this.playerCamera.mode !== "orbit";
+      this.playerCamera.setInspectionMode(nextIsOrbit);
+      this.syncButtons();
+      this.toast(
+        nextIsOrbit
+          ? "Orbit Calibrator (Drag + Scroll)"
+          : "POV Camera (First-Person)"
       );
-      if (dragDist > 5) return;
-      this._handleCalibratorFloorClick(e);
+    });
+
+    this.els.pacerToggleBtn?.addEventListener("click", () => {
+      this.sfxEngine.setPacerEnabled(!this.sfxEngine.pacerEnabled);
+      this.syncButtons();
+      this.toast(
+        `Comedy SFX Pacer: ${this.sfxEngine.pacerEnabled ? "ON" : "OFF"}`
+      );
+    });
+
+    this.els.muteBtn?.addEventListener("click", async () => {
+      await this.sfxEngine.resume();
+      this.sfxEngine.setMuted(!this.sfxEngine.muted);
+      this.syncButtons();
+    });
+
+    this.els.panelToggleBtn?.addEventListener("click", () => {
+      this.els.studioPanel?.classList.toggle("collapsed");
+    });
+
+    // Tab switching
+    document.querySelectorAll("[data-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        this.activeTab = btn.dataset.tab;
+        document.querySelectorAll("[data-tab]").forEach((b) => {
+          b.classList.toggle("active", b.dataset.tab === this.activeTab);
+        });
+        document.querySelectorAll("[data-tab-panel]").forEach((p) => {
+          p.hidden = p.dataset.tabPanel !== this.activeTab;
+        });
+      });
+    });
+
+    // Quick Director buttons
+    document.querySelectorAll("[data-char-anim]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await this.sfxEngine.resume();
+        const [actorId, animName] = btn.dataset.charAnim.split(":");
+        const actor = this.characters[actorId];
+        if (!actor) return;
+        actor.root.visible = true;
+        actor.playAnim(animName, 0.16, null, animName !== "jump" && animName !== "punch");
+        this.sfxEngine.notifyAction(animName, this.runner.simTime);
+      });
+    });
+
+    document.querySelectorAll("[data-char-bubble]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await this.sfxEngine.resume();
+        const [actorId, icon] = btn.dataset.charBubble.split(":");
+        const actor = this.characters[actorId];
+        if (!actor) return;
+        actor.showBubble(icon, 2.2);
+        this.sfxEngine.notifyBubblePop(icon, this.runner.simTime);
+      });
+    });
+
+    document.querySelectorAll("[data-player-gesture]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        this.playerCamera.triggerGesture(btn.dataset.playerGesture, 0.85);
+      });
+    });
+
+    document.querySelectorAll("[data-player-hold]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await this.sfxEngine.resume();
+        const prop = btn.dataset.playerHold || null;
+        this.playerCamera.holdProp(prop === "none" ? null : prop);
+        if (prop && prop !== "none") {
+          this.sfxEngine.notifyPickup(prop, this.runner.simTime);
+        }
+      });
+    });
+
+    document.getElementById("stopBgmBtn")?.addEventListener("click", () => {
+      this.sfxEngine.stopBgm(this.runner.simTime);
+    });
+
+    this.els.applyJsonBtn?.addEventListener("click", async () => {
+      await this.sfxEngine.resume();
+      try {
+        const parsed = JSON.parse(this.els.episodeEditor.value);
+        this.onLoadEpisode(parsed);
+        this.runner.play();
+        this.toast("Applied & playing custom skit JSON!");
+      } catch (err) {
+        this.toast(`JSON Error: ${err.message}`, true);
+      }
+    });
+
+    this.els.copyCoordBtn?.addEventListener("click", async () => {
+      const txt = this.els.coordReadout?.textContent || "";
+      try {
+        await navigator.clipboard.writeText(txt);
+        this.toast("Copied waypoint coordinates!");
+      } catch {
+        this.toast(txt);
+      }
+    });
+
+    this.els.exportBtn?.addEventListener("click", () => {
+      this.exportWebm();
     });
   }
 
-  _buildWaypointMarkers() {
-    this.els.waypointSelect.innerHTML = "";
-    for (const [key, wp] of Object.entries(this.waypoints)) {
+  populatePresets() {
+    if (!this.els.presetSelect) return;
+    this.els.presetSelect.innerHTML = "";
+    for (const [key, ep] of Object.entries(EPISODE_PRESETS)) {
       const opt = document.createElement("option");
       opt.value = key;
-      opt.textContent = `${key} (${wp.label || key})`;
-      this.els.waypointSelect.appendChild(opt);
-
-      const group = new THREE.Group();
-      group.position.set(wp.x, wp.y, wp.z);
-
-      const ringGeo = new THREE.RingGeometry(0.22, 0.32, 24);
-      ringGeo.rotateX(-Math.PI * 0.5);
-      const ringMat = new THREE.MeshBasicMaterial({
-        color: 0x38bdf8,
-        side: THREE.DoubleSide,
-      });
-      const ring = new THREE.Mesh(ringGeo, ringMat);
-      ring.position.y = 0.02;
-      group.add(ring);
-
-      const pole = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.025, 0.025, 1.35, 8),
-        new THREE.MeshBasicMaterial({ color: 0xf8fafc })
-      );
-      pole.position.y = 0.675;
-      group.add(pole);
-
-      const labelSprite = this._createLabelSprite(key);
-      labelSprite.position.y = 1.55;
-      group.add(labelSprite);
-
-      this.markerGroup.add(group);
-      this.markersByKey.set(key, { group, ringMat, labelSprite });
+      opt.textContent = ep.title;
+      this.els.presetSelect.appendChild(opt);
     }
-    this.els.waypointSelect.value = this.selectedWaypoint;
-    this._refreshMarkerHighlight();
-  }
-
-  _createLabelSprite(text) {
-    const c = document.createElement("canvas");
-    c.width = 256;
-    c.height = 64;
-    const ctx = c.getContext("2d");
-    ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
-    ctx.strokeStyle = "#38bdf8";
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.roundRect(8, 8, 240, 48, 12);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = "#f8fafc";
-    ctx.font = "bold 24px ui-sans-serif, system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, 128, 33);
-
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    const sprite = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: tex, depthTest: false })
-    );
-    sprite.scale.set(1.15, 0.29, 1);
-    return sprite;
-  }
-
-  _refreshMarkerHighlight() {
-    for (const [key, entry] of this.markersByKey.entries()) {
-      const isSelected = key === this.selectedWaypoint;
-      entry.ringMat.color.setHex(isSelected ? 0xf97316 : 0x38bdf8);
-      entry.group.scale.setScalar(isSelected ? 1.18 : 0.92);
-    }
-  }
-
-  _handleCalibratorFloorClick(event) {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    this.pointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-    this.raycaster.setFromCamera(this.pointerNdc, this.cameraDirector.camera);
-    const hits = this.raycaster.intersectObjects(this.house.floorMeshes, false);
-
-    // Filter hits to the requested floor height band so clicks pass cleanly through the roof
-    const minY = this.calibratorFloor === "upper" ? 2.1 : -0.6;
-    const maxY = this.calibratorFloor === "upper" ? 3.8 : 1.2;
-    const hit = hits.find((h) => h.point.y >= minY && h.point.y <= maxY);
-
-    if (!hit) {
-      this.setStatus("Click a visible floor surface inside the house.", true);
-      return;
-    }
-
-    const wp = this.waypoints[this.selectedWaypoint];
-    if (!wp) return;
-
-    wp.x = Number(hit.point.x.toFixed(2));
-    wp.y = Number(hit.point.y.toFixed(2));
-    wp.z = Number(hit.point.z.toFixed(2));
-
-    const marker = this.markersByKey.get(this.selectedWaypoint);
-    if (marker) {
-      marker.group.position.set(wp.x, wp.y, wp.z);
-    }
-
-    this.setStatus(
-      `Moved "${this.selectedWaypoint}" → (${wp.x}, ${wp.y}, ${wp.z})`
+    this.els.episodeEditor.value = JSON.stringify(
+      EPISODE_PRESETS.grandpa_key_pov_44s,
+      null,
+      2
     );
   }
 
-  setCalibratorEnabled(enabled) {
-    this.calibratorEnabled = Boolean(enabled);
-    this.markerGroup.visible = this.calibratorEnabled;
-    this.els.calibratorControls.hidden = !this.calibratorEnabled;
-
-    if (this.calibratorEnabled) {
-      this.cameraDirector.setInspectionMode(true);
-    }
-    this.syncCameraButtons();
-  }
-
-  _buildSfxPad() {
-    this.els.sfxPadGrid.innerHTML = "";
-    for (const key of Object.keys(SFX_MANIFEST)) {
+  populateSoundboard() {
+    if (!this.els.soundboardGrid) return;
+    this.els.soundboardGrid.innerHTML = "";
+    for (const [key, meta] of Object.entries(SFX_MANIFEST)) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "sfx-btn";
-      btn.textContent = key.replace(/_/g, " ");
-      btn.title = SFX_MANIFEST[key].path;
+      btn.textContent = key;
+      btn.title = `${meta.category.toUpperCase()} (${meta.path})`;
       btn.addEventListener("click", async () => {
         await this.sfxEngine.resume();
-        this.sfxEngine.play(key, { pitchJitter: 0.04, cooldown: 0.05 });
+        if (meta.category === "bgm") {
+          this.sfxEngine.playBgm(key, { volume: meta.defaultVolume });
+        } else {
+          this.sfxEngine.play(key, { cooldown: 0.05 });
+        }
       });
-      this.els.sfxPadGrid.appendChild(btn);
+      this.els.soundboardGrid.appendChild(btn);
     }
   }
 
-  _populateEpisodeEditor(episode) {
-    this.els.jsonEditor.value = JSON.stringify(episode, null, 2);
-  }
-
-  setLoading(visible, message = "Loading 3D Studio Assets...") {
-    this.els.loadingOverlay.hidden = !visible;
-    this.els.loadingText.textContent = message;
-  }
-
-  setStatus(message, isError = false) {
-    this.els.statusBanner.textContent = message;
-    this.els.statusBanner.classList.toggle("is-error", isError);
-  }
-
-  syncPlayButton() {
-    this.els.playPauseBtn.textContent = this.episodeRunner.playing
-      ? "Pause"
-      : "Play";
-  }
-
-  syncCameraButtons() {
-    const isOrbit = this.cameraDirector.mode === "orbit";
-    this.els.orbitToggleBtn.textContent = isOrbit
-      ? "Cam: Free Orbit"
-      : "Cam: Director";
-    this.els.orbitToggleBtn.classList.toggle("is-active", isOrbit);
-    this.els.calibratorToggleBtn.classList.toggle(
-      "is-active",
-      this.calibratorEnabled
-    );
-  }
-
-  updateTime(current, duration) {
-    const dur = Math.max(0.1, duration || 1);
-    if (!this.isScrubbing) {
-      this.els.scrubber.max = dur.toFixed(2);
-      this.els.scrubber.value = Math.min(dur, current).toFixed(2);
+  populateWaypoints() {
+    if (!this.els.waypointList) return;
+    this.els.waypointList.innerHTML = "";
+    for (const [name, wp] of Object.entries(SET_MAP)) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "wp-btn";
+      btn.innerHTML = `<strong>${name}</strong><span>(${wp.x.toFixed(1)}, ${wp.y.toFixed(1)}, ${wp.z.toFixed(1)})</span>`;
+      btn.addEventListener("click", () => {
+        this.playerCamera.reset(wp, null);
+        this.playerCamera.orbitControls?.target?.set(wp.x, wp.y + 1.1, wp.z - 1.5);
+        this.toast(`Moved to "${name}"`);
+      });
+      this.els.waypointList.appendChild(btn);
     }
-    this.els.timeReadout.textContent = `${current.toFixed(1)}s / ${dur.toFixed(1)}s`;
   }
 
-  updateCaption(captionObj) {
-    this.activeCaption = captionObj;
-    if (!captionObj) {
-      this.els.captionOverlay.hidden = true;
-      this.els.captionSpeaker.textContent = "";
-      this.els.captionText.textContent = "";
+  setEpisodeJson(episode) {
+    if (this.els.episodeEditor) {
+      this.els.episodeEditor.value = JSON.stringify(episode, null, 2);
+    }
+  }
+
+  syncState({ simTime, duration, isPlaying }) {
+    if (this.els.timelineSlider) {
+      this.els.timelineSlider.max = String(Math.max(0.1, duration));
+      this.els.timelineSlider.value = String(simTime);
+    }
+    if (this.els.timeReadout) {
+      this.els.timeReadout.textContent = `${simTime.toFixed(1)}s / ${duration.toFixed(1)}s`;
+    }
+    if (this.els.playPauseBtn) {
+      this.els.playPauseBtn.textContent = isPlaying ? "Pause" : "Play";
+    }
+    if (this.els.fadeOverlay && this.playerCamera) {
+      this.els.fadeOverlay.style.opacity = String(this.playerCamera.fadeAlpha);
+    }
+    if (this.els.coordReadout && this.playerCamera) {
+      const p = this.playerCamera.camera.position;
+      this.els.coordReadout.textContent = `{ "x": ${p.x.toFixed(2)}, "y": ${(p.y - CONFIG.playerEyeHeight).toFixed(2)}, "z": ${p.z.toFixed(2)} }`;
+    }
+  }
+
+  syncButtons() {
+    if (this.els.aspectToggleBtn) {
+      this.els.aspectToggleBtn.textContent = `Aspect: ${this.playerCamera.aspectKey}`;
+    }
+    if (this.els.camModeBtn) {
+      this.els.camModeBtn.textContent =
+        this.playerCamera.mode === "pov" ? "Cam: POV" : "Cam: Orbit";
+    }
+    if (this.els.pacerToggleBtn) {
+      this.els.pacerToggleBtn.textContent = `SFX Pacer: ${this.sfxEngine.pacerEnabled ? "ON" : "OFF"}`;
+      this.els.pacerToggleBtn.classList.toggle("active", this.sfxEngine.pacerEnabled);
+    }
+    if (this.els.muteBtn) {
+      this.els.muteBtn.textContent = this.sfxEngine.muted ? "Unmute" : "Mute";
+    }
+  }
+
+  toast(msg, isError = false) {
+    if (!this.els.statusToast) return;
+    this.els.statusToast.textContent = msg;
+    this.els.statusToast.classList.toggle("error", isError);
+    this.els.statusToast.classList.add("visible");
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => {
+      this.els.statusToast?.classList.remove("visible");
+    }, 2800);
+  }
+
+  async exportWebm() {
+    if (this.isRecording) return;
+    if (!window.MediaRecorder) {
+      this.toast("MediaRecorder unsupported — use Cloud Render workflow!", true);
       return;
     }
 
-    this.els.captionOverlay.hidden = false;
-    this.els.captionSpeaker.textContent = captionObj.speakerLabel || "";
-    this.els.captionText.textContent = captionObj.text || "";
-  }
-
-  // ---------------------------------------------------------------------------
-  // WebM Video + Audio Export
-  // ---------------------------------------------------------------------------
-  startRecording() {
-    if (typeof MediaRecorder === "undefined") {
-      this.setStatus("MediaRecorder is not supported in this browser.", true);
-      return;
-    }
-
-    if (this.calibratorEnabled) {
-      this.setCalibratorEnabled(false);
-    }
-    this.cameraDirector.setInspectionMode(false);
-    this.syncCameraButtons();
-
-    this.recordedChunks = [];
+    await this.sfxEngine.resume();
     this.isRecording = true;
-    this.els.recordBtn.textContent = "Recording... (Stop)";
-    this.els.recordBtn.classList.add("is-recording");
+    this.onExportStateChange?.(true);
+    this.els.exportBtn.disabled = true;
+    this.els.exportBtn.textContent = "Recording...";
 
-    // Draw initial frame so captureStream has live video pixels immediately
-    this.captureCompositeFrame();
+    try {
+      const canvas = this.renderer.domElement;
+      const videoStream = canvas.captureStream(CONFIG.exportFps);
+      const audioStream = this.sfxEngine.getMediaStream();
+      const combined = new MediaStream([
+        ...videoStream.getVideoTracks(),
+        ...audioStream.getAudioTracks(),
+      ]);
 
-    const videoStream = this.compositeCanvas.captureStream(CONFIG.exportFps);
-    const audioStream = this.sfxEngine.getMediaStream();
-    const combinedTracks = [
-      ...videoStream.getVideoTracks(),
-      ...audioStream.getAudioTracks(),
-    ];
-    const combinedStream = new MediaStream(combinedTracks);
+      const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+        ? "video/webm;codecs=vp9,opus"
+        : "video/webm";
 
-    const mimeCandidates = [
-      "video/webm;codecs=vp9,opus",
-      "video/webm;codecs=vp8,opus",
-      "video/webm",
-    ];
-    const mimeType = mimeCandidates.find((m) =>
-      MediaRecorder.isTypeSupported(m)
-    );
-
-    this.mediaRecorder = new MediaRecorder(
-      combinedStream,
-      mimeType ? { mimeType, videoBitsPerSecond: 4_500_000 } : undefined
-    );
-
-    this.mediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) {
-        this.recordedChunks.push(e.data);
-      }
-    };
-
-    this.mediaRecorder.onstop = () => {
-      const blob = new Blob(this.recordedChunks, {
-        type: mimeType || "video/webm",
+      const chunks = [];
+      const recorder = new MediaRecorder(combined, {
+        mimeType,
+        videoBitsPerSecond: 6_000_000,
       });
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+
+      const donePromise = new Promise((resolve) => {
+        recorder.onstop = resolve;
+      });
+
+      this.runner.reset();
+      recorder.start(250);
+      this.runner.play();
+
+      const prevOnFinish = this.runner.onFinish;
+      await new Promise((resolve) => {
+        this.runner.onFinish = () => {
+          prevOnFinish?.();
+          resolve();
+        };
+      });
+      this.runner.onFinish = prevOnFinish;
+
+      await new Promise((r) => setTimeout(r, 250));
+      recorder.stop();
+      await donePromise;
+
+      const blob = new Blob(chunks, { type: mimeType });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      const slug = (this.episodeRunner.episode?.title || "granny-short")
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "");
       a.href = url;
-      a.download = `${slug || "granny-short"}.webm`;
+      a.download = "granny-pov-episode.webm";
       a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-
+      URL.revokeObjectURL(url);
+      this.toast("Exported granny-pov-episode.webm!");
+    } catch (err) {
+      this.toast(`Export failed: ${err.message}`, true);
+    } finally {
       this.isRecording = false;
-      this.els.recordBtn.textContent = "Record Episode (WebM)";
-      this.els.recordBtn.classList.remove("is-recording");
-      this.setStatus(`Exported ${a.download} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
-    };
-
-    this.mediaRecorder.start(200);
-    this.episodeRunner.restart({ autoplay: true });
-    this.syncPlayButton();
-    this.setStatus("Recording 9:16 WebM episode with Web Audio SFX...");
-  }
-
-  stopRecording() {
-    if (!this.isRecording) return;
-    if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
-      this.mediaRecorder.stop();
-    }
-  }
-
-  /**
-   * Composites WebGL scene + bold TikTok/Shorts caption onto the 720x1280 export canvas.
-   */
-  captureCompositeFrame(force = false) {
-    if (!this.isRecording && !force) return;
-    const ctx = this.compositeCtx;
-    const w = this.compositeCanvas.width;
-    const h = this.compositeCanvas.height;
-
-    ctx.clearRect(0, 0, w, h);
-    ctx.drawImage(this.renderer.domElement, 0, 0, w, h);
-
-    if (this.activeCaption && this.activeCaption.text) {
-      ctx.save();
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-
-      // Speaker badge
-      if (this.activeCaption.speakerLabel) {
-        ctx.font = "800 26px ui-sans-serif, system-ui, sans-serif";
-        const badgeText = this.activeCaption.speakerLabel.toUpperCase();
-        const badgeW = ctx.measureText(badgeText).width + 32;
-        ctx.fillStyle = "#f97316";
-        ctx.beginPath();
-        ctx.roundRect((w - badgeW) * 0.5, h * 0.72 - 22, badgeW, 38, 10);
-        ctx.fill();
-        ctx.fillStyle = "#0f172a";
-        ctx.fillText(badgeText, w * 0.5, h * 0.72 - 2);
-      }
-
-      // Wrapped bold outlined Shorts caption
-      ctx.font = "900 44px ui-sans-serif, system-ui, sans-serif";
-      const words = this.activeCaption.text.toUpperCase().split(/\s+/);
-      const lines = [];
-      let line = "";
-      for (const word of words) {
-        const test = line ? `${line} ${word}` : word;
-        if (ctx.measureText(test).width > w - 84 && line) {
-          lines.push(line);
-          line = word;
-        } else {
-          line = test;
-        }
-      }
-      if (line) lines.push(line);
-
-      const startY = h * 0.785;
-      const lineHeight = 52;
-      ctx.lineJoin = "round";
-      ctx.miterLimit = 2;
-      ctx.lineWidth = 11;
-      ctx.strokeStyle = "#090d16";
-      ctx.fillStyle = "#fef08a";
-
-      lines.forEach((ln, idx) => {
-        const y = startY + idx * lineHeight;
-        ctx.strokeText(ln, w * 0.5, y);
-        ctx.fillText(ln, w * 0.5, y);
-      });
-
-      ctx.restore();
+      this.onExportStateChange?.(false);
+      this.els.exportBtn.disabled = false;
+      this.els.exportBtn.textContent = "Record WebM";
     }
   }
 }

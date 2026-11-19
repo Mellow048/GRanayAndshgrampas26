@@ -25,8 +25,9 @@ const MIME_TYPES = {
 
 function parseArgs(argv) {
   const opts = {
-    preset: "jump_run_walk_6s",
+    preset: "grandpa_key_pov_44s",
     episodeFile: "",
+    aspect: "",
     fps: 30,
     pacer: true,
     format: "mp4",
@@ -36,6 +37,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === "--preset") opts.preset = argv[++i];
     else if (a === "--episode-file") opts.episodeFile = argv[++i];
+    else if (a === "--aspect") opts.aspect = argv[++i] || "";
     else if (a === "--fps") opts.fps = Number(argv[++i]) || 30;
     else if (a === "--pacer") opts.pacer = argv[++i] !== "false";
     else if (a === "--format") opts.format = argv[++i] || "mp4";
@@ -126,7 +128,7 @@ async function main() {
 
   try {
     const context = await browser.newContext({
-      viewport: { width: 1280, height: 1320 },
+      viewport: { width: 1280, height: 1280 },
       deviceScaleFactor: 1,
     });
     const page = await context.newPage();
@@ -140,20 +142,25 @@ async function main() {
     });
 
     if (hasLocalThree) {
-      await page.route("https://cdn.jsdelivr.net/npm/three@0.170.0/**", async (route) => {
-        const url = route.request().url();
-        const sub = url.replace("https://cdn.jsdelivr.net/npm/three@0.170.0/", "");
-        const localFile = path.resolve(localThreeDir, sub);
-        if (localFile.startsWith(localThreeDir) && fs.existsSync(localFile)) {
-          await route.fulfill({
-            status: 200,
-            contentType: "application/javascript; charset=utf-8",
-            body: fs.readFileSync(localFile),
-          });
-          return;
-        }
-        await route.continue();
-      });
+      for (const prefix of [
+        "https://unpkg.com/three@0.170.0/",
+        "https://cdn.jsdelivr.net/npm/three@0.170.0/",
+      ]) {
+        await page.route(`${prefix}**`, async (route) => {
+          const url = route.request().url();
+          const sub = url.replace(prefix, "");
+          const localFile = path.resolve(localThreeDir, sub);
+          if (localFile.startsWith(localThreeDir) && fs.existsSync(localFile)) {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/javascript; charset=utf-8",
+              body: fs.readFileSync(localFile),
+            });
+            return;
+          }
+          await route.continue();
+        });
+      }
     }
 
     console.log(`[Export] Launching studio on http://127.0.0.1:${port}/?headless=1`);
@@ -173,15 +180,20 @@ async function main() {
     }
 
     const meta = await page.evaluate(
-      ({ ep, pacer }) => window.__GRANNY_STUDIO__.beginHeadlessExport({ episode: ep, pacerEnabled: pacer }),
-      { ep: episode, pacer: opts.pacer }
+      ({ ep, pacer, aspect }) =>
+        window.__GRANNY_STUDIO__.beginHeadlessExport({
+          episode: ep,
+          pacerEnabled: pacer,
+          aspectOverride: aspect,
+        }),
+      { ep: episode, pacer: opts.pacer, aspect: opts.aspect }
     );
 
     const fps = opts.fps;
     const totalFrames = Math.max(1, Math.ceil(meta.duration * fps));
     const stepDt = 1 / fps;
     console.log(
-      `[Export] Rendering "${meta.title}" (${meta.duration}s @ ${fps}fps = ${totalFrames} frames)...`
+      `[Export] Rendering "${meta.title}" [${meta.aspectKey} ${meta.width}x${meta.height}] (${meta.duration.toFixed(2)}s @ ${fps}fps = ${totalFrames} frames)...`
     );
 
     for (let idx = 0; idx < totalFrames; idx += 1) {
@@ -193,24 +205,31 @@ async function main() {
       const framePath = path.join(framesDir, `frame_${String(idx).padStart(5, "0")}.png`);
       fs.writeFileSync(framePath, Buffer.from(base64, "base64"));
 
-      if ((idx + 1) % 30 === 0 || idx === totalFrames - 1) {
+      if ((idx + 1) % 60 === 0 || idx === totalFrames - 1) {
         console.log(`[Export] Frame ${idx + 1}/${totalFrames} (t=${frame.simTime.toFixed(2)}s)`);
       }
     }
 
-    const audioEvents = await page.evaluate(() => window.__GRANNY_STUDIO__.finishHeadlessExport());
-    console.log(`[Export] Captured ${audioEvents.length} SFX audio events.`);
+    const audioCapture = await page.evaluate(() =>
+      window.__GRANNY_STUDIO__.finishHeadlessExport()
+    );
+    const sfxEvents = audioCapture?.sfx || [];
+    const bgmSegments = audioCapture?.bgm || [];
+    const bgmDucks = audioCapture?.ducks || [];
+
+    console.log(
+      `[Export] Captured ${sfxEvents.length} SFX events, ${bgmSegments.length} BGM segments, ${bgmDucks.length} duck cuts.`
+    );
 
     if (errors.length > 0) {
       throw new Error(`Browser errors during render:\n${errors.join("\n")}`);
     }
 
-    const slug = (meta.title || "granny-short")
+    const slug = (meta.title || "granny-pov-episode")
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");
 
-    // Build FFmpeg audio mix inputs & filter_complex
     const ffInputs = [
       "-y",
       "-framerate",
@@ -227,11 +246,46 @@ async function main() {
 
     const filterParts = ["[1:a]aformat=sample_rates=44100:channel_layouts=stereo[a0]"];
     const mixLabels = ["[a0]"];
+    let nextInputIdx = 2;
 
-    audioEvents.forEach((ev, idx) => {
+    // 1. Mix looping BGM segments with cutBgm ducking windows
+    const duckExpr =
+      bgmDucks.length > 0
+        ? bgmDucks
+            .map((d) => `between(t,${d.startTime.toFixed(3)},${d.endTime.toFixed(3)})`)
+            .join("+")
+        : "";
+
+    for (const seg of bgmSegments) {
+      const bgmFullPath = path.resolve(REPO_ROOT, seg.path);
+      if (!fs.existsSync(bgmFullPath)) continue;
+      const segDur = Math.max(0.05, (seg.endTime ?? meta.duration) - seg.startTime);
+      const delayMs = Math.max(0, Math.round(seg.startTime * 1000));
+      const vol = Math.max(0, Math.min(1.5, Number(seg.volume) || 0.24));
+
+      ffInputs.push("-stream_loop", "-1", "-t", segDur.toFixed(3), "-i", bgmFullPath);
+      const inIdx = nextInputIdx++;
+      const outLbl = `[bgm${inIdx}]`;
+
+      const chain = [
+        `[${inIdx}:a]aformat=sample_rates=44100:channel_layouts=stereo`,
+        `volume=${vol.toFixed(3)}`,
+      ];
+      if (delayMs > 0) {
+        chain.push(`adelay=${delayMs}|${delayMs}`);
+      }
+      if (duckExpr) {
+        chain.push(`volume=enable='${duckExpr}':volume=0`);
+      }
+      filterParts.push(`${chain.join(",")}${outLbl}`);
+      mixLabels.push(outLbl);
+    }
+
+    // 2. Mix SFX clips
+    for (const ev of sfxEvents) {
       const sfxFullPath = path.resolve(REPO_ROOT, ev.path);
-      if (!fs.existsSync(sfxFullPath)) return;
-      const inIdx = 2 + idx;
+      if (!fs.existsSync(sfxFullPath)) continue;
+      const inIdx = nextInputIdx++;
       ffInputs.push("-i", sfxFullPath);
 
       const delayMs = Math.max(0, Math.round(ev.time * 1000));
@@ -250,10 +304,10 @@ async function main() {
       if (delayMs > 0) {
         chain.push(`adelay=${delayMs}|${delayMs}`);
       }
-      const outLbl = `[a${idx + 1}]`;
+      const outLbl = `[sfx${inIdx}]`;
       filterParts.push(`${chain.join(",")}${outLbl}`);
       mixLabels.push(outLbl);
-    });
+    }
 
     filterParts.push(
       `${mixLabels.join("")}amix=inputs=${mixLabels.length}:duration=first:dropout_transition=0:normalize=0,` +
@@ -295,9 +349,13 @@ async function main() {
         {
           title: meta.title,
           duration: meta.duration,
+          aspectKey: meta.aspectKey,
+          width: meta.width,
+          height: meta.height,
           fps,
           totalFrames,
-          sfxCount: audioEvents.length,
+          sfxCount: sfxEvents.length,
+          bgmCount: bgmSegments.length,
           files: producedFiles,
         },
         null,

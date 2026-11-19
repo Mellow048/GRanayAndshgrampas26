@@ -2,6 +2,9 @@ import * as THREE from "three";
 import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { ASSET_MANIFEST, CONFIG } from "./config.js";
+import { createPropMesh, ThoughtBubbleCache } from "./comedyProps.js";
+
+const sharedBubbleCache = new ThoughtBubbleCache();
 
 /**
  * Loads an FBX and waits for all textures registered on its LoadingManager to finish decoding
@@ -589,6 +592,31 @@ export function instantiateCharacter(id, template, animationClips) {
   const headBone = template.spec.headBoneName
     ? rigHolder.getObjectByName(template.spec.headBoneName)
     : null;
+  const handBoneName =
+    template.spec.rigType === "bip01" ? "Bip01_R_Hand" : "hand_R_001";
+  const handBone = rigHolder.getObjectByName(handBoneName) || null;
+
+  // Floating 2D Comic Thought Bubble Sprite attached above the character's head
+  const bubbleMat = new THREE.SpriteMaterial({
+    transparent: true,
+    depthTest: true,
+    depthWrite: false,
+  });
+  const bubbleSprite = new THREE.Sprite(bubbleMat);
+  bubbleSprite.name = `${id}_ThoughtBubble`;
+  bubbleSprite.position.set(0, template.spec.targetHeight + 0.38, 0);
+  bubbleSprite.scale.set(0, 0, 1);
+  bubbleSprite.visible = false;
+  root.add(bubbleSprite);
+
+  let bubbleTimer = 0;
+  let bubbleDuration = 0;
+  let bubblePopPhase = 0;
+
+  let heldPropGroup = null;
+  let lookAtPlayerEnabled = false;
+  let faceTargetGoal = null;
+  let faceTurnSpeed = 10;
 
   let currentActionEntry = null;
   let currentAnimName = null;
@@ -596,6 +624,7 @@ export function instantiateCharacter(id, template, animationClips) {
   let speakPhase = 0;
   let jumpOffsetY = 0;
   const lookTargetVec = new THREE.Vector3();
+  const tmpHandWorldScale = new THREE.Vector3();
 
   function playAnimation(
     name,
@@ -648,6 +677,66 @@ export function instantiateCharacter(id, template, animationClips) {
     }
   }
 
+  function faceTarget(targetPos, speed = 8) {
+    if (!targetPos) {
+      faceTargetGoal = null;
+      return;
+    }
+    if (speed <= 0 || speed >= 60) {
+      faceTargetGoal = null;
+      lookAt(targetPos);
+    } else {
+      faceTargetGoal = new THREE.Vector3(targetPos.x, root.position.y, targetPos.z);
+      faceTurnSpeed = speed;
+    }
+  }
+
+  function lookAtPlayer(enabled) {
+    lookAtPlayerEnabled = Boolean(enabled);
+    if (lookAtPlayerEnabled) {
+      faceTargetGoal = null;
+    }
+  }
+
+  function showBubble(iconName, duration = 2.0) {
+    if (!iconName) {
+      bubbleSprite.visible = false;
+      bubbleTimer = 0;
+      return;
+    }
+    const tex = sharedBubbleCache.getTexture(iconName);
+    if (!tex) return;
+    bubbleMat.map = tex;
+    bubbleMat.opacity = 1;
+    bubbleMat.needsUpdate = true;
+    bubbleSprite.visible = true;
+    bubbleDuration = Math.max(0.3, duration);
+    bubbleTimer = bubbleDuration;
+    bubblePopPhase = 0;
+  }
+
+  function setProp(propName = null) {
+    if (heldPropGroup) {
+      if (heldPropGroup.parent) heldPropGroup.parent.remove(heldPropGroup);
+      disposeObject3D(heldPropGroup);
+      heldPropGroup = null;
+    }
+    if (!propName) return;
+
+    heldPropGroup = createPropMesh(propName);
+    const parent = handBone || rigHolder;
+    parent.updateMatrixWorld(true);
+    parent.getWorldScale(tmpHandWorldScale);
+    const invX = 1 / Math.max(0.0001, tmpHandWorldScale.x);
+    const invY = 1 / Math.max(0.0001, tmpHandWorldScale.y);
+    const invZ = 1 / Math.max(0.0001, tmpHandWorldScale.z);
+    heldPropGroup.scale.set(invX * 0.9, invY * 0.9, invZ * 0.9);
+    if (!handBone) {
+      heldPropGroup.position.set(0.28, template.spec.targetHeight * 0.55, 0.32);
+    }
+    parent.add(heldPropGroup);
+  }
+
   function setSpeaking(isSpeaking) {
     speaking = Boolean(isSpeaking);
     if (!speaking) {
@@ -671,10 +760,26 @@ export function instantiateCharacter(id, template, animationClips) {
     );
   }
 
-  function update(dt) {
+  function update(dt, playerCameraPos = null) {
     mixer.update(dt);
 
-    // Subtle cartoon squash/bounce + jaw/head accent while speaking or jumping
+    // Smooth yaw turn toward target or continuously look straight at player camera
+    const turnTarget =
+      lookAtPlayerEnabled && playerCameraPos ? playerCameraPos : faceTargetGoal;
+    if (turnTarget) {
+      const dx = turnTarget.x - root.position.x;
+      const dz = turnTarget.z - root.position.z;
+      if (dx * dx + dz * dz > 1e-4) {
+        const targetYaw = Math.atan2(dx, dz);
+        let diff = targetYaw - root.rotation.y;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        const rate = lookAtPlayerEnabled ? 10 : faceTurnSpeed;
+        root.rotation.y += diff * Math.min(1, dt * rate);
+      }
+    }
+
+    // Subtle cartoon squash/bounce + head accent while speaking
     let speakBounceY = 0;
     let speakNod = 0;
     if (speaking) {
@@ -700,12 +805,37 @@ export function instantiateCharacter(id, template, animationClips) {
 
     rigHolder.position.y = jumpOffsetY + clipJumpLift + speakBounceY;
     rigHolder.rotation.x = speakNod;
+
+    // Pop-in bounce + float animation on 2D Comic Thought Bubble
+    if (bubbleTimer > 0) {
+      bubbleTimer = Math.max(0, bubbleTimer - dt);
+      bubblePopPhase += dt;
+      let popScale = 1;
+      if (bubblePopPhase < 0.24) {
+        const t = bubblePopPhase / 0.24;
+        // Elastic overshoot 0 -> 1.18 -> 1.0
+        popScale = t < 0.65 ? (t / 0.65) * 1.18 : 1.18 - ((t - 0.65) / 0.35) * 0.18;
+      } else if (bubbleTimer < 0.2) {
+        popScale = bubbleTimer / 0.2;
+      }
+      bubbleSprite.position.y =
+        template.spec.targetHeight + 0.42 + Math.sin(bubblePopPhase * 4.5) * 0.04;
+      bubbleSprite.scale.set(0.68 * popScale, 0.52 * popScale, 1);
+      if (bubbleTimer === 0) {
+        bubbleSprite.visible = false;
+      }
+    }
   }
 
   function resetPose() {
     speaking = false;
     speakPhase = 0;
     jumpOffsetY = 0;
+    lookAtPlayerEnabled = false;
+    faceTargetGoal = null;
+    bubbleTimer = 0;
+    bubbleSprite.visible = false;
+    setProp(null);
     rigHolder.position.set(0, 0, 0);
     rigHolder.rotation.set(0, 0, 0);
     mixer.stopAllAction();
@@ -714,6 +844,8 @@ export function instantiateCharacter(id, template, animationClips) {
   }
 
   function dispose() {
+    setProp(null);
+    bubbleMat.dispose();
     mixer.stopAllAction();
     mixer.uncacheRoot(rigHolder);
     disposeObject3D(root);
@@ -737,8 +869,13 @@ export function instantiateCharacter(id, template, animationClips) {
     get isSpeaking() {
       return speaking;
     },
+    playAnim: playAnimation,
     playAnimation,
+    faceTarget,
     lookAt,
+    lookAtPlayer,
+    showBubble,
+    setProp,
     setSpeaking,
     setJumpOffset,
     getHeadWorldPosition,

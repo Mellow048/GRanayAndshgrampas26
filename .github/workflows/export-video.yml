@@ -1,4 +1,4 @@
-name: Export 9:16 Short (Cloud Render)
+name: Export POV Episode (Cloud Render)
 
 on:
   workflow_dispatch:
@@ -6,16 +6,24 @@ on:
       preset:
         description: "Episode preset to render"
         type: choice
-        default: "jump_run_walk_6s"
+        default: "grandpa_key_pov_44s"
         options:
+          - grandpa_key_pov_44s
           - jump_run_walk_6s
-          - cookies_chase_18s
           - custom_json
       episode_json:
         description: "Custom Episode JSON (used when preset is custom_json, or overrides preset if provided)"
         type: string
         required: false
         default: ""
+      aspect:
+        description: "Aspect ratio override (auto uses the episode's own aspect)"
+        type: choice
+        default: "auto"
+        options:
+          - auto
+          - "16:9"
+          - "9:16"
       fps:
         description: "Output frame rate"
         type: choice
@@ -40,9 +48,9 @@ permissions:
   contents: write
 
 jobs:
-  render-short:
+  render-pov:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -69,27 +77,28 @@ jobs:
         run: |
           npm install --no-save playwright three@0.170.0
           npx playwright install chromium
-          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" != "true" ]; then
-            npx playwright install-deps chromium
-          else
-            npx playwright install-deps chromium
-          fi
+          npx playwright install-deps chromium
 
-      - name: Render 9:16 3D Episode in Cloud (SwiftShader WebGL + FFmpeg)
+      - name: Render 3D POV Episode in Cloud (SwiftShader WebGL + FFmpeg)
         env:
           EPISODE_JSON: ${{ inputs.episode_json }}
         run: |
+          ASPECT_ARG=""
+          if [ "${{ inputs.aspect }}" != "auto" ]; then
+            ASPECT_ARG="--aspect ${{ inputs.aspect }}"
+          fi
           node scripts/export-video.mjs \
             --preset "${{ inputs.preset }}" \
             --fps "${{ inputs.fps }}" \
             --pacer "${{ inputs.sfx_pacer }}" \
             --format "${{ inputs.format }}" \
+            $ASPECT_ARG \
             --out-dir output
 
       - name: Upload Exported Video Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: granny-short-${{ inputs.preset }}-${{ github.run_number }}
+          name: granny-pov-${{ inputs.preset }}-${{ github.run_number }}
           path: |
             output/*.mp4
             output/*.webm
@@ -107,8 +116,8 @@ jobs:
             gh release upload "$TAG" "${FILES[@]}" --clobber
           else
             gh release create "$TAG" "${FILES[@]}" \
-              --title "Latest Rendered 9:16 Shorts" \
-              --notes "Auto-published cloud video exports from Granny 3D Cartoon Studio."
+              --title "Latest Rendered Granny POV Exports" \
+              --notes "Auto-published cloud video exports from Granny POV 3D Cartoon Studio."
           fi
 
       - name: Write Workflow Summary
@@ -118,11 +127,11 @@ jobs:
             const s = JSON.parse(fs.readFileSync("output/export-summary.json", "utf8"));
             const repo = process.env.GITHUB_REPOSITORY;
             const lines = [
-              "## Granny 3D Cartoon Studio — Cloud Export Complete",
+              "## Granny POV 3D Cartoon Studio — Cloud Export Complete",
               "",
               `- **Episode:** ${s.title}`,
-              `- **Duration:** ${s.duration}s @ ${s.fps}fps (${s.totalFrames} frames, 720x1280)`,
-              `- **SFX Events Mixed:** ${s.sfxCount}`,
+              `- **Duration:** ${s.duration.toFixed(2)}s @ ${s.fps}fps (${s.totalFrames} frames, ${s.width}x${s.height} [${s.aspectKey}])`,
+              `- **Audio Mixed:** ${s.bgmCount} BGM segments + ${s.sfxCount} SFX events`,
               ...s.files.map(f => `- **Direct Download:** https://github.com/${repo}/releases/download/latest-export/${f.file} (${f.sizeMb} MB)`),
               "",
               "You can also download the zipped archive from **Artifacts** below."

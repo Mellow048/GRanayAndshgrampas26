@@ -1,135 +1,67 @@
-# AGENTS.md — Developer & AI Agent Guide for Granny 3D Cartoon Studio
+# AGENTS.md — Granny POV 3D Cartoon Studio Playbook
 
-Welcome! This repository is a **zero-build Three.js (`v0.170.0`) 9:16 vertical Shorts studio** starring **Granny** and **Grandpa** inside the **Granny 1 House**, driven entirely by JSON episode scripts and equipped with a **GitHub Actions Cloud Video Exporter** (SwiftShader WebGL + FFmpeg).
+This repository is a zero-build Three.js (`v0.170.0` via importmap) first-person **POV Kids-Comedy 3D Cartoon Studio** inside the Granny 1 House (`./Assets/granny-1-house/source/GrannyHouse.fbx`), with deterministic 60Hz animation, Mixamo retargeting (`Granny` + `Grandpa`), procedural 3D comedy props + 2D comic thought bubbles, a Web Audio SFX/BGM mixer (`./SoundEffects`), and a GitHub Actions cloud video exporter (`16:9` widescreen & `9:16` Shorts).
 
-Read this guide before modifying rigs, writing new episodes, or adding features.
+## Architecture Overview
 
----
+- `index.html` — Studio UI shell, importmap (`three@0.170.0`), `#stageContainer`, `#fadeOverlay`, and `?headless=1` export mode.
+- `src/config.js` — `CONFIG`, `ASSET_MANIFEST`, `SFX_MANIFEST`, verified indoor `SET_MAP` waypoints, `GRANDPA_KEY_POV_44S` (44s default episode), and `JUMP_RUN_WALK_EPISODE` (6s).
+- `src/assetLoader.js` — `loadHouse()` with 0.4m indoor A* navigation (`findPath`, `isPointInsideWalkable`, `clampCameraPosition`), `loadCharacterTemplate()`, `instantiateCharacter()` (`playAnim`, `faceTarget`, `lookAtPlayer`, `showBubble`, `setProp`).
+- `src/animationLibrary.js` — Mixamo `.fbx` template extraction, root-motion stripping, jump arc extraction (`0.32m` cap), and rest-pose quaternion retargeting (`AnimationLibrary`).
+- `src/playerCamera.js` — First-person POV controller (`PlayerCamera`): eye-level walking (`1.50m`) with head-bob, whip-pan `lookAt` + tracking, `nod_yes` / `shake_no` / `shake_panic` / `peek_lean` gestures, crouch (`0.42m`), bottom-right FPS held-item viewmodel (`holdProp`, `useHeldProp`), fade-to-black, wall clamping, and `16:9` / `9:16` aspect toggling + Orbit calibrator toggle.
+- `src/comedyProps.js` — `ThoughtBubbleCache` (`key`, `question`, `exclamation`, `zzz`, `angry`, `laugh`, `food`, `heart`) and `ComedyPropManager` (`golden_key`, `padlock`, `treasure_chest`, `emoji_ball`, `toy_blaster`, `cookie_jar`).
+- `src/sfxEngine.js` — Web Audio mixer (`SfxEngine`): looping BGM (`playBgm`, `stopBgm`), `cutBgm` silence ducking, movement-synced footsteps, whip-pan/bubble/pickup/action foley, 1–2s gap pacer, and deterministic offline capture for FFmpeg.
+- `src/episodeRunner.js` — Deterministic 60Hz multi-skit timeline (`EpisodeRunner`) compiling `skits[].beats` (`at` / `after`) and legacy `actions`.
+- `src/studioUI.js` & `src/main.js` — Director controls, 25-clip Soundboard, Waypoint Calibrator (`WASD + Q/E`), Live Multi-Skit JSON Editor, and `window.__GRANNY_STUDIO__` headless export hooks.
+- `scripts/export-video.mjs` & `.github/workflows/export-video.yml` — Headless Playwright (SwiftShader WebGL) + FFmpeg video/BGM/ducking/SFX pipeline auto-publishing `.mp4`/`.webm` + `export-summary.json` to the `latest-export` GitHub Release.
 
-## 1. Repository Layout
+## Rigging & House Rules (Must Preserve)
 
-| Path | Purpose |
-| --- | --- |
-| `index.html` | Studio web UI (`three@0.170.0` CDN importmap, 720×1280 9:16 stage, captions, transport, Waypoint Calibrator, JSON editor, SFX test pad). |
-| `src/config.js` | `CONFIG`, `ASSET_MANIFEST`, `SFX_MANIFEST`, calibrated `SET_MAP` waypoints, `JUMP_RUN_WALK_EPISODE`, `COOKIES_CHASE_EPISODE`, `EPISODE_PRESETS`, `DEFAULT_EPISODE`. |
-| `src/assetLoader.js` | FBX loaders for house & characters, texture URL remapping, `DetachedBindMode` skinning fix, height normalization (`1.65m` / `1.72m`), `SkeletonUtils.clone()` instancing, and `disposeObject3D`. |
-| `src/animationLibrary.js` | Loads Mixamo `.fbx` templates, strips `.position`/`.scale`, extracts `Jumping.fbx` vertical arc, disposes template meshes, and runs scale-invariant world-quaternion `retargetMixamoClip`. |
-| `src/sfxEngine.js` | Web Audio API loader/player (25 MP3s in `./SoundEffects/`), dual output (`AudioContext.destination` + `MediaStreamAudioDestinationNode`), 1–2s Cartoon SFX Pacer, and `exportMode` offline event capture. |
-| `src/cameraDirector.js` | 9:16 Shorts camera (`wide`, `closeup`, `over_shoulder`, `chase_cam`, `dramatic_zoom`, `shake`, `instant`/`whip` cuts) + `OrbitControls` free-inspect toggle. |
-| `src/episodeRunner.js` | Deterministic 60Hz fixed-timestep runner (`loadEpisode`, `seek`, `update`, `dispose`) resolving all locations strictly via `SET_MAP`. |
-| `src/studioUI.js` | Interactive UI controller + 720×1280 `compositeCanvas` + local browser `MediaRecorder` WebM export. |
-| `src/main.js` | Scene/lighting bootstrap + `?headless=1` & `window.__GRANNY_STUDIO__` API used by the cloud renderer. |
-| `scripts/export-video.mjs` | Playwright + SwiftShader WebGL + FFmpeg headless exporter producing lossless frame sequences mixed with exact `./SoundEffects/*.mp3` timestamps. |
-| `.github/workflows/export-video.yml` | GitHub Actions `workflow_dispatch` pipeline rendering `.mp4` / `.webm` in the cloud and publishing both workflow artifacts and a direct download on the `latest-export` GitHub Release. |
+1. **Granny Bind Matrix**: `GrannyTest6.fbx` stores Identity `bindMatrix` on its `SkinnedMesh`. Keep `fixBindMatrixToWorld: true` (`AttachedBindMode` with `node.bindMatrix.copy(node.matrixWorld)`) before normalization. Never switch Granny to `DetachedBindMode`.
+2. **Textured Materials**: FBX `MeshPhongMaterial` instances can have dark diffuse multipliers (`#242424`, `#3c3c3c`). `configureMaterialsAndShadows()` resets `material.color` to `0xffffff` whenever `material.map` is present.
+3. **Indoor Waypoints (`SET_MAP`)**: Always reference `SET_MAP` waypoint names in episode scripts rather than raw coordinates. Avoid the unroofed front porch (`x = -2.4..+1.8, z = +1.6..+5.8`) and cellar stair hole (`x = +2.4, z = -0.2..+2.8`).
 
----
+## Multi-Skit POV Episode JSON Schema
 
-## 2. Critical Asset & Rig Quirks (Do Not Break These!)
-
-All `.fbx` assets in `./Assets/` have specific quirks discovered during inspection:
-
-1. **Granny (`./Assets/granny-animated-fbx/source/GrannyTest6.fbx`)**:
-   - **Rig**: 3ds Max Biped (`Bip01_Pelvis`, `Bip01_Spine*`, `Bip01_L_UpperArm`, etc.). Raw rig faces `+X` (`forwardYawOffset: -Math.PI * 0.5`). Normalized to `1.65m`, feet at `y = 0`, facing `+Z`.
-   - **Skinning Fix**: `Granny` `SkinnedMesh` explodes if left with its default identity `bindMatrix`, and using `DetachedBindMode` double-applies the normalization transform. `assetLoader.js` **must** keep `AttachedBindMode` and bake `node.bindMatrix.copy(node.matrixWorld); node.bindMatrixInverse.copy(node.matrixWorld).invert();` BEFORE wrapping in `orientationHolder`.
-   - **Texture Color Fix**: Both `GrannyTest6.fbx` and `grandpach3.fbx` export dark `mat.color` diffuse factors (`#242424` / `#2d3237`). `configureMaterialsAndShadows()` resets `mat.color.setHex(0xffffff)` whenever `mat.map` exists and awaits `LoadingManager.onLoad` before resolving.
-   - **Texture Alias**: The FBX requests `TexturesCom_WoodFine0077_6_seamless_S_Normal.png`, while disk has `..._Norm.png`. Keep this alias in `ASSET_MANIFEST.characters.granny.textureAliases`.
-   - **Embedded Clips**: `idle`, `Hit`, `Walk`, `arrowHit`, `Look`, `lookBed`, `idle_1`. They include non-bone `.scale`/`.position` tracks (`Granny.scale`, `SlendrinaMom.*`) which `animationLibrary.js` strips down to valid bone `.quaternion` tracks.
-
-2. **Grandpa (`./Assets/grandpa-official-model-rigged-granny-3/source/grandpach3.fbx`)**:
-   - **Rig**: Blender `Armature` (`Bone` pelvis, `Spine1`, `Spine2`, `upArm_L`, `upArm_R_001`, etc.), `0` embedded clips, faces `+Z`, normalized to `1.72m`.
-   - **Texture Remap**: Embedded paths contain `/home/mellbot/.../Texture2D/<file>.png`. `assetLoader.js` remaps every texture URL by basename into `./Assets/grandpa-official-model-rigged-granny-3/textures/`.
-   - **Procedural Idle**: Because `grandpach3.fbx` has no embedded idle clip, `animationLibrary.js` synthesizes a subtle breathing `idle` clip on `Spine1` / `Spine2` / `Neck`.
-
-3. **Mixamo Retargeting (`src/animationLibrary.js`)**:
-   - **Do NOT use `THREE.SkeletonUtils.retargetClip` / `SkeletonUtils.retarget`**: Those reset `matrixWorld` without compensating for non-unit FBX `Armature` / parent scales (`Granny` `0.02 * 0.264`, `Grandpa` `80.51`), blowing up arm bone scales, and emit `.bones[Name]` tracks that fail on `Group`-rooted mixers.
-   - **Duplicate Zero-Length Child Bones**: Mixamo FBXs in `./Assets/AnimationTemplates/` contain zero-length duplicate child bones (`mixamorigLeftArm -> mixamorigLeftArm -> mixamorigLeftForeArm`). `getBoneChildDir()` **must** skip children with `distSq <= 1e-6` so T-pose -> A-pose delta quaternions align arms properly.
-   - **Template Disposal**: Every Mixamo FBX is exported With Skin. Extract clips, then immediately call `animationLibrary.disposeSourceTemplates()`.
-
-4. **Granny 1 House (`./Assets/granny-1-house/source/GrannyHouse.fbx`)**:
-   - Scaled by `CONFIG.house.scale = 0.42`, with raw ground floor `y = 13.32` shifted by `-13.32 * 0.42 = -5.5944` so ground floor sits at `y = 0.0`.
-   - Ceiling height is `~2.84m` (`y = 2.85` is the 2nd floor). Camera shots on the ground floor should stay below `y = 2.6m`.
-   - **Wall Warning**: There is an interior wall around `x = 2.5` separating the central hallway from the living room (open doorways near `z = 0.8` and `z = 2.8`), and furniture around `(3.2, 0, 1.8..2.8)`. Prefer chaining waypoints cleanly rather than moving straight through walls!
-
----
-
-## 3. Writing New Episodes (JSON Contract)
-
-Episodes **must** reference named `SET_MAP` waypoints (never raw `{ x, y, z }` coordinates in JSON scripts).
-
-### Valid `SET_MAP` Waypoints (Verified Indoor Only)
-- **Back Room & East Corridor (wall-free indoor hall)**:
-  - `back_hall` `(0.0, 0, -2.6)`, `back_hall_left` `(-0.6, 0, -2.8)`, `back_hall_right` `(0.6, 0, -2.8)`
-  - `hallway` `(0.8, 0, -2.4)`
-  - `back_room_east` `(3.8, 0, -1.6)`, `back_room_east_right` `(4.4, 0, -1.6)`
-  - `doorway_living` `(4.0, 0, -1.0)` *(open doorway into Living Room)*
-- **Living Room**:
-  - `living_room_entry` `(4.2, 0, 0.4)`, `living_room_left` `(4.0, 0, 0.4)`, `living_room_right` `(4.9, 0, 0.4)`, `living_room` `(5.4, 0, 2.2)`
-- **West Rooms & Foyer**:
-  - `stairs` `(-3.4, 0, -2.6)`, `dining_nook` `(-3.4, 0, -1.6)`, `kitchen` `(-5.5, 0, 0.8)`, `foyer` `(-0.8, 0, 0.2)`
-- **Upstairs**:
-  - `bedroom` `(-4.2, 2.85, 2.1)` *(2nd floor)*
-
-*(Note: `EpisodeRunner` automatically uses `house.findPath()` indoor A* pathfinding across doorways, and `CameraDirector` clamps every shot inside walls/ceilings via `house.clampCameraPosition()`. Use `"target": "cast"` on `"wide"` shots to frame both actors.)*
-
-### Valid Cast Assets & Actions
-- **Cast `asset`**: `"granny"` | `"grandpa"`
-- **Shared Mixamo `anim` keys**: `"walk"`, `"run"`, `"run2"`, `"sneak"`, `"jump"`, `"laugh"`, `"punch"`, `"sit"`, `"terrified"`, `"idle"`
-- **Granny-only embedded `anim` keys**: `"hit"`, `"look"`, `"look_bed"`, `"granny_walk"`
-
-### Valid Camera Modes & Cuts
-- **`mode`**: `"wide"` | `"closeup"` | `"over_shoulder"` | `"chase_cam"` | `"dramatic_zoom"`
-- **`cut`**: `"instant"` | `"whip"`
-- **`target`**: actor `id` (e.g. `"granny"`, `"grandpa"`) or any `SET_MAP` waypoint name
-- **`lookTarget`** (for `"over_shoulder"`): actor `id` or waypoint name
-- **`shake`**: optional float (`0.0` to `0.5`)
-
-### Valid SFX Keys (`./SoundEffects/`)
-`checkmark`, `ding`, `eat`, `click`, `pop`, `tada`, `bonk`, `discord`, `glitch`, `granny_good_part`, `granny_ambience`, `granny_chase`, `granny_i_see_you`, `jumpscare`, `granny_laugh`, `kaching`, `typing`, `explode`, `explode_meme`, `rizz`, `squidward_walk`, `aww`, `swoosh`, `vine_boom`, `whoosh`.
-
-### Minimal Episode JSON Template
 ```json
 {
-  "title": "My Custom Short",
-  "duration": 6.0,
+  "title": "My Funny Skit",
+  "aspect": "16:9",
+  "playerSpawn": "back_hall",
+  "playerFacing": "back_room_east",
   "cast": [
-    { "id": "granny", "asset": "granny", "spawn": "back_hall_left", "facing": "front_door_left" },
-    { "id": "grandpa", "asset": "grandpa", "spawn": "back_hall_right", "facing": "front_door_right" }
+    { "id": "grandpa", "asset": "grandpa", "spawn": "living_room", "facing": "living_room_entry" },
+    { "id": "granny", "asset": "granny", "spawn": "kitchen", "facing": "dining_nook" }
   ],
-  "timeline": [
-    { "time": 0.0, "type": "camera", "mode": "wide", "target": "back_hall", "cut": "instant" },
-    { "time": 0.0, "type": "action", "actor": "granny", "anim": "jump", "speed": 0.95, "loop": false },
-    { "time": 2.0, "type": "move", "actor": "granny", "to": "hallway_left", "anim": "run", "duration": 2.5 },
-    { "time": 4.5, "type": "move", "actor": "granny", "to": "front_door_left", "anim": "walk", "duration": 1.5 }
+  "props": [
+    { "id": "chest", "type": "treasure_chest", "spawn": "chest_spot" },
+    { "id": "golden_key", "type": "golden_key", "spawn": "key_spot", "yOffset": 0.82, "spin": true, "float": true }
+  ],
+  "skits": [
+    {
+      "name": "Skit 1",
+      "beats": [
+        { "at": 0.0, "type": "bgm", "sound": "granny_ambience", "volume": 0.22 },
+        { "at": 0.2, "type": "player_walk", "to": "living_room_entry", "duration": 3.0 },
+        { "after": 3.2, "type": "player_look", "target": "grandpa", "duration": 0.18, "track": true },
+        { "after": 0.1, "type": "char_face", "actor": "grandpa", "followPlayer": true },
+        { "after": 0.1, "type": "char_bubble", "actor": "grandpa", "icon": "question", "duration": 1.8 },
+        { "after": 0.2, "type": "sfx", "sound": "vine_boom", "cutBgm": true, "cutBgmDuration": 1.2 }
+      ]
+    }
   ]
 }
 ```
 
----
+### Supported Beat Types
+- **Player POV**: `player_walk` (`to`, `duration`, `lookAhead`), `player_look` (`target`, `duration`, `track`), `player_gesture` (`gesture`: `nod_yes` | `shake_no` | `shake_panic` | `peek_lean`, `duration`), `player_crouch` (`crouched`, `duration`), `player_hold` (`prop`, `use`), `fade` (`to`, `duration`).
+- **Characters**: `char_move` (`actor`, `to`, `anim`, `duration`, `speed`), `char_anim` (`actor`, `anim`, `speed`, `loop`), `char_face` (`actor`, `target`, `followPlayer`), `char_bubble` (`actor`, `icon`: `key` | `question` | `exclamation` | `zzz` | `angry` | `laugh` | `food` | `heart`, `duration`), `char_prop` (`actor`, `prop`).
+- **Props & Audio**: `prop_action` (`prop`, `action`: `show` | `hide` | `pickup` | `open` | `close` | `pop_out` | `bounce` | `stop`, `waypoint`, `yOffset`), `bgm` (`sound`, `volume`), `stop_bgm`, `sfx` (`sound`, `volume`, `pitch`, `cutBgm`, `cutBgmDuration`).
 
-## 4. Exporting Videos on GitHub Actions (Zero Local CPU/GPU)
+## Cloud Video Rendering (GitHub Actions)
 
-Never force users to encode WebM on their laptop when they want a cloud export. Trigger the workflow on GitHub:
-
+Render any preset or custom JSON to `.mp4`/`.webm` in GitHub's cloud runners without using local CPU/GPU:
 ```bash
-# Render a built-in preset
-gh workflow run export-video.yml --ref main -f preset=jump_run_walk_6s -f format=mp4
-
-# Render custom Episode JSON
-gh workflow run export-video.yml --ref main -f preset=custom_json -f format=mp4 -f episode_json='{"title":"Custom","duration":6,"cast":[...],"timeline":[...]}'
+gh workflow run export-video.yml --ref main -f preset=grandpa_key_pov_44s -f fps=30 -f sfx_pacer=true -f format=mp4
 ```
-
-Outputs are:
-1. Published to the **`latest-export` GitHub Release** for direct `.mp4` / `.webm` download (no zip required).
-2. Uploaded as a workflow artifact (`granny-short-<preset>-<run_number>`).
-
----
-
-## 5. Verification Checklist Before Merging Changes
-
-1. Syntax check all modules:
-   ```bash
-   for f in src/*.js scripts/*.mjs; do node --check "$f" || exit 1; done
-   ```
-2. Verify all `ASSET_MANIFEST`, `SFX_MANIFEST`, and `EPISODE_PRESETS` waypoint/action/sound references exist on disk.
-3. Keep generated video outputs (`output/`) out of Git.
-4. Keep `index.html` zero-build (pure ES modules + `three@0.170.0` importmap).
+Completed videos are auto-published to the `latest-export` GitHub Release.
