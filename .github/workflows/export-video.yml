@@ -37,7 +37,7 @@ on:
           - both
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   render-short:
@@ -96,20 +96,36 @@ jobs:
             output/export-summary.json
           retention-days: 30
 
+      - name: Publish Direct Video Download (GitHub Release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          FILES=(output/*.mp4 output/*.webm output/export-summary.json)
+          TAG="latest-export"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${FILES[@]}" --clobber
+          else
+            gh release create "$TAG" "${FILES[@]}" \
+              --title "Latest Rendered 9:16 Shorts" \
+              --notes "Auto-published cloud video exports from Granny 3D Cartoon Studio."
+          fi
+
       - name: Write Workflow Summary
         run: |
           node -e '
             const fs = require("fs");
             const s = JSON.parse(fs.readFileSync("output/export-summary.json", "utf8"));
+            const repo = process.env.GITHUB_REPOSITORY;
             const lines = [
               "## Granny 3D Cartoon Studio — Cloud Export Complete",
               "",
               `- **Episode:** ${s.title}`,
               `- **Duration:** ${s.duration}s @ ${s.fps}fps (${s.totalFrames} frames, 720x1280)`,
               `- **SFX Events Mixed:** ${s.sfxCount}`,
-              ...s.files.map(f => `- **File:** \`${f.file}\` (${f.sizeMb} MB)`),
+              ...s.files.map(f => `- **Direct Download:** https://github.com/${repo}/releases/download/latest-export/${f.file} (${f.sizeMb} MB)`),
               "",
-              "Download your rendered video from the **Artifacts** section below!"
+              "You can also download the zipped archive from **Artifacts** below."
             ];
             fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");
           '
