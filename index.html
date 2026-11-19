@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Granny 3D Cartoon Studio — 9:16 Shorts Engine</title>
+  <link rel="icon" href="data:," />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070b14;
+      --panel: #0f172a;
+      --panel-border: rgba(148, 163, 184, 0.2);
+      --accent: #f97316;
+      --accent-hover: #fb923c;
+      --cyan: #38bdf8;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      height: 100%;
+      background: radial-gradient(circle at top left, #172554 0%, var(--bg) 52%);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+    }
+
+    .studio-shell {
+      display: grid;
+      grid-template-columns: minmax(340px, 470px) 1fr;
+      gap: 16px;
+      height: 100vh;
+      padding: 16px;
+    }
+
+    /* 9:16 Vertical Shorts Stage */
+    .stage-column {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 0;
+    }
+
+    .shorts-stage {
+      position: relative;
+      height: 100%;
+      max-height: calc(100vh - 32px);
+      aspect-ratio: 9 / 16;
+      max-width: 100%;
+      border-radius: 20px;
+      overflow: hidden;
+      background: #020617;
+      border: 2px solid rgba(255, 255, 255, 0.14);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+    }
+
+    .shorts-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .shorts-badge {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(15, 23, 42, 0.72);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: #e2e8f0;
+      pointer-events: none;
+    }
+
+    /* TikTok / Shorts Bold Caption Overlay */
+    .caption-overlay {
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      bottom: 13%;
+      text-align: center;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .caption-overlay[hidden] {
+      display: none;
+    }
+
+    .caption-speaker {
+      display: inline-block;
+      background: var(--accent);
+      color: #090d16;
+      font-weight: 900;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 3px 10px;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+    }
+
+    .caption-text {
+      font-weight: 900;
+      font-size: clamp(20px, 2.7vh, 28px);
+      line-height: 1.15;
+      text-transform: uppercase;
+      color: #fef08a;
+      -webkit-text-stroke: 2px #090d16;
+      paint-order: stroke fill;
+      text-shadow:
+        0 3px 0 #090d16,
+        -2px -2px 0 #090d16,
+        2px -2px 0 #090d16,
+        -2px 2px 0 #090d16,
+        2px 2px 0 #090d16,
+        0 6px 18px rgba(0, 0, 0, 0.85);
+    }
+
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.88);
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 24px;
+      z-index: 10;
+    }
+
+    .loading-overlay[hidden] {
+      display: none;
+    }
+
+    .loading-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .spinner {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 3px solid rgba(56, 189, 248, 0.25);
+      border-top-color: var(--accent);
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Studio Control Column */
+    .controls-column {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .panel {
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid var(--panel-border);
+      border-radius: 14px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .panel-title {
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #cbd5e1;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      background: #1e293b;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 7px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 140ms ease, border-color 140ms ease, transform 80ms ease;
+    }
+
+    button:hover {
+      background: #334155;
+    }
+
+    button:active {
+      transform: scale(0.97);
+    }
+
+    button.primary {
+      background: var(--accent);
+      border-color: rgba(251, 146, 60, 0.6);
+      color: #090d16;
+    }
+
+    button.primary:hover {
+      background: var(--accent-hover);
+    }
+
+    button.is-active {
+      background: var(--cyan);
+      color: #090d16;
+      border-color: #7dd3fc;
+    }
+
+    button.record-btn {
+      background: #dc2626;
+      border-color: #f87171;
+      color: #fff;
+      margin-left: auto;
+    }
+
+    button.record-btn:hover {
+      background: #ef4444;
+    }
+
+    button.record-btn.is-recording {
+      animation: pulseRec 1s ease-in-out infinite;
+    }
+
+    @keyframes pulseRec {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+      50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+    }
+
+    .scrubber-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    input[type="range"] {
+      accent-color: var(--accent);
+      cursor: pointer;
+      width: 100%;
+    }
+
+    .readout {
+      font-variant-numeric: tabular-nums;
+      font-size: 12px;
+      color: #e2e8f0;
+      font-weight: 600;
+      min-width: 84px;
+      text-align: right;
+    }
+
+    label.inline {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #cbd5e1;
+      cursor: pointer;
+    }
+
+    select {
+      background: #0b1120;
+      color: var(--text);
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 12px;
+    }
+
+    .calibrator-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      padding-top: 4px;
+      border-top: 1px solid rgba(148, 163, 184, 0.14);
+    }
+
+    .calibrator-controls[hidden] {
+      display: none;
+    }
+
+    .hint {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .status-banner {
+      font-size: 12px;
+      color: #bae6fd;
+      background: rgba(14, 116, 144, 0.22);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 8px;
+      padding: 7px 10px;
+    }
+
+    .status-banner.is-error {
+      color: #fecaca;
+      background: rgba(185, 28, 28, 0.24);
+      border-color: rgba(248, 113, 113, 0.4);
+    }
+
+    .json-panel {
+      flex: 1 1 280px;
+      min-height: 220px;
+    }
+
+    #episodeJsonInput {
+      width: 100%;
+      flex: 1;
+      min-height: 200px;
+      resize: vertical;
+      background: #060a13;
+      color: #e2e8f0;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 10px;
+      padding: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .sfx-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+      gap: 6px;
+      max-height: 145px;
+      overflow-y: auto;
+    }
+
+    .sfx-btn {
+      font-size: 11px;
+      padding: 5px 7px;
+      text-transform: capitalize;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    @media (max-width: 920px) {
+      html,
+      body {
+        overflow: auto;
+      }
+      .studio-shell {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+      .shorts-stage {
+        height: auto;
+        width: min(100%, 420px);
+      }
+    }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div class="studio-shell">
+    <!-- 9:16 Vertical Shorts Stage -->
+    <section class="stage-column">
+      <div id="shortsStage" class="shorts-stage">
+        <div class="shorts-badge">9:16 SHORTS • 720×1280</div>
+
+        <div id="captionOverlay" class="caption-overlay" hidden>
+          <span id="captionSpeaker" class="caption-speaker"></span>
+          <div id="captionText" class="caption-text"></div>
+        </div>
+
+        <div id="loadingOverlay" class="loading-overlay">
+          <div class="loading-card">
+            <div class="spinner"></div>
+            <div id="loadingText">Loading Granny 3D Cartoon Studio...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Studio Controls & Live JSON Editor -->
+    <aside class="controls-column">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Granny 3D Cartoon Studio</span>
+          <button id="recordBtn" class="record-btn" type="button">Record Episode (WebM)</button>
+        </div>
+
+        <div class="row">
+          <button id="playPauseBtn" class="primary" type="button">Pause</button>
+          <button id="restartBtn" type="button">Restart</button>
+          <button id="orbitToggleBtn" type="button">Cam: Director</button>
+          <button id="calibratorToggleBtn" type="button">Waypoint Calibrator</button>
+        </div>
+
+        <div class="scrubber-row">
+          <input id="timelineScrubber" type="range" min="0" max="6" step="0.05" value="0" />
+          <span id="timeReadout" class="readout">0.0s / 6.0s</span>
+        </div>
+
+        <div class="row">
+          <label class="inline" style="flex: 1; min-width: 180px;">
+            <span>Speed</span>
+            <input id="speedSlider" type="range" min="0.5" max="2" step="0.05" value="1" />
+            <span id="speedReadout" class="readout" style="min-width: 44px;">1x</span>
+          </label>
+          <label class="inline">
+            <input id="pacerToggle" type="checkbox" checked />
+            <span>Cartoon SFX Pacer (1–2s)</span>
+          </label>
+          <label class="inline">
+            <input id="muteToggle" type="checkbox" />
+            <span>Mute</span>
+          </label>
+        </div>
+
+        <div id="calibratorControls" class="calibrator-controls" hidden>
+          <label class="inline">
+            <span>Waypoint</span>
+            <select id="waypointSelect"></select>
+          </label>
+          <label class="inline">
+            <span>Floor</span>
+            <select id="floorSelect">
+              <option value="ground">Ground Floor</option>
+              <option value="upper">2nd Floor</option>
+            </select>
+          </label>
+          <button id="copySetMapBtn" type="button">Copy SET_MAP JSON</button>
+          <span class="hint">Click house floor in Free Orbit to reposition marker.</span>
+        </div>
+
+        <div id="statusBanner" class="status-banner">Initializing studio...</div>
+      </div>
+
+      <div class="panel json-panel">
+        <div class="panel-header">
+          <span class="panel-title">Episode Script (JSON)</span>
+          <div class="row">
+            <select id="presetSelect" aria-label="Episode Preset"></select>
+            <button id="applyJsonBtn" class="primary" type="button">Apply JSON</button>
+          </div>
+        </div>
+        <textarea id="episodeJsonInput" spellcheck="false" aria-label="Episode JSON Script"></textarea>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">SFX Test Pad (./SoundEffects)</span>
+        </div>
+        <div id="sfxPadGrid" class="sfx-grid"></div>
+      </div>
+    </aside>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
