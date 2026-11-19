@@ -354,7 +354,7 @@ async function bootstrap() {
       return {
         simTime: runner.simTime,
         isFinished: runner.isFinished,
-        dataUrl: renderer.domElement.toDataURL("image/png"),
+        dataUrl: renderer.domElement.toDataURL("image/jpeg", 0.96),
       };
     },
     finishHeadlessExport: () => {

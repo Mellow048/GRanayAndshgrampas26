@@ -202,13 +202,15 @@ async function main() {
         idx === 0 ? 0 : stepDt
       );
       const base64 = frame.dataUrl.split(",")[1];
-      const framePath = path.join(framesDir, `frame_${String(idx).padStart(5, "0")}.png`);
+      const ext = frame.dataUrl.startsWith("data:image/jpeg") ? "jpg" : "png";
+      const framePath = path.join(framesDir, `frame_${String(idx).padStart(5, "0")}.${ext}`);
       fs.writeFileSync(framePath, Buffer.from(base64, "base64"));
 
       if ((idx + 1) % 60 === 0 || idx === totalFrames - 1) {
         console.log(`[Export] Frame ${idx + 1}/${totalFrames} (t=${frame.simTime.toFixed(2)}s)`);
       }
     }
+    const frameExt = fs.existsSync(path.join(framesDir, "frame_00000.jpg")) ? "jpg" : "png";
 
     const audioCapture = await page.evaluate(() =>
       window.__GRANNY_STUDIO__.finishHeadlessExport()
@@ -235,7 +237,7 @@ async function main() {
       "-framerate",
       String(fps),
       "-i",
-      path.join(framesDir, "frame_%05d.png"),
+      path.join(framesDir, `frame_%05d.${frameExt}`),
       "-f",
       "lavfi",
       "-t",
