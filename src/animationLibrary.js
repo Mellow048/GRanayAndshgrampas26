@@ -233,6 +233,81 @@ export function retargetMixamoClip(
 }
 
 /**
+ * Measures the character's shoulder-based world forward yaw at t=0 of a clip
+ * and bakes out any initial Y-axis yaw offset into the Hips quaternion track
+ * so every animation clip reliably faces local +Z (0 deg yaw).
+ */
+export function normalizeClipYawToPlusZ(targetRoot, clip, spec) {
+  const isBip01 = spec.rigType === "bip01";
+  const hipsName = isBip01 ? "Bip01_Pelvis" : "Bone";
+  const lArmName = isBip01 ? "Bip01_L_UpperArm" : "upArm_L";
+  const rArmName = isBip01 ? "Bip01_R_UpperArm" : "upArm_R_001";
+
+  const hipsTrack = clip.tracks.find(
+    (t) => t.name === `${hipsName}.quaternion`
+  );
+  const hipsBone = targetRoot.getObjectByName(hipsName);
+  const lArm = targetRoot.getObjectByName(lArmName);
+  const rArm = targetRoot.getObjectByName(rArmName);
+  if (!hipsTrack || !hipsBone || !lArm || !rArm) return clip;
+
+  // Save rest quaternions so we leave targetRoot pristine
+  const savedQuats = new Map();
+  targetRoot.traverse((n) => {
+    if (n.isBone) savedQuats.set(n, n.quaternion.clone());
+  });
+
+  const mixer = new THREE.AnimationMixer(targetRoot);
+  const act = mixer.clipAction(clip);
+  act.play();
+  mixer.setTime(0);
+  targetRoot.updateMatrixWorld(true);
+
+  const lPos = lArm.getWorldPosition(new THREE.Vector3());
+  const rPos = rArm.getWorldPosition(new THREE.Vector3());
+  const lr = rPos.sub(lPos).setY(0);
+  if (lr.lengthSq() > 1e-6) {
+    lr.normalize();
+    const fwd = new THREE.Vector3(0, 1, 0).cross(lr).normalize();
+    const yaw0 = Math.atan2(fwd.x, fwd.z);
+
+    if (Math.abs(yaw0) > 0.015) {
+      const qFixWorld = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        -yaw0
+      );
+      const qParentWorld = hipsBone.parent
+        ? hipsBone.parent.getWorldQuaternion(new THREE.Quaternion())
+        : new THREE.Quaternion();
+      const qDeltaLocal = qParentWorld
+        .clone()
+        .invert()
+        .multiply(qFixWorld)
+        .multiply(qParentWorld);
+
+      const vals = hipsTrack.values;
+      const q = new THREE.Quaternion();
+      for (let i = 0; i < vals.length; i += 4) {
+        q.set(vals[i], vals[i + 1], vals[i + 2], vals[i + 3]);
+        q.premultiply(qDeltaLocal).normalize();
+        vals[i] = q.x;
+        vals[i + 1] = q.y;
+        vals[i + 2] = q.z;
+        vals[i + 3] = q.w;
+      }
+    }
+  }
+
+  mixer.uncacheAction(clip);
+  mixer.uncacheRoot(targetRoot);
+  for (const [bone, q] of savedQuats.entries()) {
+    bone.quaternion.copy(q);
+  }
+  targetRoot.updateMatrixWorld(true);
+  return clip;
+}
+
+/**
  * Generates a subtle standing breathing idle clip from a character's rest pose
  * when no standalone Mixamo Idle template exists on disk.
  */
@@ -368,6 +443,7 @@ export class AnimationLibrary {
           keepPrefixPattern: /^(Bip01_|SlendrinaMom_)/,
         });
         clean.name = alias;
+        normalizeClipYawToPlusZ(root, clean, spec);
         clips[alias] = {
           clip: clean,
           loop: alias === "idle" || alias === "look" || alias === "granny_walk",
@@ -387,6 +463,7 @@ export class AnimationLibrary {
         spec.alignChains
       );
       retargeted.name = actionKey;
+      normalizeClipYawToPlusZ(root, retargeted, spec);
 
       clips[actionKey] = {
         clip: retargeted,

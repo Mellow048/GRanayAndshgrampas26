@@ -599,13 +599,14 @@ export function instantiateCharacter(id, template, animationClips) {
   // Floating 2D Comic Thought Bubble Sprite attached above the character's head
   const bubbleMat = new THREE.SpriteMaterial({
     transparent: true,
-    depthTest: true,
+    depthTest: false,
     depthWrite: false,
   });
   const bubbleSprite = new THREE.Sprite(bubbleMat);
   bubbleSprite.name = `${id}_ThoughtBubble`;
-  bubbleSprite.position.set(0, template.spec.targetHeight + 0.38, 0);
+  bubbleSprite.position.set(0, template.spec.targetHeight + 0.25, 0);
   bubbleSprite.scale.set(0, 0, 1);
+  bubbleSprite.renderOrder = 200;
   bubbleSprite.visible = false;
   root.add(bubbleSprite);
 
@@ -616,7 +617,7 @@ export function instantiateCharacter(id, template, animationClips) {
   let heldPropGroup = null;
   let lookAtPlayerEnabled = false;
   let faceTargetGoal = null;
-  let faceTurnSpeed = 10;
+  let faceTurnSpeed = 12;
 
   let currentActionEntry = null;
   let currentAnimName = null;
@@ -625,6 +626,9 @@ export function instantiateCharacter(id, template, animationClips) {
   let jumpOffsetY = 0;
   const lookTargetVec = new THREE.Vector3();
   const tmpHandWorldScale = new THREE.Vector3();
+  const tmpBubbleWorld = new THREE.Vector3();
+  const tmpBubbleNdc = new THREE.Vector3();
+  const tmpCamRight = new THREE.Vector3();
 
   function playAnimation(
     name,
@@ -640,6 +644,8 @@ export function instantiateCharacter(id, template, animationClips) {
     const shouldLoop =
       loopOverride !== null ? loopOverride : entry.meta.loop !== false;
 
+    nextAction.enabled = true;
+    nextAction.paused = false;
     nextAction.setLoop(
       shouldLoop ? THREE.LoopRepeat : THREE.LoopOnce,
       shouldLoop ? Infinity : 1
@@ -649,6 +655,9 @@ export function instantiateCharacter(id, template, animationClips) {
 
     if (currentActionEntry && currentActionEntry.action === nextAction) {
       if (!shouldLoop) {
+        nextAction.reset();
+        nextAction.play();
+      } else if (!nextAction.isRunning()) {
         nextAction.reset();
         nextAction.play();
       }
@@ -661,7 +670,7 @@ export function instantiateCharacter(id, template, animationClips) {
     nextAction.play();
 
     if (currentActionEntry && currentActionEntry.action !== nextAction) {
-      currentActionEntry.action.crossFadeTo(nextAction, fadeDuration, true);
+      currentActionEntry.action.crossFadeTo(nextAction, fadeDuration, false);
     }
 
     currentActionEntry = entry;
@@ -669,11 +678,18 @@ export function instantiateCharacter(id, template, animationClips) {
     return nextAction;
   }
 
+  function setAnimSpeed(speed) {
+    if (currentActionEntry?.action) {
+      currentActionEntry.action.timeScale = speed;
+    }
+  }
+
   function lookAt(targetPos) {
     if (!targetPos) return;
-    lookTargetVec.set(targetPos.x, root.position.y, targetPos.z);
-    if (lookTargetVec.distanceToSquared(root.position) > 1e-5) {
-      root.lookAt(lookTargetVec);
+    const dx = targetPos.x - root.position.x;
+    const dz = targetPos.z - root.position.z;
+    if (dx * dx + dz * dz > 1e-6) {
+      root.rotation.set(0, Math.atan2(dx, dz), 0);
     }
   }
 
@@ -760,7 +776,7 @@ export function instantiateCharacter(id, template, animationClips) {
     );
   }
 
-  function update(dt, playerCameraPos = null) {
+  function update(dt, playerCameraPos = null, camera = null) {
     mixer.update(dt);
 
     // Smooth yaw turn toward target or continuously look straight at player camera
@@ -774,7 +790,7 @@ export function instantiateCharacter(id, template, animationClips) {
         let diff = targetYaw - root.rotation.y;
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
-        const rate = lookAtPlayerEnabled ? 10 : faceTurnSpeed;
+        const rate = lookAtPlayerEnabled ? 14 : faceTurnSpeed;
         root.rotation.y += diff * Math.min(1, dt * rate);
       }
     }
@@ -806,7 +822,7 @@ export function instantiateCharacter(id, template, animationClips) {
     rigHolder.position.y = jumpOffsetY + clipJumpLift + speakBounceY;
     rigHolder.rotation.x = speakNod;
 
-    // Pop-in bounce + float animation on 2D Comic Thought Bubble
+    // Pop-in bounce + float + viewport top-edge clamp on 2D Comic Thought Bubble
     if (bubbleTimer > 0) {
       bubbleTimer = Math.max(0, bubbleTimer - dt);
       bubblePopPhase += dt;
@@ -818,9 +834,29 @@ export function instantiateCharacter(id, template, animationClips) {
       } else if (bubbleTimer < 0.2) {
         popScale = bubbleTimer / 0.2;
       }
-      bubbleSprite.position.y =
-        template.spec.targetHeight + 0.42 + Math.sin(bubblePopPhase * 4.5) * 0.04;
-      bubbleSprite.scale.set(0.68 * popScale, 0.52 * popScale, 1);
+
+      const defaultLocalY =
+        template.spec.targetHeight + 0.24 + clipJumpLift + Math.sin(bubblePopPhase * 4.2) * 0.035;
+      bubbleSprite.position.set(0, defaultLocalY, 0);
+
+      if (camera && typeof camera.updateMatrixWorld === "function") {
+        camera.updateMatrixWorld(true);
+        root.updateMatrixWorld(true);
+        tmpBubbleWorld.set(0, defaultLocalY, 0).applyMatrix4(root.matrixWorld);
+        tmpBubbleNdc.copy(tmpBubbleWorld).project(camera);
+        if (tmpBubbleNdc.z > -1 && tmpBubbleNdc.z < 1 && tmpBubbleNdc.y > 0.66) {
+          const overflow = tmpBubbleNdc.y - 0.66;
+          tmpBubbleNdc.y = 0.66;
+          tmpBubbleNdc.unproject(camera);
+          // Shift slightly to camera-right so lowered bubble sits beside the head instead of over the face
+          tmpCamRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+          tmpBubbleNdc.addScaledVector(tmpCamRight, Math.min(0.42, overflow * 0.9 + 0.18));
+          root.worldToLocal(tmpBubbleNdc);
+          bubbleSprite.position.copy(tmpBubbleNdc);
+        }
+      }
+
+      bubbleSprite.scale.set(0.56 * popScale, 0.42 * popScale, 1);
       if (bubbleTimer === 0) {
         bubbleSprite.visible = false;
       }
@@ -866,15 +902,20 @@ export function instantiateCharacter(id, template, animationClips) {
     get currentAnimation() {
       return currentAnimName;
     },
+    get currentAction() {
+      return currentActionEntry?.action || null;
+    },
     get isSpeaking() {
       return speaking;
     },
     playAnim: playAnimation,
     playAnimation,
+    setAnimSpeed,
     faceTarget,
     lookAt,
     lookAtPlayer,
     showBubble,
+    hideBubble: () => showBubble(null),
     setProp,
     setSpeaking,
     setJumpOffset,
