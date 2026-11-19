@@ -42,15 +42,29 @@ export class PlayerCamera {
     );
     this.camera.rotation.order = "YXZ";
 
-    // FPS Held-Item Viewmodel mount (parented to camera, requires scene.add(camera))
+    // Dedicated Viewmodel scene + camera rendered in a second depth-cleared pass
+    // so held FPS props NEVER clip into counters, walls, or doorways.
+    this.viewmodelScene = new THREE.Scene();
+    this.viewmodelCamera = new THREE.PerspectiveCamera(
+      aspectSpec.fov,
+      aspectSpec.aspect,
+      0.04,
+      10
+    );
+    this.viewmodelScene.add(new THREE.HemisphereLight(0xfffbe6, 0x776655, 2.0));
+    const vmKeyLight = new THREE.DirectionalLight(0xfff8e7, 1.5);
+    vmKeyLight.position.set(1.5, 2.5, 2.0);
+    this.viewmodelScene.add(vmKeyLight);
+
     this.heldItemMount = new THREE.Group();
     this.heldItemMount.name = "FPSHeldItemMount";
-    this.heldItemMount.position.set(0.28, -0.22, -0.48);
-    this.camera.add(this.heldItemMount);
+    this.heldItemMount.position.set(0.28, -0.22, -0.5);
+    this.viewmodelScene.add(this.heldItemMount);
     this.heldPropMesh = null;
     this.heldPropType = null;
     this.heldEquipPop = 1;
     this.heldUseTimer = 0;
+    this.vmBobTime = 0;
 
     this.orbitControls = new OrbitControls(this.camera, domElement);
     this.orbitControls.enableDamping = true;
@@ -113,13 +127,20 @@ export class PlayerCamera {
     this.camera.aspect = spec.aspect;
     this.camera.fov = spec.fov;
     this.camera.updateProjectionMatrix();
+    this.viewmodelCamera.aspect = spec.aspect;
+    this.viewmodelCamera.fov = spec.fov;
+    this.viewmodelCamera.updateProjectionMatrix();
     // Adjust held viewmodel slightly for narrower 9:16 frame
     if (aspectKey === "9:16") {
       this.heldItemMount.position.set(0.18, -0.24, -0.5);
     } else {
-      this.heldItemMount.position.set(0.28, -0.22, -0.48);
+      this.heldItemMount.position.set(0.28, -0.22, -0.5);
     }
     return spec;
+  }
+
+  hasHeldProp() {
+    return Boolean(this.heldPropMesh);
   }
 
   setInspectionMode(isOrbit) {
@@ -485,11 +506,12 @@ export class PlayerCamera {
 
     this.camera.rotation.set(finalPitch, finalYaw, gestureRoll, "YXZ");
 
-    // Animate bottom-right FPS held prop
+    // Animate bottom-right FPS held prop (deterministic viewmodel pass)
     if (this.heldPropMesh) {
+      this.vmBobTime += dt;
       this.heldEquipPop = Math.min(1, this.heldEquipPop + dt * 6);
       const popScale = easeOutCubic(this.heldEquipPop);
-      const baseScale = this.heldPropType === "emoji_ball" ? 0.45 : 0.72;
+      const baseScale = this.heldPropType === "emoji_ball" ? 0.36 : 0.72;
       this.heldPropMesh.scale.setScalar(baseScale * popScale);
 
       const baseX = this.aspectKey === "9:16" ? 0.18 : 0.28;
@@ -504,8 +526,8 @@ export class PlayerCamera {
       }
       this.heldItemMount.position.set(
         baseX + Math.cos(this.bobPhase * 0.5) * 0.012 * this.bobAmount,
-        baseY + Math.sin(this.bobPhase) * 0.016 * this.bobAmount + Math.sin(performance.now() * 0.003) * 0.005,
-        -0.48 + pokeZ
+        baseY + Math.sin(this.bobPhase) * 0.016 * this.bobAmount + Math.sin(this.vmBobTime * 3.0) * 0.005,
+        -0.5 + pokeZ
       );
       this.heldItemMount.rotation.set(pokePitch, 0, 0);
     }

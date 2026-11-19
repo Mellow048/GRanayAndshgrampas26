@@ -103,6 +103,7 @@ async function bootstrap() {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.24;
+  renderer.autoClear = false;
 
   const initialSize = getStageTargetSize(CONFIG.defaultAspect);
   renderer.setSize(initialSize.width, initialSize.height, false);
@@ -112,7 +113,9 @@ async function bootstrap() {
   const playerCamera = new PlayerCamera(renderer.domElement);
   scene.add(playerCamera.camera);
 
-  // Fullscreen WebGL fade quad on camera so fade-to-black is captured in both live & headless PNG exports
+  // Dedicated fullscreen fade pass rendered after world + FPS viewmodel
+  const fadeScene = new THREE.Scene();
+  const fadeCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const fadeQuadMat = new THREE.MeshBasicMaterial({
     color: 0x000000,
     transparent: true,
@@ -120,11 +123,8 @@ async function bootstrap() {
     depthTest: false,
     depthWrite: false,
   });
-  const fadeQuad = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), fadeQuadMat);
-  fadeQuad.position.set(0, 0, -0.15);
-  fadeQuad.renderOrder = 9999;
-  fadeQuad.visible = false;
-  playerCamera.camera.add(fadeQuad);
+  const fadeQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), fadeQuadMat);
+  fadeScene.add(fadeQuad);
 
   const comedyProps = new ComedyPropManager(scene, SET_MAP);
   const bubbleCache = new ThoughtBubbleCache();
@@ -179,6 +179,8 @@ async function bootstrap() {
     playerCamera.setAspect(aspectKey);
     playerCamera.camera.aspect = width / height;
     playerCamera.camera.updateProjectionMatrix();
+    playerCamera.viewmodelCamera.aspect = width / height;
+    playerCamera.viewmodelCamera.updateProjectionMatrix();
   }
 
   function loadEpisode(epObj) {
@@ -240,13 +242,20 @@ async function bootstrap() {
     camFill.position.y = Math.max(0.8, playerCamera.camera.position.y + 0.1);
 
     const alpha = playerCamera.fadeAlpha;
-    fadeQuad.visible = alpha > 0.002;
     fadeQuadMat.opacity = alpha;
     if (fadeOverlay) {
       fadeOverlay.style.opacity = String(alpha);
     }
 
+    renderer.clear();
     renderer.render(scene, playerCamera.camera);
+    if (playerCamera.mode === "pov" && playerCamera.hasHeldProp()) {
+      renderer.clearDepth();
+      renderer.render(playerCamera.viewmodelScene, playerCamera.viewmodelCamera);
+    }
+    if (alpha > 0.002) {
+      renderer.render(fadeScene, fadeCamera);
+    }
   }
 
   renderFrame();

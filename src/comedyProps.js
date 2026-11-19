@@ -86,11 +86,36 @@ function drawComicBubbleTexture(iconName) {
     ctx.arc(26, 10, 10, 0, Math.PI * 2);
     ctx.fill();
   } else if (spec.draw === "laugh") {
-    ctx.fillStyle = spec.accent;
-    ctx.font = "900 48px ui-sans-serif, system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("XD HA!", 0, 2);
+    // Bold icon-first laughing emoji face (no small text)
+    ctx.fillStyle = "#facc15";
+    ctx.strokeStyle = "#854d0e";
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.arc(0, 0, 42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Happy > < eyes
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = 6;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-24, -18);
+    ctx.lineTo(-10, -10);
+    ctx.lineTo(-24, -2);
+    ctx.moveTo(24, -18);
+    ctx.lineTo(10, -10);
+    ctx.lineTo(24, -2);
+    ctx.stroke();
+    // Big open laughing mouth
+    ctx.fillStyle = "#7f1d1d";
+    ctx.beginPath();
+    ctx.arc(0, 6, 22, 0, Math.PI);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#fb7185";
+    ctx.beginPath();
+    ctx.arc(0, 21, 11, Math.PI, Math.PI * 2);
+    ctx.fill();
   } else if (spec.draw === "cookie") {
     ctx.fillStyle = "#d97706";
     ctx.strokeStyle = "#78350f";
@@ -291,10 +316,30 @@ export function createPropMesh(propType) {
       const bandR = bandL.clone();
       bandR.position.x = 0.24;
 
-      const innerGlow = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 0.36), glow);
-      innerGlow.position.y = 0.34;
+      const innerGlow = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.08, 0.36), glow);
+      innerGlow.position.y = 0.36;
       innerGlow.visible = false;
       innerGlow.name = "ChestGlow";
+
+      // Golden confetti/sparkle burst group inside chest
+      const sparkles = new THREE.Group();
+      sparkles.name = "ChestSparkles";
+      sparkles.visible = false;
+      const sparkColors = [0xfef08a, 0x38bdf8, 0xf472b6, 0x4ade80];
+      for (let i = 0; i < 8; i += 1) {
+        const sMat = new THREE.MeshBasicMaterial({
+          color: sparkColors[i % sparkColors.length],
+        });
+        const sMesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.055, 0), sMat);
+        const angle = (i / 8) * Math.PI * 2;
+        sMesh.userData = {
+          vx: Math.cos(angle) * 0.65,
+          vy: 1.5 + (i % 3) * 0.35,
+          vz: Math.sin(angle) * 0.65,
+        };
+        sMesh.position.set(0, 0.36, 0);
+        sparkles.add(sMesh);
+      }
 
       const lidPivot = new THREE.Group();
       lidPivot.name = "ChestLid";
@@ -308,7 +353,7 @@ export function createPropMesh(propType) {
       lockPlate.position.set(0, 0.0, 0.49);
       lidPivot.add(lid, lidTrim, lockPlate);
 
-      group.add(base, bandL, bandR, innerGlow, lidPivot);
+      group.add(base, bandL, bandR, innerGlow, sparkles, lidPivot);
       break;
     }
 
@@ -317,10 +362,10 @@ export function createPropMesh(propType) {
       const mat = new THREE.MeshStandardMaterial({
         map: tex,
         color: 0xffffff,
-        roughness: 0.35,
+        roughness: 0.3,
       });
-      const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.22, 24, 18), mat);
-      sphere.position.y = 0.22;
+      const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.28, 24, 18), mat);
+      sphere.position.y = 0.28;
       sphere.rotation.y = -Math.PI * 0.5;
       sphere.castShadow = true;
       group.add(sphere);
@@ -426,9 +471,18 @@ export class ComedyPropManager {
       case "open":
         mesh.visible = true;
         state.lidOpen = true;
+        state.sparklePhase = 0;
         {
           const glow = mesh.getObjectByName("ChestGlow");
           if (glow) glow.visible = true;
+          const sparkles = mesh.getObjectByName("ChestSparkles");
+          if (sparkles) {
+            sparkles.visible = true;
+            for (const c of sparkles.children) {
+              c.position.set(0, 0.36, 0);
+              c.scale.setScalar(1);
+            }
+          }
         }
         break;
       case "close":
@@ -436,6 +490,8 @@ export class ComedyPropManager {
         {
           const glow = mesh.getObjectByName("ChestGlow");
           if (glow) glow.visible = false;
+          const sparkles = mesh.getObjectByName("ChestSparkles");
+          if (sparkles) sparkles.visible = false;
         }
         break;
       case "pop_out":
@@ -448,6 +504,14 @@ export class ComedyPropManager {
           const wp = this.waypoints[params.at];
           basePos.set(wp.x, wp.y + (params.yOffset || 0), wp.z);
           mesh.position.copy(basePos);
+        }
+        state.popStartPos = basePos.clone();
+        if (params.to && this.waypoints[params.to]) {
+          const dst = this.waypoints[params.to];
+          state.popEndPos = new THREE.Vector3(dst.x, dst.y + 0.02, dst.z);
+          state.popTravelDur = Math.max(0.6, params.travelDuration || 2.2);
+        } else {
+          state.popEndPos = null;
         }
         break;
       case "bounce":
@@ -471,21 +535,51 @@ export class ComedyPropManager {
       state.phase += dt;
 
       if (state.spin) {
-        mesh.rotation.y += dt * 3.2;
+        mesh.rotation.y += dt * 3.4;
+      }
+
+      if (state.popOut && state.popEndPos) {
+        const u = Math.min(1, state.phase / state.popTravelDur);
+        basePos.lerpVectors(state.popStartPos, state.popEndPos, u);
+        mesh.position.x = basePos.x;
+        mesh.position.z = basePos.z;
       }
 
       if (state.float) {
-        mesh.position.y = basePos.y + Math.sin(state.phase * 3.5) * 0.08;
+        mesh.position.y = basePos.y + Math.sin(state.phase * 3.5) * 0.06;
       } else if (state.bounce) {
-        const popLift = state.popOut ? Math.min(0.45, state.phase * 1.8) : 0;
-        const hop = Math.abs(Math.sin(state.phase * 6.5)) * 0.55;
-        mesh.position.y = basePos.y + Math.max(popLift * 0.25, hop);
+        // Initial dramatic +0.95m spring launch out of chest, then lively bounce
+        const launch =
+          state.popOut && state.phase < 0.75
+            ? Math.sin((state.phase / 0.75) * Math.PI) * 0.95
+            : 0;
+        const hop = Math.abs(Math.sin(state.phase * 6.0)) * 0.58;
+        mesh.position.y = basePos.y + Math.max(launch, hop);
       }
 
       const lid = mesh.getObjectByName("ChestLid");
       if (lid) {
-        const targetAngle = state.lidOpen ? -1.45 : 0;
-        lid.rotation.x += (targetAngle - lid.rotation.x) * Math.min(1, dt * 10);
+        const targetAngle = state.lidOpen ? -1.95 : 0;
+        lid.rotation.x += (targetAngle - lid.rotation.x) * Math.min(1, dt * 12);
+      }
+
+      const sparkles = mesh.getObjectByName("ChestSparkles");
+      if (sparkles && sparkles.visible) {
+        state.sparklePhase = (state.sparklePhase || 0) + dt;
+        const spT = state.sparklePhase;
+        if (spT > 1.35) {
+          sparkles.visible = false;
+        } else {
+          for (const c of sparkles.children) {
+            c.position.set(
+              c.userData.vx * spT,
+              0.36 + c.userData.vy * spT - 1.2 * spT * spT,
+              c.userData.vz * spT
+            );
+            c.rotation.y += dt * 8;
+            c.scale.setScalar(Math.max(0.01, 1 - spT / 1.35));
+          }
+        }
       }
     }
   }

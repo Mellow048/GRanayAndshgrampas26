@@ -1,6 +1,10 @@
 import * as THREE from "three";
 import { CONFIG, SET_MAP } from "./config.js";
 
+const LOCOMOTION_ANIMS = new Set(["walk", "run", "run2", "sneak", "granny_walk"]);
+const PLAYER_PERSONAL_SPACE = 1.3;
+const ACTOR_SEPARATION = 1.05;
+
 /**
  * Deterministic 60Hz POV Episode & Multi-Skit Beat Runner.
  * Supports multi-skit POV JSON (`skits[].beats` with `at` or `after`) and legacy `actions`.
@@ -294,30 +298,88 @@ export class EpisodeRunner {
 
       const dx = segEnd.x - segStart.x;
       const dz = segEnd.z - segStart.z;
-      if (dx * dx + dz * dz > 1e-6) {
+      if (dx * dx + dz * dz > 1e-6 && !m.keepFacing) {
         m.actor.faceTarget(segEnd, 14);
+      }
+
+      // Enforce active LoopRepeat locomotion clip every tick while translating (prevents sliding)
+      const act = m.actor.currentAction;
+      if (
+        m.actor.currentAnimation !== m.anim ||
+        !act ||
+        act.paused ||
+        act.loop !== THREE.LoopRepeat
+      ) {
+        m.actor.playAnim(m.anim, 0.08, m.animSpeed, true);
       }
 
       anyCharMoving = true;
       if (m.anim === "run" || m.anim === "run2") fastestMoveAnim = m.anim;
 
       if (t >= 1) {
-        if (!m.endAnim || m.endAnim === "idle") {
-          m.actor.playAnim("idle", 0.2, null, true);
-        }
+        m.actor.playAnim(m.endAnim || "idle", 0.2, null, true);
         this.activeCharMoves.splice(i, 1);
       }
     }
 
-    // 3. Advance PlayerCamera
+    // 2b. Prevent actors from merging/clipping inside each other
+    const visibleActors = Object.values(this.characters).filter((c) => c.root.visible);
+    for (let i = 0; i < visibleActors.length; i += 1) {
+      for (let j = i + 1; j < visibleActors.length; j += 1) {
+        const a = visibleActors[i].root.position;
+        const b = visibleActors[j].root.position;
+        const dx = b.x - a.x;
+        const dz = b.z - a.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist > 1e-4 && dist < ACTOR_SEPARATION) {
+          const push = (ACTOR_SEPARATION - dist) * 0.5;
+          const nx = dx / dist;
+          const nz = dz / dist;
+          const ax = a.x - nx * push;
+          const az = a.z - nz * push;
+          const bx = b.x + nx * push;
+          const bz = b.z + nz * push;
+          if (!this.house || this.house.isPointInsideWalkable(ax, az)) {
+            a.x = ax;
+            a.z = az;
+          }
+          if (!this.house || this.house.isPointInsideWalkable(bx, bz)) {
+            b.x = bx;
+            b.z = bz;
+          }
+        }
+      }
+    }
+
+    // 3. Advance PlayerCamera & enforce personal space around standing actors
     this.playerCamera?.update(dt, this.resolver);
+    if (this.playerCamera && this.playerCamera.mode === "pov") {
+      const pPos = this.playerCamera.playerPos;
+      for (const actor of visibleActors) {
+        const dx = pPos.x - actor.root.position.x;
+        const dz = pPos.z - actor.root.position.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist > 1e-4 && dist < PLAYER_PERSONAL_SPACE) {
+          const nx = dx / dist;
+          const nz = dz / dist;
+          const candX = actor.root.position.x + nx * PLAYER_PERSONAL_SPACE;
+          const candZ = actor.root.position.z + nz * PLAYER_PERSONAL_SPACE;
+          if (!this.house || this.house.isPointInsideWalkable(candX, candZ)) {
+            pPos.x = candX;
+            pPos.z = candZ;
+            this.playerCamera.camera.position.x = candX;
+            this.playerCamera.camera.position.z = candZ;
+          }
+        }
+      }
+    }
     const playerMoving = Boolean(this.playerCamera?.isWalking);
 
-    // 4. Update Characters (with live player camera world position for eye contact)
-    const playerCamPos = this.playerCamera?.camera?.position || null;
-    for (const char of Object.values(this.characters)) {
-      if (!char.root.visible) continue;
-      char.update(dt, playerCamPos);
+    // 4. Update Characters (with live player camera & viewport for facing + bubble clamp)
+    const playerCam = this.playerCamera?.camera || null;
+    const playerCamPos = playerCam?.position || null;
+    for (const char of visibleActors) {
+      char.update(dt, playerCamPos, playerCam);
     }
 
     // 5. Update 3D Comedy Props
@@ -362,8 +424,15 @@ export class EpisodeRunner {
         y: this.playerCamera.playerPos.y,
         z: this.playerCamera.playerPos.z,
       };
-      const to = this.resolveWaypoint(ev.to);
-      const points = this.computePath(from, to);
+      const stops = [...(ev.via || []), ev.to];
+      let points = [];
+      let cursor = from;
+      for (const stop of stops) {
+        const dst = this.resolveWaypoint(stop);
+        const seg = this.computePath(cursor, dst);
+        points = points.length === 0 ? seg : [...points, ...seg.slice(1)];
+        cursor = dst;
+      }
       this.playerCamera.startWalk({
         points,
         duration: ev.duration ?? 2.0,
@@ -446,8 +515,15 @@ export class EpisodeRunner {
             y: actor.root.position.y,
             z: actor.root.position.z,
           };
-      const to = this.resolveWaypoint(ev.to);
-      const points = this.computePath(from, to);
+      const stops = [...(ev.via || []), ev.to];
+      let points = [];
+      let cursor = from;
+      for (const stop of stops) {
+        const dst = this.resolveWaypoint(stop);
+        const seg = this.computePath(cursor, dst);
+        points = points.length === 0 ? seg : [...points, ...seg.slice(1)];
+        cursor = dst;
+      }
 
       const cumLengths = [0];
       let totalLength = 0;
@@ -456,9 +532,18 @@ export class EpisodeRunner {
         cumLengths.push(totalLength);
       }
 
-      const anim = ev.anim || "walk";
+      const duration = Math.max(0.05, ev.duration ?? 1.5);
+      const worldSpeed = totalLength / duration;
+      const requestedAnim = ev.anim || "walk";
+      const anim = LOCOMOTION_ANIMS.has(requestedAnim) ? requestedAnim : "walk";
+      const animSpeed =
+        ev.speed ?? THREE.MathUtils.clamp(worldSpeed / 1.35, 0.8, 1.75);
+
+      if (!ev.keepFacing) {
+        actor.lookAtPlayer(false);
+      }
       actor.root.position.set(from.x, from.y ?? 0, from.z);
-      actor.playAnim(anim, 0.14, ev.speed ?? null, true);
+      actor.playAnim(anim, 0.14, animSpeed, true);
 
       this.activeCharMoves.push({
         actor,
@@ -466,9 +551,11 @@ export class EpisodeRunner {
         cumLengths,
         totalLength,
         anim,
+        animSpeed,
+        keepFacing: Boolean(ev.keepFacing),
         endAnim: ev.endAnim || "idle",
         startTime: ev.at,
-        duration: Math.max(0.05, ev.duration ?? 1.5),
+        duration,
       });
       return;
     }
@@ -476,13 +563,17 @@ export class EpisodeRunner {
     if (type === "char_face" || type === "face") {
       const actor = this.characters[ev.actor];
       if (!actor) return;
+      const speed = ev.instant ? 999 : 14;
       if (typeof ev.followPlayer === "boolean") {
         actor.lookAtPlayer(ev.followPlayer);
+        if (ev.followPlayer && ev.instant && this.playerCamera) {
+          actor.lookAt(this.playerCamera.camera.position);
+        }
       }
       if (ev.target === "player" && this.playerCamera) {
-        actor.faceTarget(this.playerCamera.camera.position, 12);
+        actor.faceTarget(this.playerCamera.camera.position, speed);
       } else if (ev.target) {
-        actor.faceTarget(this.resolveWaypoint(ev.target), 12);
+        actor.faceTarget(this.resolveWaypoint(ev.target), speed);
       }
       return;
     }
@@ -506,7 +597,9 @@ export class EpisodeRunner {
 
     if (type === "prop_action") {
       this.comedyProps?.performAction(ev.prop, ev.action, {
-        at: ev.waypoint || ev.to,
+        at: ev.waypoint,
+        to: ev.to,
+        travelDuration: ev.travelDuration,
         yOffset: ev.yOffset ?? 0.25,
       });
       return;
