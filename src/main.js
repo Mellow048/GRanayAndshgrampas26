@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CONFIG, DEFAULT_EPISODE, SET_MAP } from "./config.js";
+import { CONFIG, DEFAULT_EPISODE, EPISODE_PRESETS, SET_MAP } from "./config.js";
 import { loadCharacterTemplate, loadHouse } from "./assetLoader.js";
 import { AnimationLibrary } from "./animationLibrary.js";
 import { SfxEngine } from "./sfxEngine.js";
@@ -41,6 +41,9 @@ function setupLighting(scene) {
 }
 
 async function bootstrap() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const isHeadless = urlParams.get("headless") === "1";
+
   const stageEl = document.getElementById("shortsStage");
   const loadingOverlay = document.getElementById("loadingOverlay");
   const loadingText = document.getElementById("loadingText");
@@ -54,6 +57,7 @@ async function bootstrap() {
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
     powerPreference: "high-performance",
+    preserveDrawingBuffer: isHeadless,
   });
   renderer.setPixelRatio(1);
   renderer.setSize(CONFIG.exportWidth, CONFIG.exportHeight, false);
@@ -74,13 +78,16 @@ async function bootstrap() {
 
   try {
     updateLoading("Loading Granny 1 House & Character Rigs...");
-    const [house, grannyTpl, grandpaTpl] = await Promise.all([
+    const preloadTasks = [
       loadHouse(),
       loadCharacterTemplate("granny"),
       loadCharacterTemplate("grandpa"),
       animationLibrary.loadAllTemplates(),
-      sfxEngine.preloadAll(),
-    ]);
+    ];
+    if (!isHeadless) {
+      preloadTasks.push(sfxEngine.preloadAll());
+    }
+    const [house, grannyTpl, grandpaTpl] = await Promise.all(preloadTasks);
 
     scene.add(house.root);
 
@@ -125,8 +132,54 @@ async function bootstrap() {
       initialEpisode: DEFAULT_EPISODE,
     });
 
+    // Expose deterministic cloud export API for scripts/export-video.mjs (GitHub Actions)
+    window.__GRANNY_STUDIO__ = {
+      ready: true,
+      presets: EPISODE_PRESETS,
+      beginHeadlessExport({ episode = DEFAULT_EPISODE, pacerEnabled = true } = {}) {
+        episodeRunner.pause();
+        cameraDirector.setInspectionMode(false);
+        studioUI.setCalibratorEnabled(false);
+        sfxEngine.setPacerEnabled(pacerEnabled);
+        sfxEngine.startEventCapture();
+        episodeRunner.loadEpisode(episode);
+        episodeRunner.resetToStart({ emitInitialSfx: true });
+        studioUI.syncCameraButtons();
+        return {
+          title: episode.title || "granny-short",
+          duration: episode.duration,
+        };
+      },
+      renderExportFrame(stepDt = 0) {
+        if (stepDt > 0 && !episodeRunner.ended) {
+          episodeRunner.accumulator += stepDt;
+          while (episodeRunner.accumulator >= CONFIG.fixedDt && !episodeRunner.ended) {
+            episodeRunner._stepFixed(CONFIG.fixedDt, { silent: false });
+            episodeRunner.accumulator -= CONFIG.fixedDt;
+          }
+          if (episodeRunner.accumulator > 1e-6 && !episodeRunner.ended) {
+            episodeRunner._stepFixed(episodeRunner.accumulator, { silent: false });
+            episodeRunner.accumulator = 0;
+          }
+        }
+        renderer.render(scene, cameraDirector.camera);
+        studioUI.captureCompositeFrame(true);
+        return {
+          simTime: episodeRunner.simTime,
+          duration: episodeRunner.episode?.duration || 0,
+          ended: episodeRunner.ended,
+          dataUrl: studioUI.compositeCanvas.toDataURL("image/png"),
+        };
+      },
+      finishHeadlessExport() {
+        return sfxEngine.stopEventCapture();
+      },
+    };
+
     episodeRunner.loadEpisode(DEFAULT_EPISODE);
-    episodeRunner.play();
+    if (!isHeadless) {
+      episodeRunner.play();
+    }
     studioUI.syncPlayButton();
     studioUI.syncCameraButtons();
     studioUI.setStatus(
@@ -134,31 +187,36 @@ async function bootstrap() {
     );
     if (loadingOverlay) loadingOverlay.hidden = true;
 
-    // Unlock Web Audio cleanly on first user interaction anywhere in the studio
-    const unlockAudio = () => {
-      sfxEngine.resume().then(() => {
-        studioUI.setStatus(`Audio active — "${episodeRunner.episode?.title || ""}"`);
-      }).catch(() => {});
-      window.removeEventListener("pointerdown", unlockAudio);
-      window.removeEventListener("keydown", unlockAudio);
-    };
-    window.addEventListener("pointerdown", unlockAudio, { once: true });
-    window.addEventListener("keydown", unlockAudio, { once: true });
+    if (!isHeadless) {
+      // Unlock Web Audio cleanly on first user interaction anywhere in the studio
+      const unlockAudio = () => {
+        sfxEngine.resume().then(() => {
+          studioUI.setStatus(`Audio active — "${episodeRunner.episode?.title || ""}"`);
+        }).catch(() => {});
+        window.removeEventListener("pointerdown", unlockAudio);
+        window.removeEventListener("keydown", unlockAudio);
+      };
+      window.addEventListener("pointerdown", unlockAudio, { once: true });
+      window.addEventListener("keydown", unlockAudio, { once: true });
 
-    let lastNow = performance.now();
-    function frameLoop(now) {
+      let lastNow = performance.now();
+      function frameLoop(now) {
+        requestAnimationFrame(frameLoop);
+        const rawDt = Math.min(CONFIG.maxFrameDt, (now - lastNow) / 1000);
+        lastNow = now;
+
+        episodeRunner.update(rawDt);
+        renderer.render(scene, cameraDirector.camera);
+        studioUI.captureCompositeFrame();
+      }
+
       requestAnimationFrame(frameLoop);
-      const rawDt = Math.min(CONFIG.maxFrameDt, (now - lastNow) / 1000);
-      lastNow = now;
-
-      episodeRunner.update(rawDt);
+    } else {
       renderer.render(scene, cameraDirector.camera);
-      studioUI.captureCompositeFrame();
     }
-
-    requestAnimationFrame(frameLoop);
   } catch (err) {
     console.error("[Granny 3D Cartoon Studio] Startup failed:", err);
+    window.__GRANNY_STUDIO_ERROR__ = err.message;
     updateLoading(`Startup Error: ${err.message}`);
   }
 }

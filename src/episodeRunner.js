@@ -96,7 +96,7 @@ export class EpisodeRunner {
     this.resetToStart();
   }
 
-  resetToStart() {
+  resetToStart({ emitInitialSfx = false } = {}) {
     if (!this.episode) return;
 
     this.sfxEngine.stopAll();
@@ -128,7 +128,8 @@ export class EpisodeRunner {
     }
 
     // Trigger t=0 events immediately so initial frame is already posed & framed
-    this._dispatchEventsUpTo(0, { silent: true });
+    this._dispatchEventsUpTo(0, { silent: !emitInitialSfx });
+    this._updateDialogues();
     this.cameraDirector.update(0, this._resolver);
 
     if (this.onTimeUpdate) {

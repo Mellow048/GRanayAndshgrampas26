@@ -21,6 +21,25 @@ export class SfxEngine {
     this.lastPacerTime = -Infinity;
     this.stepAccumulator = 0;
     this.nextGapThreshold = 1.45;
+
+    // Offline deterministic audio log for GitHub Actions / FFmpeg export
+    this.exportMode = false;
+    this.recordedEvents = [];
+  }
+
+  startEventCapture() {
+    this.exportMode = true;
+    this.recordedEvents = [];
+    this.lastPlayedByKey.clear();
+  }
+
+  stopEventCapture() {
+    this.exportMode = false;
+    return [...this.recordedEvents];
+  }
+
+  getCapturedEvents() {
+    return [...this.recordedEvents];
   }
 
   ensureContext() {
@@ -133,9 +152,37 @@ export class SfxEngine {
       maxDuration = null,
     } = {}
   ) {
-    const buffer = this.buffers.get(key);
     const meta = SFX_MANIFEST[key];
-    if (!buffer || !meta) return false;
+    if (!meta) return false;
+
+    const randomJitter =
+      pitchJitter > 0 ? (Math.random() * 2 - 1) * pitchJitter : 0;
+    const effectivePitch = Math.max(0.5, Math.min(2.0, pitch + randomJitter));
+    const targetVol = volume ?? meta.defaultVolume ?? 0.7;
+
+    if (this.exportMode) {
+      const clockTime = simTime ?? 0;
+      const prevKeyTime = this.lastPlayedByKey.get(key) ?? -Infinity;
+      if (clockTime - prevKeyTime < cooldown) {
+        return false;
+      }
+      this.lastPlayedByKey.set(key, clockTime);
+      if (simTime !== null) {
+        this.lastAnySfxTime = simTime;
+      }
+      this.recordedEvents.push({
+        time: Math.max(0, clockTime),
+        key,
+        path: meta.path,
+        volume: targetVol,
+        pitch: effectivePitch,
+        maxDuration,
+      });
+      return true;
+    }
+
+    const buffer = this.buffers.get(key);
+    if (!buffer) return false;
 
     const ctx = this.ensureContext();
     if (ctx.state !== "running") {
@@ -150,13 +197,9 @@ export class SfxEngine {
 
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-
-    const randomJitter =
-      pitchJitter > 0 ? (Math.random() * 2 - 1) * pitchJitter : 0;
-    source.playbackRate.value = Math.max(0.5, Math.min(2.0, pitch + randomJitter));
+    source.playbackRate.value = effectivePitch;
 
     const gainNode = ctx.createGain();
-    const targetVol = volume ?? meta.defaultVolume ?? 0.7;
     gainNode.gain.value = targetVol;
 
     source.connect(gainNode);
