@@ -1,503 +1,471 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Granny 3D Cartoon Studio — 9:16 Shorts Engine</title>
-  <link rel="icon" href="data:," />
-  <style>
-    :root {
-      color-scheme: dark;
-      --bg: #070b14;
-      --panel: #0f172a;
-      --panel-border: rgba(148, 163, 184, 0.2);
-      --accent: #f97316;
-      --accent-hover: #fb923c;
-      --cyan: #38bdf8;
-      --text: #f8fafc;
-      --muted: #94a3b8;
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    html,
-    body {
-      height: 100%;
-      background: radial-gradient(circle at top left, #172554 0%, var(--bg) 52%);
-      color: var(--text);
-      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      overflow: hidden;
-    }
-
-    .studio-shell {
-      display: grid;
-      grid-template-columns: minmax(340px, 470px) 1fr;
-      gap: 16px;
-      height: 100vh;
-      padding: 16px;
-    }
-
-    /* 9:16 Vertical Shorts Stage */
-    .stage-column {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 0;
-    }
-
-    .shorts-stage {
-      position: relative;
-      height: 100%;
-      max-height: calc(100vh - 32px);
-      aspect-ratio: 9 / 16;
-      max-width: 100%;
-      border-radius: 20px;
-      overflow: hidden;
-      background: #020617;
-      border: 2px solid rgba(255, 255, 255, 0.14);
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
-    }
-
-    .shorts-canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-    }
-
-    .shorts-badge {
-      position: absolute;
-      top: 12px;
-      left: 12px;
-      background: rgba(15, 23, 42, 0.72);
-      border: 1px solid rgba(255, 255, 255, 0.16);
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      color: #e2e8f0;
-      pointer-events: none;
-    }
-
-    /* TikTok / Shorts Bold Caption Overlay */
-    .caption-overlay {
-      position: absolute;
-      left: 18px;
-      right: 18px;
-      bottom: 13%;
-      text-align: center;
-      pointer-events: none;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .caption-overlay[hidden] {
-      display: none;
-    }
-
-    .caption-speaker {
-      display: inline-block;
-      background: var(--accent);
-      color: #090d16;
-      font-weight: 900;
-      font-size: 12px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      padding: 3px 10px;
-      border-radius: 6px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
-    }
-
-    .caption-text {
-      font-weight: 900;
-      font-size: clamp(20px, 2.7vh, 28px);
-      line-height: 1.15;
-      text-transform: uppercase;
-      color: #fef08a;
-      -webkit-text-stroke: 2px #090d16;
-      paint-order: stroke fill;
-      text-shadow:
-        0 3px 0 #090d16,
-        -2px -2px 0 #090d16,
-        2px -2px 0 #090d16,
-        -2px 2px 0 #090d16,
-        2px 2px 0 #090d16,
-        0 6px 18px rgba(0, 0, 0, 0.85);
-    }
-
-    .loading-overlay {
-      position: absolute;
-      inset: 0;
-      background: rgba(2, 6, 23, 0.88);
-      display: grid;
-      place-items: center;
-      text-align: center;
-      padding: 24px;
-      z-index: 10;
-    }
-
-    .loading-overlay[hidden] {
-      display: none;
-    }
-
-    .loading-card {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .spinner {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      border: 3px solid rgba(56, 189, 248, 0.25);
-      border-top-color: var(--accent);
-      animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    /* Studio Control Column */
-    .controls-column {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      min-height: 0;
-      overflow-y: auto;
-      padding-right: 4px;
-    }
-
-    .panel {
-      background: rgba(15, 23, 42, 0.88);
-      border: 1px solid var(--panel-border);
-      border-radius: 14px;
-      padding: 12px 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-    }
-
-    .panel-title {
-      font-size: 12px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: #cbd5e1;
-    }
-
-    .row {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 8px;
-    }
-
-    button {
-      appearance: none;
-      border: 1px solid rgba(148, 163, 184, 0.28);
-      background: #1e293b;
-      color: var(--text);
-      font-size: 12px;
-      font-weight: 700;
-      padding: 7px 12px;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background 140ms ease, border-color 140ms ease, transform 80ms ease;
-    }
-
-    button:hover {
-      background: #334155;
-    }
-
-    button:active {
-      transform: scale(0.97);
-    }
-
-    button.primary {
-      background: var(--accent);
-      border-color: rgba(251, 146, 60, 0.6);
-      color: #090d16;
-    }
-
-    button.primary:hover {
-      background: var(--accent-hover);
-    }
-
-    button.is-active {
-      background: var(--cyan);
-      color: #090d16;
-      border-color: #7dd3fc;
-    }
-
-    button.record-btn {
-      background: #dc2626;
-      border-color: #f87171;
-      color: #fff;
-      margin-left: auto;
-    }
-
-    button.record-btn:hover {
-      background: #ef4444;
-    }
-
-    button.record-btn.is-recording {
-      animation: pulseRec 1s ease-in-out infinite;
-    }
-
-    @keyframes pulseRec {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
-      50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
-    }
-
-    .scrubber-row {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 10px;
-      align-items: center;
-    }
-
-    input[type="range"] {
-      accent-color: var(--accent);
-      cursor: pointer;
-      width: 100%;
-    }
-
-    .readout {
-      font-variant-numeric: tabular-nums;
-      font-size: 12px;
-      color: #e2e8f0;
-      font-weight: 600;
-      min-width: 84px;
-      text-align: right;
-    }
-
-    label.inline {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      color: #cbd5e1;
-      cursor: pointer;
-    }
-
-    select {
-      background: #0b1120;
-      color: var(--text);
-      border: 1px solid rgba(148, 163, 184, 0.3);
-      border-radius: 8px;
-      padding: 6px 8px;
-      font-size: 12px;
-    }
-
-    .calibrator-controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-      padding-top: 4px;
-      border-top: 1px solid rgba(148, 163, 184, 0.14);
-    }
-
-    .calibrator-controls[hidden] {
-      display: none;
-    }
-
-    .hint {
-      font-size: 11px;
-      color: var(--muted);
-    }
-
-    .status-banner {
-      font-size: 12px;
-      color: #bae6fd;
-      background: rgba(14, 116, 144, 0.22);
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      border-radius: 8px;
-      padding: 7px 10px;
-    }
-
-    .status-banner.is-error {
-      color: #fecaca;
-      background: rgba(185, 28, 28, 0.24);
-      border-color: rgba(248, 113, 113, 0.4);
-    }
-
-    .json-panel {
-      flex: 1 1 280px;
-      min-height: 220px;
-    }
-
-    #episodeJsonInput {
-      width: 100%;
-      flex: 1;
-      min-height: 200px;
-      resize: vertical;
-      background: #060a13;
-      color: #e2e8f0;
-      border: 1px solid rgba(148, 163, 184, 0.24);
-      border-radius: 10px;
-      padding: 10px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 12px;
-      line-height: 1.45;
-    }
-
-    .sfx-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
-      gap: 6px;
-      max-height: 145px;
-      overflow-y: auto;
-    }
-
-    .sfx-btn {
-      font-size: 11px;
-      padding: 5px 7px;
-      text-transform: capitalize;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    @media (max-width: 920px) {
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Granny POV 3D Cartoon Studio</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+        }
+      }
+    </script>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #1e293b;
+        --panel-alt: #0f172a;
+        --border: #334155;
+        --text: #f8fafc;
+        --muted: #94a3b8;
+        --accent: #f59e0b;
+        --accent-2: #38bdf8;
+        --danger: #ef4444;
+        --ok: #22c55e;
+      }
+      * {
+        box-sizing: border-box;
+      }
       html,
       body {
-        overflow: auto;
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        overflow: hidden;
       }
-      .studio-shell {
-        grid-template-columns: 1fr;
-        height: auto;
+      .app-shell {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
       }
-      .shorts-stage {
-        height: auto;
-        width: min(100%, 420px);
+      .topbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+        z-index: 10;
       }
-    }
-  </style>
+      .brand {
+        font-weight: 800;
+        font-size: 14px;
+        color: var(--accent);
+        letter-spacing: 0.3px;
+        margin-right: 4px;
+      }
+      button,
+      select {
+        background: #334155;
+        color: var(--text);
+        border: 1px solid #475569;
+        border-radius: 6px;
+        padding: 5px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.12s ease, border-color 0.12s ease;
+      }
+      button:hover,
+      select:hover {
+        background: #475569;
+      }
+      button.primary {
+        background: var(--accent);
+        color: #111827;
+        border-color: #d97706;
+      }
+      button.primary:hover {
+        background: #fbbf24;
+      }
+      button.active {
+        background: var(--accent-2);
+        color: #082f49;
+        border-color: #0284c7;
+      }
+      .timeline-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1;
+        min-width: 180px;
+      }
+      #timelineSlider {
+        flex: 1;
+        accent-color: var(--accent);
+      }
+      #timeReadout {
+        font-variant-numeric: tabular-nums;
+        font-size: 12px;
+        color: var(--muted);
+        min-width: 82px;
+        text-align: right;
+      }
+      .workspace {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+        position: relative;
+      }
+      #stageContainer {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #020617;
+        position: relative;
+        overflow: hidden;
+      }
+      .studio-canvas {
+        display: block;
+        border-radius: 6px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+      }
+      #fadeOverlay {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.04s linear;
+        z-index: 4;
+      }
+      #studioPanel {
+        width: 350px;
+        background: var(--panel);
+        border-left: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      #studioPanel.collapsed {
+        display: none;
+      }
+      .panel-tabs {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 4px;
+        padding: 8px;
+        background: var(--panel-alt);
+        border-bottom: 1px solid var(--border);
+      }
+      .panel-tabs button {
+        padding: 6px 4px;
+        font-size: 11px;
+      }
+      .panel-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .card {
+        background: var(--panel-alt);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .card h3 {
+        margin: 0;
+        font-size: 12px;
+        color: var(--accent-2);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .btn-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 5px;
+      }
+      .btn-grid-2 {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 5px;
+      }
+      .sfx-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 5px;
+      }
+      .sfx-btn {
+        font-size: 11px;
+        text-align: left;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .wp-list {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .wp-btn {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 11px;
+        padding: 6px 8px;
+      }
+      .wp-btn span {
+        color: var(--muted);
+        font-family: monospace;
+      }
+      #coordReadout {
+        font-family: monospace;
+        font-size: 11px;
+        background: #020617;
+        padding: 6px 8px;
+        border-radius: 5px;
+        border: 1px solid var(--border);
+        word-break: break-all;
+      }
+      #episodeEditor {
+        width: 100%;
+        min-height: 360px;
+        background: #020617;
+        color: #e2e8f0;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        resize: vertical;
+      }
+      .hint {
+        font-size: 11px;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+      #statusToast {
+        position: fixed;
+        bottom: 16px;
+        left: 16px;
+        background: #1e293b;
+        border: 1px solid var(--accent-2);
+        color: var(--text);
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        opacity: 0;
+        transform: translateY(8px);
+        transition: all 0.16s ease;
+        pointer-events: none;
+        z-index: 50;
+      }
+      #statusToast.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      #statusToast.error {
+        border-color: var(--danger);
+        color: #fecaca;
+      }
+      #loadingOverlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(2, 6, 23, 0.94);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        z-index: 100;
+        transition: opacity 0.2s ease;
+      }
+      #loadingOverlay.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .progress-track {
+        width: 280px;
+        height: 10px;
+        background: #1e293b;
+        border-radius: 999px;
+        overflow: hidden;
+        border: 1px solid #334155;
+      }
+      #loadingBar {
+        width: 0%;
+        height: 100%;
+        background: linear-gradient(90deg, var(--accent), var(--accent-2));
+        transition: width 0.12s ease;
+      }
+      body.headless-mode .topbar,
+      body.headless-mode #studioPanel,
+      body.headless-mode #statusToast {
+        display: none !important;
+      }
+      body.headless-mode #stageContainer {
+        background: #000;
+      }
+      body.headless-mode .studio-canvas {
+        border-radius: 0;
+        box-shadow: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loadingOverlay">
+      <div style="font-weight: 800; font-size: 18px; color: #f59e0b;">
+        Granny POV 3D Cartoon Studio
+      </div>
+      <div class="progress-track"><div id="loadingBar"></div></div>
+      <div id="loadingText" style="font-size: 13px; color: #cbd5e1;">
+        Booting...
+      </div>
+    </div>
 
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-      }
-    }
-  </script>
-</head>
-<body>
-  <div class="studio-shell">
-    <!-- 9:16 Vertical Shorts Stage -->
-    <section class="stage-column">
-      <div id="shortsStage" class="shorts-stage">
-        <div class="shorts-badge">9:16 SHORTS • 720×1280</div>
+    <div class="app-shell">
+      <header class="topbar">
+        <span class="brand">GRANNY POV STUDIO</span>
+        <select id="presetSelect" title="Select Episode Preset"></select>
+        <button id="playPauseBtn" class="primary">Play</button>
+        <button id="stopBtn">Stop</button>
 
-        <div id="captionOverlay" class="caption-overlay" hidden>
-          <span id="captionSpeaker" class="caption-speaker"></span>
-          <div id="captionText" class="caption-text"></div>
+        <div class="timeline-wrap">
+          <input id="timelineSlider" type="range" min="0" max="44" step="0.05" value="0" />
+          <span id="timeReadout">0.0s / 44.0s</span>
         </div>
 
-        <div id="loadingOverlay" class="loading-overlay">
-          <div class="loading-card">
-            <div class="spinner"></div>
-            <div id="loadingText">Loading Granny 3D Cartoon Studio...</div>
+        <button id="aspectToggleBtn">Aspect: 16:9</button>
+        <button id="camModeBtn">Cam: POV</button>
+        <button id="pacerToggleBtn" class="active">SFX Pacer: ON</button>
+        <button id="muteBtn">Mute</button>
+        <button id="exportBtn">Record WebM</button>
+        <button id="panelToggleBtn">Panel</button>
+      </header>
+
+      <main class="workspace">
+        <section id="stageContainer">
+          <div id="fadeOverlay"></div>
+        </section>
+
+        <aside id="studioPanel">
+          <div class="panel-tabs">
+            <button type="button" data-tab="director" class="active">Director</button>
+            <button type="button" data-tab="sfx">Soundboard</button>
+            <button type="button" data-tab="waypoints">Waypoints</button>
+            <button type="button" data-tab="json">JSON Skits</button>
           </div>
-        </div>
-      </div>
-    </section>
 
-    <!-- Studio Controls & Live JSON Editor -->
-    <aside class="controls-column">
-      <div class="panel">
-        <div class="panel-header">
-          <span class="panel-title">Granny 3D Cartoon Studio</span>
-          <button id="recordBtn" class="record-btn" type="button">Record Episode (WebM)</button>
-        </div>
+          <div class="panel-body">
+            <!-- Director Tab -->
+            <div data-tab-panel="director" class="card-stack">
+              <div class="card">
+                <h3>Player POV Gestures & Held Prop</h3>
+                <div class="btn-grid-2">
+                  <button type="button" data-player-gesture="nod_yes">Nod Yes</button>
+                  <button type="button" data-player-gesture="shake_no">Shake No</button>
+                  <button type="button" data-player-gesture="shake_panic">Panic Shake</button>
+                  <button type="button" data-player-gesture="peek_lean">Peek Lean</button>
+                </div>
+                <div class="btn-grid">
+                  <button type="button" data-player-hold="golden_key">Hold Key</button>
+                  <button type="button" data-player-hold="toy_blaster">Hold Blaster</button>
+                  <button type="button" data-player-hold="emoji_ball">Hold Emoji</button>
+                  <button type="button" data-player-hold="cookie_jar">Hold Cookies</button>
+                  <button type="button" data-player-hold="none">Empty Hands</button>
+                </div>
+              </div>
 
-        <div class="row">
-          <button id="playPauseBtn" class="primary" type="button">Pause</button>
-          <button id="restartBtn" type="button">Restart</button>
-          <button id="orbitToggleBtn" type="button">Cam: Director</button>
-          <button id="calibratorToggleBtn" type="button">Waypoint Calibrator</button>
-        </div>
+              <div class="card">
+                <h3>Granny Pose & Thought Bubble</h3>
+                <div class="btn-grid">
+                  <button type="button" data-char-anim="granny:idle">Idle</button>
+                  <button type="button" data-char-anim="granny:walk">Walk</button>
+                  <button type="button" data-char-anim="granny:run">Run</button>
+                  <button type="button" data-char-anim="granny:sneak">Sneak</button>
+                  <button type="button" data-char-anim="granny:jump">Jump</button>
+                  <button type="button" data-char-anim="granny:punch">Punch</button>
+                  <button type="button" data-char-anim="granny:laugh">Laugh</button>
+                  <button type="button" data-char-anim="granny:terrified">Scared</button>
+                </div>
+                <div class="btn-grid">
+                  <button type="button" data-char-bubble="granny:angry">Bubble: Angry</button>
+                  <button type="button" data-char-bubble="granny:exclamation">Bubble: !</button>
+                  <button type="button" data-char-bubble="granny:question">Bubble: ?</button>
+                </div>
+              </div>
 
-        <div class="scrubber-row">
-          <input id="timelineScrubber" type="range" min="0" max="6" step="0.05" value="0" />
-          <span id="timeReadout" class="readout">0.0s / 6.0s</span>
-        </div>
+              <div class="card">
+                <h3>Grandpa Pose & Thought Bubble</h3>
+                <div class="btn-grid">
+                  <button type="button" data-char-anim="grandpa:idle">Idle</button>
+                  <button type="button" data-char-anim="grandpa:walk">Walk</button>
+                  <button type="button" data-char-anim="grandpa:run">Run</button>
+                  <button type="button" data-char-anim="grandpa:sneak">Sneak</button>
+                  <button type="button" data-char-anim="grandpa:jump">Jump</button>
+                  <button type="button" data-char-anim="grandpa:laugh">Laugh</button>
+                  <button type="button" data-char-anim="grandpa:terrified">Scared</button>
+                  <button type="button" data-char-anim="grandpa:sit">Sit</button>
+                </div>
+                <div class="btn-grid">
+                  <button type="button" data-char-bubble="grandpa:key">Bubble: Key</button>
+                  <button type="button" data-char-bubble="grandpa:laugh">Bubble: Haha</button>
+                  <button type="button" data-char-bubble="grandpa:heart">Bubble: Heart</button>
+                </div>
+              </div>
+            </div>
 
-        <div class="row">
-          <label class="inline" style="flex: 1; min-width: 180px;">
-            <span>Speed</span>
-            <input id="speedSlider" type="range" min="0.5" max="2" step="0.05" value="1" />
-            <span id="speedReadout" class="readout" style="min-width: 44px;">1x</span>
-          </label>
-          <label class="inline">
-            <input id="pacerToggle" type="checkbox" checked />
-            <span>Cartoon SFX Pacer (1–2s)</span>
-          </label>
-          <label class="inline">
-            <input id="muteToggle" type="checkbox" />
-            <span>Mute</span>
-          </label>
-        </div>
+            <!-- Soundboard Tab -->
+            <div data-tab-panel="sfx" hidden>
+              <div class="card">
+                <h3>25 SFX & BGM Soundboard</h3>
+                <button type="button" id="stopBgmBtn">Stop Looping BGM</button>
+                <div id="soundboardGrid" class="sfx-grid"></div>
+              </div>
+            </div>
 
-        <div id="calibratorControls" class="calibrator-controls" hidden>
-          <label class="inline">
-            <span>Waypoint</span>
-            <select id="waypointSelect"></select>
-          </label>
-          <label class="inline">
-            <span>Floor</span>
-            <select id="floorSelect">
-              <option value="ground">Ground Floor</option>
-              <option value="upper">2nd Floor</option>
-            </select>
-          </label>
-          <button id="copySetMapBtn" type="button">Copy SET_MAP JSON</button>
-          <span class="hint">Click house floor in Free Orbit to reposition marker.</span>
-        </div>
+            <!-- Waypoints Tab -->
+            <div data-tab-panel="waypoints" hidden>
+              <div class="card">
+                <h3>Live Position (WASD + Q/E when Paused)</h3>
+                <div id="coordReadout">{ "x": 0, "y": 0, "z": 0 }</div>
+                <button type="button" id="copyCoordBtn">Copy Coordinates</button>
+              </div>
+              <div class="card">
+                <h3>Indoor SET_MAP Waypoints (Click to Teleport)</h3>
+                <div id="waypointList" class="wp-list"></div>
+              </div>
+            </div>
 
-        <div id="statusBanner" class="status-banner">Initializing studio...</div>
-      </div>
-
-      <div class="panel json-panel">
-        <div class="panel-header">
-          <span class="panel-title">Episode Script (JSON)</span>
-          <div class="row">
-            <select id="presetSelect" aria-label="Episode Preset"></select>
-            <button id="applyJsonBtn" class="primary" type="button">Apply JSON</button>
+            <!-- JSON Skits Tab -->
+            <div data-tab-panel="json" hidden>
+              <div class="card">
+                <h3>Multi-Skit POV Episode JSON</h3>
+                <div class="hint">
+                  Use <code>skits[].beats</code> with <code>at</code> or <code>after</code>,
+                  <code>player_walk</code>, <code>player_look</code>, <code>player_gesture</code>,
+                  <code>player_crouch</code>, <code>player_hold</code>, <code>char_move</code>,
+                  <code>char_anim</code>, <code>char_bubble</code>, <code>prop_action</code>,
+                  <code>bgm</code>, and <code>sfx</code>.
+                </div>
+                <textarea id="episodeEditor" spellcheck="false"></textarea>
+                <button type="button" id="applyJsonBtn" class="primary">
+                  Apply JSON & Play
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-        <textarea id="episodeJsonInput" spellcheck="false" aria-label="Episode JSON Script"></textarea>
-      </div>
+        </aside>
+      </main>
+    </div>
 
-      <div class="panel">
-        <div class="panel-header">
-          <span class="panel-title">SFX Test Pad (./SoundEffects)</span>
-        </div>
-        <div id="sfxPadGrid" class="sfx-grid"></div>
-      </div>
-    </aside>
-  </div>
-
-  <script type="module" src="./src/main.js"></script>
-</body>
+    <div id="statusToast"></div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
 </html>

@@ -1,6 +1,6 @@
 /**
- * Centralized configuration, real asset manifests, SFX catalog, house waypoints,
- * and the default 18-second Granny & Grandpa demo episode.
+ * Centralized configuration, real asset manifests, SFX catalog, indoor SET_MAP waypoints,
+ * and built-in POV & Shorts episode presets.
  */
 
 export const CONFIG = {
@@ -9,21 +9,27 @@ export const CONFIG = {
   fixedDt: 1 / 60,
   maxFrameDt: 0.05,
   defaultFadeDuration: 0.18,
-  shortsAspect: 9 / 16,
-  exportWidth: 720,
-  exportHeight: 1280,
+  defaultAspect: "16:9",
+  aspectModes: {
+    "16:9": { width: 1280, height: 720, aspect: 16 / 9, fov: 64, label: "16:9 YouTube POV" },
+    "9:16": { width: 720, height: 1280, aspect: 9 / 16, fov: 56, label: "9:16 Vertical Shorts" },
+  },
+  exportWidth: 1280,
+  exportHeight: 720,
   exportFps: 30,
+  playerEyeHeight: 1.5,
+  playerCrouchHeight: 0.42,
   house: {
     scale: 0.42,
     groundFloorRawY: 13.32,
   },
   sfxPacer: {
     enabledByDefault: true,
-    minIntervalSec: 1.0,
+    minIntervalSec: 1.2,
     maxIntervalSec: 1.85,
-    footstepIntervalWalk: 0.46,
+    footstepIntervalWalk: 0.44,
     footstepIntervalRun: 0.28,
-    footstepIntervalSneak: 0.58,
+    footstepIntervalSneak: 0.56,
     globalCooldownSec: 0.16,
     masterVolume: 0.85,
   },
@@ -108,7 +114,7 @@ export const ASSET_MANIFEST = {
       targetHeight: 1.72,
       // grandpach3.fbx already faces +Z
       forwardYawOffset: 0,
-      forceDetachedBindMode: false,
+      fixBindMatrixToWorld: false,
       headBoneName: "granpaHead",
       rigType: "grandpa_blender",
       boneMap: {
@@ -146,10 +152,6 @@ export const ASSET_MANIFEST = {
     },
   },
 
-  /**
-   * Mixamo FBX animation templates in ./Assets/AnimationTemplates.
-   * All templates are exported With Skin; meshes are immediately disposed after clip extraction.
-   */
   animations: {
     walk: {
       path: "./Assets/AnimationTemplates/Walk.fbx",
@@ -159,7 +161,7 @@ export const ASSET_MANIFEST = {
     run: {
       path: "./Assets/AnimationTemplates/Fast Run.fbx",
       loop: true,
-      defaultSpeed: 0.88,
+      defaultSpeed: 0.9,
     },
     run2: {
       path: "./Assets/AnimationTemplates/Fast Run.fbx",
@@ -201,21 +203,21 @@ export const ASSET_MANIFEST = {
 };
 
 /**
- * Exact audio files in ./SoundEffects with category metadata for the Cartoon SFX Pacer.
+ * Exact audio files in ./SoundEffects with category metadata.
  */
 export const SFX_MANIFEST = {
   checkmark: { path: "./SoundEffects/Checkmark.mp3", category: "ui", defaultVolume: 0.65 },
   ding: { path: "./SoundEffects/DING.mp3", category: "pop", defaultVolume: 0.72 },
   eat: { path: "./SoundEffects/Eat sound (not continous).mp3", category: "comedy", defaultVolume: 0.75 },
-  click: { path: "./SoundEffects/Mouse Click.mp3", category: "ui", defaultVolume: 0.6 },
+  click: { path: "./SoundEffects/Mouse Click.mp3", category: "ui", defaultVolume: 0.55 },
   pop: { path: "./SoundEffects/Pop.mp3", category: "pop", defaultVolume: 0.8 },
-  tada: { path: "./SoundEffects/Tada!.mp3", category: "comedy", defaultVolume: 0.7 },
+  tada: { path: "./SoundEffects/Tada!.mp3", category: "comedy", defaultVolume: 0.72 },
   bonk: { path: "./SoundEffects/bonk_7zPAD7C.mp3", category: "impact", defaultVolume: 0.88 },
   discord: { path: "./SoundEffects/discord-notification.mp3", category: "alert", defaultVolume: 0.72 },
-  glitch: { path: "./SoundEffects/error-glitch.mp3", category: "alert", defaultVolume: 0.7 },
-  granny_good_part: { path: "./SoundEffects/granny-ambience-but-its-only-the-good-part.mp3", category: "sting", defaultVolume: 0.55 },
-  granny_ambience: { path: "./SoundEffects/granny-ambience.mp3", category: "ambience", defaultVolume: 0.25 },
-  granny_chase: { path: "./SoundEffects/granny-chase-music.mp3", category: "music", defaultVolume: 0.32 },
+  glitch: { path: "./SoundEffects/error-glitch.mp3", category: "alert", defaultVolume: 0.68 },
+  granny_good_part: { path: "./SoundEffects/granny-ambience-but-its-only-the-good-part.mp3", category: "bgm", defaultVolume: 0.25 },
+  granny_ambience: { path: "./SoundEffects/granny-ambience.mp3", category: "bgm", defaultVolume: 0.22 },
+  granny_chase: { path: "./SoundEffects/granny-chase-music.mp3", category: "bgm", defaultVolume: 0.28 },
   granny_i_see_you: { path: "./SoundEffects/granny-i-see-you.mp3", category: "voice", defaultVolume: 0.9 },
   jumpscare: { path: "./SoundEffects/granny-jumpscare-sound-effect.mp3", category: "sting", defaultVolume: 0.78 },
   granny_laugh: { path: "./SoundEffects/granny-laugh.mp3", category: "voice", defaultVolume: 0.88 },
@@ -224,16 +226,16 @@ export const SFX_MANIFEST = {
   explode: { path: "./SoundEffects/minecraft-explode1.mp3", category: "impact", defaultVolume: 0.8 },
   explode_meme: { path: "./SoundEffects/minecraft-explosion-meme-sound-effect.mp3", category: "impact", defaultVolume: 0.75 },
   rizz: { path: "./SoundEffects/rizz-sound-effect.mp3", category: "comedy", defaultVolume: 0.75 },
-  squidward_walk: { path: "./SoundEffects/squidward-walk-effect.mp3", category: "step", defaultVolume: 0.62 },
+  squidward_walk: { path: "./SoundEffects/squidward-walk-effect.mp3", category: "step", defaultVolume: 0.55 },
   aww: { path: "./SoundEffects/studio-audience-awwww-sound-fx.mp3", category: "comedy", defaultVolume: 0.72 },
   swoosh: { path: "./SoundEffects/swoosh-sound-effects.mp3", category: "cut", defaultVolume: 0.68 },
   vine_boom: { path: "./SoundEffects/vine Boom.mp3", category: "boom", defaultVolume: 0.85 },
-  whoosh: { path: "./SoundEffects/whoosh-wind.mp3", category: "cut", defaultVolume: 0.68 },
+  whoosh: { path: "./SoundEffects/whoosh-wind.mp3", category: "cut", defaultVolume: 0.65 },
 };
 
 /**
- * Calibrated INDOOR room waypoints inside the normalized Granny 1 House
- * (y = 0 is Main Ground Floor; every waypoint sits indoors under ceiling with clear floor).
+ * Calibrated INDOOR waypoints inside Granny 1 House (y = 0 is Main Ground Floor).
+ * Episode JSON scripts MUST reference these waypoint names rather than raw coordinates.
  */
 export const SET_MAP = {
   foyer: { x: -0.8, y: 0.0, z: 0.2, label: "Front Foyer" },
@@ -244,397 +246,167 @@ export const SET_MAP = {
   back_room_east: { x: 3.8, y: 0.0, z: -1.6, label: "Back Hall East" },
   back_room_east_right: { x: 4.4, y: 0.0, z: -1.6, label: "Back Hall East Right" },
   doorway_living: { x: 4.0, y: 0.0, z: -1.0, label: "Living Room Doorway" },
-  living_room_entry: { x: 4.2, y: 0.0, z: 0.4, label: "Living Room Entry" },
+  living_room_entry: { x: 4.3, y: 0.0, z: 0.8, label: "Living Room Entry" },
   living_room_left: { x: 4.0, y: 0.0, z: 0.4, label: "Living Room Left" },
   living_room_right: { x: 4.9, y: 0.0, z: 0.4, label: "Living Room Right" },
-  living_room: { x: 5.4, y: 0.0, z: 2.2, label: "Living Room" },
-  kitchen: { x: -5.5, y: 0.0, z: 0.8, label: "Kitchen" },
+  living_room: { x: 5.2, y: 0.0, z: 2.2, label: "Living Room" },
+  chest_spot: { x: 5.9, y: 0.0, z: 2.8, label: "Mystery Chest Spot" },
+  chest_padlock: { x: 5.65, y: 0.0, z: 2.55, label: "Chest Padlock" },
+  kitchen: { x: -5.2, y: 0.0, z: 0.8, label: "Kitchen" },
+  key_spot: { x: -6.2, y: 0.0, z: 0.8, label: "Kitchen Key Spot" },
   dining_nook: { x: -3.4, y: 0.0, z: -1.6, label: "Dining Doorway" },
+  under_bed: { x: -3.2, y: 0.0, z: -2.8, label: "Beside Bed (Hide)" },
   stairs: { x: -3.4, y: 0.0, z: -2.6, label: "Stair Hall" },
   bedroom: { x: -4.2, y: 2.85, z: 2.1, label: "Upstairs Bedroom" },
 };
 
 /**
- * 6-second Jump (0-2s) -> Run (2-4.5s) -> Walk (4.5-6s) Short strictly inside Granny 1 House.
+ * 44-second Viral-Style First-Person POV Kids Comedy Episode:
+ * "Grandpa Loses His Key & Granny's Mystery Box"
  */
-export const JUMP_RUN_WALK_EPISODE = {
-  title: "Granny & Grandpa: Jump, Run, Walk (6s)",
-  duration: 6.0,
+export const GRANDPA_KEY_POV_44S = {
+  title: "Grandpa Loses His Key & Granny's Mystery Box",
+  aspect: "16:9",
+  playerSpawn: "back_hall",
+  playerFacing: "back_room_east",
   cast: [
-    { id: "granny", asset: "granny", spawn: "back_hall_left", facing: "back_room_east" },
-    { id: "grandpa", asset: "grandpa", spawn: "back_hall_right", facing: "back_room_east_right" },
+    { id: "grandpa", asset: "grandpa", spawn: "living_room", facing: "living_room_entry" },
+    { id: "granny", asset: "granny", spawn: "kitchen", facing: "dining_nook" },
   ],
-  timeline: [
+  props: [
+    { id: "chest", type: "treasure_chest", spawn: "chest_spot", rotationY: -2.35 },
+    { id: "padlock", type: "padlock", spawn: "chest_padlock", yOffset: 0.16, rotationY: -2.35 },
+    { id: "golden_key", type: "golden_key", spawn: "key_spot", yOffset: 0.82, spin: true, float: true },
+    { id: "emoji_ball", type: "emoji_ball", spawn: "chest_spot", yOffset: 0.25, visible: false },
+  ],
+  skits: [
     {
-      time: 0.0,
-      type: "camera",
-      mode: "wide",
-      target: "cast",
-      cut: "instant",
+      name: "Skit 1: Grandpa's Locked Mystery Box",
+      beats: [
+        { at: 0.0, type: "bgm", sound: "granny_ambience", volume: 0.22 },
+        { at: 0.0, type: "fade", to: 0, duration: 0.45 },
+        { at: 0.2, type: "player_walk", to: "living_room_entry", duration: 3.4 },
+        { at: 3.6, type: "player_look", target: "grandpa", duration: 0.18, track: true },
+        { at: 3.6, type: "char_face", actor: "grandpa", target: "player", followPlayer: true },
+        { at: 3.7, type: "char_anim", actor: "grandpa", anim: "terrified", loop: true },
+        { at: 3.8, type: "char_bubble", actor: "grandpa", icon: "question", duration: 1.6 },
+        { at: 3.9, type: "sfx", sound: "aww", volume: 0.65 },
+        { at: 5.3, type: "char_bubble", actor: "grandpa", icon: "key", duration: 2.3 },
+        { at: 5.5, type: "player_look", target: "chest", duration: 0.25, track: false },
+        { at: 6.4, type: "sfx", sound: "ding", volume: 0.72 },
+        { at: 6.9, type: "player_look", target: "grandpa", duration: 0.16, track: true },
+        { at: 7.4, type: "char_anim", actor: "grandpa", anim: "jump", speed: 1.0, loop: false },
+        { at: 8.1, type: "player_gesture", gesture: "nod_yes", duration: 0.85 },
+        { at: 8.3, type: "sfx", sound: "checkmark", volume: 0.75 },
+        { at: 9.1, type: "char_anim", actor: "grandpa", anim: "laugh", loop: true },
+        { at: 9.2, type: "char_bubble", actor: "grandpa", icon: "heart", duration: 1.6 },
+      ],
     },
     {
-      time: 0.0,
-      type: "action",
-      actor: "granny",
-      anim: "jump",
-      speed: 0.95,
-      loop: false,
+      name: "Skit 2: Sneak Past Granny for the Golden Key",
+      beats: [
+        { at: 10.8, type: "bgm", sound: "granny_good_part", volume: 0.24 },
+        { at: 10.8, type: "player_walk", to: "back_hall", duration: 3.8 },
+        { at: 11.2, type: "char_face", actor: "grandpa", followPlayer: false },
+        { at: 11.2, type: "char_anim", actor: "grandpa", anim: "idle", loop: true },
+        { at: 13.8, type: "char_move", actor: "granny", to: "back_hall_left", anim: "sneak", duration: 3.4 },
+        { at: 15.0, type: "player_look", target: "granny", duration: 0.15, track: true },
+        { at: 15.1, type: "char_face", actor: "granny", followPlayer: true },
+        { at: 15.2, type: "char_bubble", actor: "granny", icon: "exclamation", duration: 1.8 },
+        { at: 15.2, type: "sfx", sound: "granny_i_see_you", volume: 0.88, cutBgm: true, cutBgmDuration: 1.4 },
+        { at: 15.5, type: "player_gesture", gesture: "shake_panic", duration: 0.7 },
+        { at: 16.3, type: "player_walk", to: "under_bed", duration: 1.3 },
+        { at: 16.6, type: "player_crouch", crouched: true, duration: 0.35 },
+        { at: 17.5, type: "char_face", actor: "granny", followPlayer: false },
+        { at: 17.6, type: "char_move", actor: "granny", to: "back_room_east", anim: "walk", duration: 3.4 },
+        { at: 18.2, type: "char_bubble", actor: "granny", icon: "question", duration: 1.8 },
+        { at: 18.8, type: "player_gesture", gesture: "peek_lean", duration: 1.1 },
+        { at: 20.6, type: "player_crouch", crouched: false, duration: 0.35 },
+        { at: 21.0, type: "player_walk", to: "kitchen", duration: 3.6 },
+        { at: 24.6, type: "player_look", target: "golden_key", duration: 0.2 },
+        { at: 25.1, type: "prop_action", prop: "golden_key", action: "pickup" },
+        { at: 25.1, type: "player_hold", prop: "golden_key" },
+        { at: 25.8, type: "player_gesture", gesture: "nod_yes", duration: 0.7 },
+        { at: 26.2, type: "sfx", sound: "tada", volume: 0.72 },
+      ],
     },
     {
-      time: 0.0,
-      type: "action",
-      actor: "grandpa",
-      anim: "jump",
-      speed: 0.95,
-      loop: false,
-    },
-    {
-      time: 0.1,
-      type: "dialogue",
-      actor: "granny",
-      text: "1-2s: JUMPING!",
-      duration: 1.85,
-    },
-    {
-      time: 2.0,
-      type: "camera",
-      mode: "chase_cam",
-      target: "grandpa",
-      cut: "whip",
-    },
-    {
-      time: 2.0,
-      type: "move",
-      actor: "granny",
-      to: "back_room_east",
-      anim: "run",
-      duration: 2.5,
-    },
-    {
-      time: 2.0,
-      type: "move",
-      actor: "grandpa",
-      to: "back_room_east_right",
-      anim: "run2",
-      duration: 2.5,
-    },
-    {
-      time: 2.1,
-      type: "dialogue",
-      actor: "grandpa",
-      text: "3-4s: RUNNING!",
-      duration: 2.3,
-    },
-    {
-      time: 4.5,
-      type: "camera",
-      mode: "wide",
-      target: "cast",
-      cut: "whip",
-    },
-    {
-      time: 4.5,
-      type: "move",
-      actor: "granny",
-      to: "living_room_left",
-      anim: "walk",
-      duration: 1.5,
-    },
-    {
-      time: 4.5,
-      type: "move",
-      actor: "grandpa",
-      to: "living_room_right",
-      anim: "walk",
-      duration: 1.5,
-    },
-    {
-      time: 4.6,
-      type: "dialogue",
-      actor: "granny",
-      text: "LAST SECOND: WALKING!",
-      duration: 1.4,
+      name: "Skit 3: Unlocking the Mystery Box & Granny's Rage",
+      beats: [
+        { at: 27.0, type: "player_walk", to: "living_room_entry", duration: 4.4 },
+        { at: 31.4, type: "player_look", target: "chest", duration: 0.2 },
+        { at: 31.8, type: "player_hold", prop: "golden_key", use: true },
+        { at: 32.0, type: "prop_action", prop: "padlock", action: "hide" },
+        { at: 32.0, type: "prop_action", prop: "chest", action: "open" },
+        { at: 32.1, type: "prop_action", prop: "emoji_ball", action: "pop_out", waypoint: "chest_spot", yOffset: 0.3 },
+        { at: 32.1, type: "sfx", sound: "kaching", volume: 0.8 },
+        { at: 32.6, type: "player_hold", prop: null },
+        { at: 32.8, type: "player_look", target: "grandpa", duration: 0.16, track: true },
+        { at: 32.9, type: "char_face", actor: "grandpa", followPlayer: true },
+        { at: 33.0, type: "char_anim", actor: "grandpa", anim: "laugh", loop: true },
+        { at: 33.1, type: "char_bubble", actor: "grandpa", icon: "laugh", duration: 2.0 },
+        { at: 33.2, type: "sfx", sound: "rizz", volume: 0.75 },
+        { at: 34.8, type: "char_move", actor: "granny", to: "living_room_left", anim: "run2", duration: 2.6 },
+        { at: 36.6, type: "player_look", target: "granny", duration: 0.15, track: true },
+        { at: 37.4, type: "char_face", actor: "granny", followPlayer: true },
+        { at: 37.4, type: "char_bubble", actor: "granny", icon: "angry", duration: 2.6 },
+        { at: 37.5, type: "sfx", sound: "vine_boom", volume: 0.9, cutBgm: true, cutBgmDuration: 1.2 },
+        { at: 37.6, type: "char_anim", actor: "granny", anim: "punch", loop: false },
+        { at: 38.0, type: "sfx", sound: "bonk", volume: 0.88 },
+        { at: 38.0, type: "player_gesture", gesture: "shake_panic", duration: 0.8 },
+        { at: 38.7, type: "bgm", sound: "granny_chase", volume: 0.28 },
+        { at: 38.8, type: "char_anim", actor: "grandpa", anim: "terrified", loop: true },
+        { at: 39.0, type: "char_face", actor: "grandpa", followPlayer: false },
+        { at: 39.0, type: "char_move", actor: "grandpa", to: "back_hall", anim: "run2", duration: 3.4 },
+        { at: 39.4, type: "char_face", actor: "granny", followPlayer: false },
+        { at: 39.4, type: "char_move", actor: "granny", to: "back_hall_left", anim: "run", duration: 3.4 },
+        { at: 39.6, type: "sfx", sound: "granny_laugh", volume: 0.85 },
+        { at: 40.2, type: "player_hold", prop: "emoji_ball" },
+        { at: 40.5, type: "player_gesture", gesture: "shake_no", duration: 0.9 },
+        { at: 41.6, type: "player_hold", prop: "emoji_ball", use: true },
+        { at: 42.0, type: "sfx", sound: "explode_meme", volume: 0.85 },
+        { at: 42.1, type: "player_gesture", gesture: "shake_panic", duration: 0.9 },
+        { at: 42.9, type: "fade", to: 1, duration: 1.0 },
+      ],
     },
   ],
 };
 
 /**
- * Full 18-second comedy Short inside Granny 1 House exercising multiple Mixamo
- * clips, wall-safe pathfinding, indoor camera framing, captions, and contextual SFX.
+ * 6-second Jump (0-2s) -> Run (2-4.5s) -> Walk (4.5-6s) POV Skit.
  */
-export const COOKIES_CHASE_EPISODE = {
-  title: "Grandpa Stole Granny's Cookies",
-  duration: 18.0,
+export const JUMP_RUN_WALK_EPISODE = {
+  title: "Granny & Grandpa: Jump, Run, Walk (6s)",
+  aspect: "9:16",
+  playerSpawn: "back_hall",
+  playerFacing: "back_room_east",
   cast: [
-    { id: "grandpa", asset: "grandpa", spawn: "kitchen", facing: "dining_nook" },
-    { id: "granny", asset: "granny", spawn: "back_hall", facing: "dining_nook" },
+    { id: "granny", asset: "granny", spawn: "back_hall_left", facing: "back_room_east" },
+    { id: "grandpa", asset: "grandpa", spawn: "back_hall_right", facing: "back_room_east_right" },
   ],
-  timeline: [
+  props: [],
+  skits: [
     {
-      time: 0.0,
-      type: "camera",
-      mode: "closeup",
-      target: "grandpa",
-      cut: "instant",
-      shake: 0.08,
-    },
-    {
-      time: 0.0,
-      type: "action",
-      actor: "grandpa",
-      anim: "sneak",
-      loop: true,
-    },
-    {
-      time: 0.1,
-      type: "sfx",
-      sound: "granny_good_part",
-      volume: 0.55,
-    },
-    {
-      time: 0.2,
-      type: "dialogue",
-      actor: "grandpa",
-      text: "OPERATION: STEAL GRANNY'S COOKIES",
-      duration: 2.2,
-    },
-    {
-      time: 0.6,
-      type: "move",
-      actor: "grandpa",
-      to: "dining_nook",
-      anim: "sneak",
-      duration: 2.8,
-    },
-    {
-      time: 1.5,
-      type: "sfx",
-      sound: "squidward_walk",
-      volume: 0.65,
-    },
-    {
-      time: 2.6,
-      type: "camera",
-      mode: "over_shoulder",
-      target: "granny",
-      lookTarget: "grandpa",
-      cut: "whip",
-    },
-    {
-      time: 2.7,
-      type: "move",
-      actor: "granny",
-      to: "hallway",
-      anim: "walk",
-      duration: 2.1,
-    },
-    {
-      time: 3.1,
-      type: "sfx",
-      sound: "discord",
-      volume: 0.72,
-    },
-    {
-      time: 3.6,
-      type: "dialogue",
-      actor: "granny",
-      text: "WHO TOUCHED MY COOKIE JAR?!",
-      duration: 2.1,
-    },
-    {
-      time: 4.5,
-      type: "sfx",
-      sound: "granny_i_see_you",
-      volume: 0.9,
-    },
-    {
-      time: 4.9,
-      type: "camera",
-      mode: "dramatic_zoom",
-      target: "grandpa",
-      cut: "instant",
-      shake: 0.26,
-    },
-    {
-      time: 5.0,
-      type: "sfx",
-      sound: "vine_boom",
-      volume: 0.88,
-    },
-    {
-      time: 5.0,
-      type: "action",
-      actor: "grandpa",
-      anim: "terrified",
-      loop: true,
-    },
-    {
-      time: 5.2,
-      type: "dialogue",
-      actor: "grandpa",
-      text: "UH OH... SHE HEARD ME!",
-      duration: 1.9,
-    },
-    {
-      time: 6.8,
-      type: "sfx",
-      sound: "granny_chase",
-      volume: 0.34,
-    },
-    {
-      time: 6.9,
-      type: "camera",
-      mode: "chase_cam",
-      target: "grandpa",
-      cut: "whip",
-    },
-    {
-      time: 7.0,
-      type: "move",
-      actor: "grandpa",
-      to: "living_room",
-      anim: "run2",
-      duration: 4.2,
-    },
-    {
-      time: 7.3,
-      type: "move",
-      actor: "granny",
-      to: "living_room_entry",
-      anim: "run",
-      duration: 4.1,
-    },
-    {
-      time: 8.2,
-      type: "dialogue",
-      actor: "granny",
-      text: "GET BACK HERE OLD MAN!!",
-      duration: 2.0,
-    },
-    {
-      time: 9.2,
-      type: "sfx",
-      sound: "whoosh",
-      volume: 0.7,
-    },
-    {
-      time: 10.4,
-      type: "camera",
-      mode: "wide",
-      target: "living_room_entry",
-      cut: "whip",
-    },
-    {
-      time: 11.2,
-      type: "action",
-      actor: "grandpa",
-      anim: "jump",
-      facing: "living_room_entry",
-      loop: false,
-    },
-    {
-      time: 11.3,
-      type: "sfx",
-      sound: "whoosh",
-      volume: 0.75,
-    },
-    {
-      time: 11.7,
-      type: "action",
-      actor: "granny",
-      anim: "punch",
-      facing: "living_room",
-      loop: false,
-    },
-    {
-      time: 12.1,
-      type: "sfx",
-      sound: "bonk",
-      volume: 0.9,
-    },
-    {
-      time: 12.1,
-      type: "camera",
-      mode: "closeup",
-      target: "grandpa",
-      cut: "instant",
-      shake: 0.42,
-    },
-    {
-      time: 12.3,
-      type: "dialogue",
-      actor: "grandpa",
-      text: "MY BACK!!",
-      duration: 1.8,
-    },
-    {
-      time: 12.6,
-      type: "action",
-      actor: "grandpa",
-      anim: "sit",
-      loop: true,
-    },
-    {
-      time: 13.5,
-      type: "camera",
-      mode: "closeup",
-      target: "granny",
-      cut: "whip",
-    },
-    {
-      time: 13.6,
-      type: "action",
-      actor: "granny",
-      anim: "laugh",
-      loop: true,
-    },
-    {
-      time: 13.7,
-      type: "sfx",
-      sound: "granny_laugh",
-      volume: 0.88,
-    },
-    {
-      time: 14.2,
-      type: "dialogue",
-      actor: "granny",
-      text: "NOBODY STEALS MY COOKIES!",
-      duration: 2.4,
-    },
-    {
-      time: 15.8,
-      type: "camera",
-      mode: "dramatic_zoom",
-      target: "granny",
-      cut: "instant",
-      shake: 0.14,
-    },
-    {
-      time: 16.0,
-      type: "sfx",
-      sound: "tada",
-      volume: 0.72,
-    },
-    {
-      time: 16.6,
-      type: "sfx",
-      sound: "kaching",
-      volume: 0.72,
-    },
-    {
-      time: 16.7,
-      type: "dialogue",
-      actor: "granny",
-      text: "SUBSCRIBE OR GRANNY FINDS YOU!",
-      duration: 1.3,
+      name: "Jump, Run & Walk",
+      beats: [
+        { at: 0.0, type: "player_walk", to: "doorway_living", duration: 0.1 },
+        { at: 0.0, type: "player_look", target: "back_hall", duration: 0.1, track: false },
+        { at: 0.0, type: "char_anim", actor: "granny", anim: "jump", speed: 0.95, loop: false },
+        { at: 0.0, type: "char_anim", actor: "grandpa", anim: "jump", speed: 0.95, loop: false },
+        { at: 2.0, type: "char_move", actor: "granny", to: "back_room_east", anim: "run", duration: 2.5 },
+        { at: 2.0, type: "char_move", actor: "grandpa", to: "back_room_east_right", anim: "run2", duration: 2.5 },
+        { at: 2.0, type: "player_look", target: "grandpa", duration: 0.25, track: true },
+        { at: 4.5, type: "char_move", actor: "granny", to: "living_room_left", anim: "walk", duration: 1.5 },
+        { at: 4.5, type: "char_move", actor: "grandpa", to: "living_room_right", anim: "walk", duration: 1.5 },
+        { at: 4.5, type: "player_walk", to: "living_room", duration: 1.4 },
+      ],
     },
   ],
 };
 
 export const EPISODE_PRESETS = {
+  grandpa_key_pov_44s: GRANDPA_KEY_POV_44S,
   jump_run_walk_6s: JUMP_RUN_WALK_EPISODE,
-  cookies_chase_18s: COOKIES_CHASE_EPISODE,
 };
 
-export const DEFAULT_EPISODE = JUMP_RUN_WALK_EPISODE;
-
+export const DEFAULT_EPISODE = GRANDPA_KEY_POV_44S;

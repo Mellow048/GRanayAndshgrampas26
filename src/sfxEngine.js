@@ -1,13 +1,19 @@
 import { CONFIG, SFX_MANIFEST } from "./config.js";
 
 /**
- * Web Audio API SFX Engine with dual routing (live speakers + MediaStreamAudioDestinationNode
- * for WebM export) and a configurable 1–2s Cartoon SFX Pacer.
+ * Web Audio API Mixer with:
+ * - Preloaded AudioBuffers from ./SoundEffects
+ * - Looping BGM + comedic dead-silence "cutBgm" ducking
+ * - Movement-synced footsteps (player + characters)
+ * - Context-matched 1-2s Cartoon SFX Pacer (whip-pans, bubble pops, pickups, reactions)
+ * - Dual routing to live speakers + MediaStreamAudioDestinationNode
+ * - Offline event & BGM capture for GitHub Actions FFmpeg export
  */
 export class SfxEngine {
   constructor() {
     this.ctx = null;
     this.masterGain = null;
+    this.bgmGain = null;
     this.compressor = null;
     this.streamDest = null;
 
@@ -15,31 +21,24 @@ export class SfxEngine {
     this.activeSources = new Set();
     this.lastPlayedByKey = new Map();
 
+    // BGM state
+    this.bgmSource = null;
+    this.bgmKey = null;
+    this.bgmVolume = 0.28;
+    this.bgmDuckTimer = 0;
+
     this.pacerEnabled = CONFIG.sfxPacer.enabledByDefault;
     this.muted = false;
     this.lastAnySfxTime = -Infinity;
-    this.lastPacerTime = -Infinity;
     this.stepAccumulator = 0;
-    this.nextGapThreshold = 1.45;
+    this.nextGapThreshold = 1.65;
 
-    // Offline deterministic audio log for GitHub Actions / FFmpeg export
+    // Offline deterministic capture for FFmpeg export
     this.exportMode = false;
     this.recordedEvents = [];
-  }
-
-  startEventCapture() {
-    this.exportMode = true;
-    this.recordedEvents = [];
-    this.lastPlayedByKey.clear();
-  }
-
-  stopEventCapture() {
-    this.exportMode = false;
-    return [...this.recordedEvents];
-  }
-
-  getCapturedEvents() {
-    return [...this.recordedEvents];
+    this.recordedBgm = []; // { startTime, endTime, path, volume }
+    this.recordedDucks = []; // { startTime, endTime }
+    this._activeExportBgm = null;
   }
 
   ensureContext() {
@@ -58,9 +57,12 @@ export class SfxEngine {
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = this.muted ? 0 : CONFIG.sfxPacer.masterVolume;
 
+    this.bgmGain = this.ctx.createGain();
+    this.bgmGain.gain.value = this.bgmVolume;
+    this.bgmGain.connect(this.compressor);
+
     this.streamDest = this.ctx.createMediaStreamDestination();
 
-    // Route ALL SFX through compressor + masterGain -> live destination AND WebM recorder stream
     this.compressor.connect(this.masterGain);
     this.masterGain.connect(this.ctx.destination);
     this.masterGain.connect(this.streamDest);
@@ -84,9 +86,7 @@ export class SfxEngine {
       entries.map(async ([key, meta]) => {
         try {
           const response = await fetch(encodeURI(meta.path));
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const arrayBuffer = await response.arrayBuffer();
           const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
           this.buffers.set(key, audioBuffer);
@@ -121,35 +121,134 @@ export class SfxEngine {
   }
 
   resetPacerClock(simTime = 0) {
-    this.lastAnySfxTime = simTime - 0.5;
-    this.lastPacerTime = simTime - 0.5;
+    this.lastAnySfxTime = simTime - 0.4;
     this.stepAccumulator = 0;
-    this.nextGapThreshold = 1.25;
+    this.nextGapThreshold = 1.65;
+    this.bgmDuckTimer = 0;
+  }
+
+  startEventCapture() {
+    this.exportMode = true;
+    this.recordedEvents = [];
+    this.recordedBgm = [];
+    this.recordedDucks = [];
+    this._activeExportBgm = null;
+    this.lastPlayedByKey.clear();
+  }
+
+  stopEventCapture(finalTime = null) {
+    if (this._activeExportBgm && finalTime !== null) {
+      this._activeExportBgm.endTime = Math.max(
+        this._activeExportBgm.startTime,
+        finalTime
+      );
+      this.recordedBgm.push(this._activeExportBgm);
+      this._activeExportBgm = null;
+    }
+    this.exportMode = false;
+    return {
+      sfx: [...this.recordedEvents],
+      bgm: [...this.recordedBgm],
+      ducks: [...this.recordedDucks],
+    };
+  }
+
+  playBgm(key, { volume = 0.25, simTime = 0 } = {}) {
+    const meta = SFX_MANIFEST[key];
+    if (!meta) return;
+
+    if (this.exportMode) {
+      if (this._activeExportBgm) {
+        this._activeExportBgm.endTime = Math.max(
+          this._activeExportBgm.startTime,
+          simTime
+        );
+        this.recordedBgm.push(this._activeExportBgm);
+      }
+      this._activeExportBgm = {
+        key,
+        path: meta.path,
+        volume,
+        startTime: Math.max(0, simTime),
+        endTime: null,
+      };
+      return;
+    }
+
+    this.stopBgm();
+    const buffer = this.buffers.get(key);
+    if (!buffer) return;
+    const ctx = this.ensureContext();
+    if (ctx.state !== "running") return;
+
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.loop = true;
+    this.bgmVolume = volume;
+    this.bgmGain.gain.setValueAtTime(volume, ctx.currentTime);
+    src.connect(this.bgmGain);
+    src.start(ctx.currentTime);
+    this.bgmSource = src;
+    this.bgmKey = key;
+  }
+
+  stopBgm(simTime = 0) {
+    if (this.exportMode && this._activeExportBgm) {
+      this._activeExportBgm.endTime = Math.max(
+        this._activeExportBgm.startTime,
+        simTime
+      );
+      this.recordedBgm.push(this._activeExportBgm);
+      this._activeExportBgm = null;
+    }
+    if (this.bgmSource) {
+      try {
+        this.bgmSource.stop();
+      } catch {
+        // Ignore already stopped
+      }
+      this.bgmSource = null;
+      this.bgmKey = null;
+    }
+  }
+
+  muteBgmFor(durationSec = 1.2, simTime = 0) {
+    this.bgmDuckTimer = Math.max(this.bgmDuckTimer, durationSec);
+    if (this.exportMode) {
+      this.recordedDucks.push({
+        startTime: Math.max(0, simTime),
+        endTime: Math.max(0, simTime + durationSec),
+      });
+      return;
+    }
+    if (this.bgmGain && this.ctx) {
+      this.bgmGain.gain.setValueAtTime(0, this.ctx.currentTime);
+    }
   }
 
   stopAll() {
+    this.stopBgm();
     for (const src of this.activeSources) {
       try {
         src.stop();
       } catch {
-        // Ignore already-stopped AudioBufferSourceNode
+        // Ignore
       }
     }
     this.activeSources.clear();
   }
 
-  /**
-   * Plays a preloaded sound effect with optional volume, pitch, and jitter.
-   */
   play(
     key,
     {
       volume = null,
       pitch = 1.0,
-      pitchJitter = 0.06,
+      pitchJitter = 0.08,
       simTime = null,
       cooldown = CONFIG.sfxPacer.globalCooldownSec,
       maxDuration = null,
+      cutBgm = false,
+      cutBgmDuration = 1.4,
     } = {}
   ) {
     const meta = SFX_MANIFEST[key];
@@ -159,6 +258,10 @@ export class SfxEngine {
       pitchJitter > 0 ? (Math.random() * 2 - 1) * pitchJitter : 0;
     const effectivePitch = Math.max(0.5, Math.min(2.0, pitch + randomJitter));
     const targetVol = volume ?? meta.defaultVolume ?? 0.7;
+
+    if (cutBgm) {
+      this.muteBgmFor(cutBgmDuration, simTime ?? 0);
+    }
 
     if (this.exportMode) {
       const clockTime = simTime ?? 0;
@@ -185,9 +288,7 @@ export class SfxEngine {
     if (!buffer) return false;
 
     const ctx = this.ensureContext();
-    if (ctx.state !== "running") {
-      return false;
-    }
+    if (ctx.state !== "running") return false;
 
     const nowWall = ctx.currentTime;
     const prevKeyTime = this.lastPlayedByKey.get(key) ?? -Infinity;
@@ -225,30 +326,58 @@ export class SfxEngine {
   }
 
   // ---------------------------------------------------------------------------
-  // Context-Matched Action & Footstep Foley (No Random SFX Spam)
+  // Kids-Comedy POV Foley & 1-2s Slapstick Pacer Hooks
   // ---------------------------------------------------------------------------
-  notifyCameraCut(_mode, _cutType, _simTime) {
-    // Intentionally silent unless explicitly scripted via an "sfx" timeline event.
+  notifyWhipPan(duration, simTime) {
+    if (!this.pacerEnabled || duration > 0.25) return;
+    if (simTime - this.lastAnySfxTime < 0.35) return;
+    this.play("whoosh", {
+      volume: 0.55,
+      pitch: 1.05,
+      pitchJitter: 0.08,
+      simTime,
+      maxDuration: 0.45,
+    });
   }
 
-  notifyDialogue(_actorId, _simTime) {
-    // Intentionally silent unless explicitly scripted via an "sfx" timeline event.
+  notifyBubblePop(iconName, simTime) {
+    if (!this.pacerEnabled) return;
+    if (simTime - this.lastAnySfxTime < 0.25) return;
+    const key =
+      iconName === "exclamation" || iconName === "angry" ? "discord" : "pop";
+    this.play(key, {
+      volume: 0.72,
+      pitchJitter: 0.08,
+      simTime,
+      maxDuration: 0.65,
+    });
+  }
+
+  notifyPickup(propName, simTime) {
+    if (!this.pacerEnabled || !propName) return;
+    this.play("kaching", {
+      volume: 0.68,
+      pitchJitter: 0.06,
+      simTime,
+      maxDuration: 0.9,
+    });
   }
 
   notifyAction(animName, simTime) {
     if (!this.pacerEnabled) return;
-
+    if (simTime - this.lastAnySfxTime < 0.35) return;
     const map = {
-      jump: { key: "whoosh", volume: 0.48, pitch: 1.08, maxDuration: 0.55 },
-      punch: { key: "bonk", volume: 0.78, pitch: 1.0, maxDuration: 0.9 },
-      laugh: { key: "granny_laugh", volume: 0.75, pitch: 1.0, maxDuration: 1.4 },
+      jump: { key: "whoosh", volume: 0.5, pitch: 1.08, maxDuration: 0.55 },
+      punch: { key: "bonk", volume: 0.78, pitch: 1.0, maxDuration: 0.85 },
+      laugh: { key: "granny_laugh", volume: 0.72, pitch: 1.0, maxDuration: 1.35 },
+      terrified: { key: "glitch", volume: 0.55, pitch: 1.05, maxDuration: 0.8 },
     };
     const spec = map[animName];
     if (spec) {
       this.play(spec.key, {
         volume: spec.volume,
         pitch: spec.pitch,
-        pitchJitter: 0.05,
+        pitchJitter: 0.06,
         simTime,
         cooldown: 0.35,
         maxDuration: spec.maxDuration,
@@ -256,37 +385,61 @@ export class SfxEngine {
     }
   }
 
-  /**
-   * Called every simulation step; plays rhythmic walking/running footsteps
-   * strictly while actors are actively moving across the floor.
-   */
   tickPacer(simDt, simTime, { anyMoving = false, moveAnim = "walk" } = {}) {
+    // Restore ducked BGM smoothly after comedy silence cut
+    if (!this.exportMode && this.bgmDuckTimer > 0) {
+      this.bgmDuckTimer = Math.max(0, this.bgmDuckTimer - simDt);
+      if (this.bgmDuckTimer === 0 && this.bgmGain && this.ctx) {
+        this.bgmGain.gain.setTargetAtTime(this.bgmVolume, this.ctx.currentTime, 0.08);
+      }
+    }
+
     if (!this.pacerEnabled) return;
 
-    if (!anyMoving) {
-      this.stepAccumulator = 0;
+    if (anyMoving) {
+      const isRun = moveAnim === "run" || moveAnim === "run2";
+      const isSneak = moveAnim === "sneak";
+      const stepPeriod = isRun
+        ? CONFIG.sfxPacer.footstepIntervalRun
+        : isSneak
+          ? CONFIG.sfxPacer.footstepIntervalSneak
+          : CONFIG.sfxPacer.footstepIntervalWalk;
+
+      this.stepAccumulator += simDt;
+      if (this.stepAccumulator >= stepPeriod) {
+        this.stepAccumulator -= stepPeriod;
+        this.play("squidward_walk", {
+          volume: isRun ? 0.48 : isSneak ? 0.34 : 0.42,
+          pitch: isRun ? 1.26 : isSneak ? 0.82 : 0.98,
+          pitchJitter: 0.06,
+          simTime,
+          cooldown: 0.2,
+          maxDuration: isRun ? 0.22 : 0.34,
+        });
+      }
       return;
     }
 
-    const isRun = moveAnim === "run" || moveAnim === "run2";
-    const isSneak = moveAnim === "sneak";
-    const stepPeriod = isRun
-      ? CONFIG.sfxPacer.footstepIntervalRun
-      : isSneak
-        ? CONFIG.sfxPacer.footstepIntervalSneak
-        : CONFIG.sfxPacer.footstepIntervalWalk;
+    this.stepAccumulator = 0;
 
-    this.stepAccumulator += simDt;
-    if (this.stepAccumulator >= stepPeriod) {
-      this.stepAccumulator -= stepPeriod;
-      this.play("squidward_walk", {
-        volume: isRun ? 0.5 : isSneak ? 0.36 : 0.44,
-        pitch: isRun ? 1.28 : isSneak ? 0.8 : 0.96,
-        pitchJitter: 0.06,
-        simTime,
-        cooldown: 0.2,
-        maxDuration: isRun ? 0.24 : 0.36,
-      });
+    // Gentle comedic gap pacer only if idle for > 1.7s
+    const gap = simTime - this.lastAnySfxTime;
+    if (gap >= this.nextGapThreshold) {
+      const cues = ["pop", "ding", "click"];
+      const pick = cues[Math.floor(Math.random() * cues.length)];
+      if (
+        this.play(pick, {
+          volume: 0.35,
+          pitchJitter: 0.1,
+          simTime,
+          maxDuration: 0.45,
+        })
+      ) {
+        this.nextGapThreshold =
+          CONFIG.sfxPacer.minIntervalSec +
+          Math.random() *
+            (CONFIG.sfxPacer.maxIntervalSec - CONFIG.sfxPacer.minIntervalSec);
+      }
     }
   }
 }

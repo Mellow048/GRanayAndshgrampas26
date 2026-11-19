@@ -1,234 +1,361 @@
 import * as THREE from "three";
 import { CONFIG, DEFAULT_EPISODE, EPISODE_PRESETS, SET_MAP } from "./config.js";
-import { loadCharacterTemplate, loadHouse } from "./assetLoader.js";
+import {
+  loadHouse,
+  loadCharacterTemplate,
+  instantiateCharacter,
+} from "./assetLoader.js";
 import { AnimationLibrary } from "./animationLibrary.js";
 import { SfxEngine } from "./sfxEngine.js";
-import { CameraDirector } from "./cameraDirector.js";
+import { PlayerCamera } from "./playerCamera.js";
+import { ComedyPropManager, ThoughtBubbleCache } from "./comedyProps.js";
 import { EpisodeRunner } from "./episodeRunner.js";
 import { StudioUI } from "./studioUI.js";
 
-function setupLighting(scene) {
-  const hemi = new THREE.HemisphereLight(0xfff8ef, 0x64748b, 1.85);
+const urlParams = new URLSearchParams(window.location.search);
+const isHeadless = urlParams.get("headless") === "1";
+
+const loadingOverlay = document.getElementById("loadingOverlay");
+const loadingText = document.getElementById("loadingText");
+const loadingBar = document.getElementById("loadingBar");
+const stageContainer = document.getElementById("stageContainer");
+const fadeOverlay = document.getElementById("fadeOverlay");
+
+function setProgress(pct, label) {
+  if (loadingBar) loadingBar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  if (loadingText) loadingText.textContent = label;
+}
+
+function setupCartoonLighting(scene) {
+  scene.background = new THREE.Color(0x87cefa);
+  scene.fog = new THREE.FogExp2(0x9fd8ff, 0.014);
+
+  const hemi = new THREE.HemisphereLight(0xfffbe6, 0x998877, 2.05);
   scene.add(hemi);
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.9);
+  const ambient = new THREE.AmbientLight(0xfff4e0, 0.98);
   scene.add(ambient);
 
-  const sunKey = new THREE.DirectionalLight(0xfff4e0, 1.15);
-  sunKey.position.set(6, 14, 9);
-  sunKey.castShadow = true;
-  sunKey.shadow.mapSize.set(2048, 2048);
-  sunKey.shadow.camera.near = 1;
-  sunKey.shadow.camera.far = 35;
-  sunKey.shadow.camera.left = -12;
-  sunKey.shadow.camera.right = 12;
-  sunKey.shadow.camera.top = 12;
-  sunKey.shadow.camera.bottom = -12;
-  sunKey.shadow.bias = -0.0005;
-  scene.add(sunKey);
+  const sun = new THREE.DirectionalLight(0xfff8e7, 1.35);
+  sun.position.set(10, 18, 12);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far = 45;
+  sun.shadow.camera.left = -12;
+  sun.shadow.camera.right = 12;
+  sun.shadow.camera.top = 12;
+  sun.shadow.camera.bottom = -12;
+  sun.shadow.bias = -0.0008;
+  scene.add(sun);
 
-  // Evenly distributed interior ceiling lights so every indoor room in Granny 1 House is well-lit
   const roomLights = [
-    { pos: [0.0, 2.5, -2.6], color: 0xffe8cc, intensity: 7.5, dist: 14 }, // Back room
-    { pos: [3.8, 2.5, -1.8], color: 0xffdfb3, intensity: 6.5, dist: 12 }, // East corridor & doorway
-    { pos: [5.2, 2.5, 2.8], color: 0xffe4c4, intensity: 7.5, dist: 14 }, // Living room
-    { pos: [-5.5, 2.5, 0.8], color: 0xffe8cc, intensity: 7.0, dist: 12 }, // Kitchen
-    { pos: [-0.8, 2.5, 0.2], color: 0xffe8cc, intensity: 6.0, dist: 11 }, // Front foyer
+    { pos: [0.0, 2.3, -2.5], color: 0xfff1d6, intensity: 1.75, dist: 11 }, // Back Hall
+    { pos: [4.8, 2.3, 1.5], color: 0xffeacc, intensity: 1.85, dist: 11 },  // Living Room
+    { pos: [-5.2, 2.3, 0.5], color: 0xfff5e0, intensity: 1.85, dist: 11 }, // Kitchen
+    { pos: [-0.8, 2.3, 0.2], color: 0xfff0d4, intensity: 1.45, dist: 10 }, // Foyer
+    { pos: [-4.2, 4.9, 2.1], color: 0xfff4de, intensity: 1.65, dist: 11 }, // Upstairs Bedroom
   ];
+
   for (const rl of roomLights) {
-    const pt = new THREE.PointLight(rl.color, rl.intensity, rl.dist, 1.2);
-    pt.position.set(...rl.pos);
+    const pt = new THREE.PointLight(rl.color, rl.intensity, rl.dist, 1.15);
+    pt.position.set(rl.pos[0], rl.pos[1], rl.pos[2]);
     scene.add(pt);
   }
+
+  const camFill = new THREE.PointLight(0xfff6ea, 2.0, 7.5, 1.1);
+  scene.add(camFill);
+  return { camFill };
+}
+
+function getStageTargetSize(aspectKey) {
+  const spec = CONFIG.aspectModes[aspectKey] || CONFIG.aspectModes["16:9"];
+  if (isHeadless) {
+    return { width: spec.width, height: spec.height };
+  }
+  const rect = stageContainer.getBoundingClientRect();
+  const availW = Math.max(320, rect.width - 16);
+  const availH = Math.max(240, rect.height - 16);
+  const targetRatio = spec.aspect;
+  let w = availW;
+  let h = w / targetRatio;
+  if (h > availH) {
+    h = availH;
+    w = h * targetRatio;
+  }
+  return { width: Math.floor(w), height: Math.floor(h) };
 }
 
 async function bootstrap() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const isHeadless = urlParams.get("headless") === "1";
-
-  const stageEl = document.getElementById("shortsStage");
-  const loadingOverlay = document.getElementById("loadingOverlay");
-  const loadingText = document.getElementById("loadingText");
+  setProgress(5, "Initializing Three.js POV renderer...");
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0b1120);
-  scene.fog = new THREE.Fog(0x0b1120, 18, 46);
-  setupLighting(scene);
+  const { camFill } = setupCartoonLighting(scene);
 
-  // Render strictly at 9:16 vertical Shorts HD resolution (720x1280)
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
     powerPreference: "high-performance",
-    preserveDrawingBuffer: isHeadless,
+    preserveDrawingBuffer: true,
   });
-  renderer.setPixelRatio(1);
-  renderer.setSize(CONFIG.exportWidth, CONFIG.exportHeight, false);
+  renderer.setPixelRatio(isHeadless ? 1 : Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
-  renderer.domElement.className = "shorts-canvas";
-  stageEl.prepend(renderer.domElement);
+  renderer.toneMappingExposure = 1.24;
 
-  const cameraDirector = new CameraDirector(renderer.domElement);
+  const initialSize = getStageTargetSize(CONFIG.defaultAspect);
+  renderer.setSize(initialSize.width, initialSize.height, false);
+  renderer.domElement.className = "studio-canvas";
+  stageContainer.appendChild(renderer.domElement);
+
+  const playerCamera = new PlayerCamera(renderer.domElement);
+  scene.add(playerCamera.camera);
+
+  // Fullscreen WebGL fade quad on camera so fade-to-black is captured in both live & headless PNG exports
+  const fadeQuadMat = new THREE.MeshBasicMaterial({
+    color: 0x000000,
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const fadeQuad = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), fadeQuadMat);
+  fadeQuad.position.set(0, 0, -0.15);
+  fadeQuad.renderOrder = 9999;
+  fadeQuad.visible = false;
+  playerCamera.camera.add(fadeQuad);
+
+  const comedyProps = new ComedyPropManager(scene, SET_MAP);
+  const bubbleCache = new ThoughtBubbleCache();
   const sfxEngine = new SfxEngine();
-  const animationLibrary = new AnimationLibrary();
+  const animLib = new AnimationLibrary();
 
-  const updateLoading = (msg) => {
-    if (loadingText) loadingText.textContent = msg;
-  };
+  setProgress(15, "Loading Granny 1 House, Cast & Mixamo templates...");
+  const [house, , grannyTemplate, grandpaTemplate] = await Promise.all([
+    loadHouse(),
+    animLib.loadAllTemplates(),
+    loadCharacterTemplate("granny"),
+    loadCharacterTemplate("grandpa"),
+  ]);
 
-  try {
-    updateLoading("Loading Granny 1 House & Character Rigs...");
-    const preloadTasks = [
-      loadHouse(),
-      loadCharacterTemplate("granny"),
-      loadCharacterTemplate("grandpa"),
-      animationLibrary.loadAllTemplates(),
-    ];
-    if (!isHeadless) {
-      preloadTasks.push(sfxEngine.preloadAll());
-    }
-    const [house, grannyTpl, grandpaTpl] = await Promise.all(preloadTasks);
+  scene.add(house.root);
+  playerCamera.setHouse(house);
 
-    scene.add(house.root);
-    cameraDirector.setHouse(house);
-
-    const camFill = new THREE.PointLight(0xfff4e6, 2.2, 8, 1.2);
-    scene.add(camFill);
-
-    const characterTemplates = new Map([
-      ["granny", grannyTpl],
-      ["grandpa", grandpaTpl],
-    ]);
-
-    updateLoading("Retargeting Mixamo Animation Library...");
-    animationLibrary.buildClipsForCharacter(grannyTpl);
-    animationLibrary.buildClipsForCharacter(grandpaTpl);
-    // Dispose Mixamo source skeletons right after retargeting both characters
-    animationLibrary.disposeSourceTemplates();
-
-    let studioUI = null;
-
-    const episodeRunner = new EpisodeRunner({
-      scene,
-      house,
-      characterTemplates,
-      animationLibrary,
-      sfxEngine,
-      cameraDirector,
-      waypoints: SET_MAP,
-      onCaptionChange: (cap) => studioUI?.updateCaption(cap),
-      onTimeUpdate: (t, dur) => studioUI?.updateTime(t, dur),
-      onEpisodeEnd: () => {
-        studioUI?.syncPlayButton();
-        if (studioUI?.isRecording) {
-          studioUI.stopRecording();
-        }
-      },
+  if (!isHeadless) {
+    setProgress(70, "Preloading 25 cartoon SFX & BGM...");
+    await sfxEngine.preloadAll((done, total) => {
+      setProgress(70 + (done / total) * 24, `Loading SFX (${done}/${total})...`);
     });
-
-    studioUI = new StudioUI({
-      scene,
-      renderer,
-      house,
-      cameraDirector,
-      episodeRunner,
-      sfxEngine,
-      waypoints: SET_MAP,
-      initialEpisode: DEFAULT_EPISODE,
-    });
-
-    // Expose deterministic cloud export API for scripts/export-video.mjs (GitHub Actions)
-    window.__GRANNY_STUDIO__ = {
-      ready: true,
-      presets: EPISODE_PRESETS,
-      beginHeadlessExport({ episode = DEFAULT_EPISODE, pacerEnabled = true } = {}) {
-        episodeRunner.pause();
-        cameraDirector.setInspectionMode(false);
-        studioUI.setCalibratorEnabled(false);
-        sfxEngine.setPacerEnabled(pacerEnabled);
-        sfxEngine.startEventCapture();
-        episodeRunner.loadEpisode(episode);
-        episodeRunner.resetToStart({ emitInitialSfx: true });
-        studioUI.syncCameraButtons();
-        return {
-          title: episode.title || "granny-short",
-          duration: episode.duration,
-        };
-      },
-      renderExportFrame(stepDt = 0) {
-        if (stepDt > 0 && !episodeRunner.ended) {
-          episodeRunner.accumulator += stepDt;
-          while (episodeRunner.accumulator >= CONFIG.fixedDt && !episodeRunner.ended) {
-            episodeRunner._stepFixed(CONFIG.fixedDt, { silent: false });
-            episodeRunner.accumulator -= CONFIG.fixedDt;
-          }
-          if (episodeRunner.accumulator > 1e-6 && !episodeRunner.ended) {
-            episodeRunner._stepFixed(episodeRunner.accumulator, { silent: false });
-            episodeRunner.accumulator = 0;
-          }
-        }
-        camFill.position.copy(cameraDirector.camera.position);
-        renderer.render(scene, cameraDirector.camera);
-        studioUI.captureCompositeFrame(true);
-        return {
-          simTime: episodeRunner.simTime,
-          duration: episodeRunner.episode?.duration || 0,
-          ended: episodeRunner.ended,
-          dataUrl: studioUI.compositeCanvas.toDataURL("image/png"),
-        };
-      },
-      finishHeadlessExport() {
-        return sfxEngine.stopEventCapture();
-      },
-    };
-
-    episodeRunner.loadEpisode(DEFAULT_EPISODE);
-    if (!isHeadless) {
-      episodeRunner.play();
-    }
-    studioUI.syncPlayButton();
-    studioUI.syncCameraButtons();
-    studioUI.setStatus(
-      `Ready — "${DEFAULT_EPISODE.title}" (${sfxEngine.buffers.size} SFX loaded). Click stage to unlock audio.`
-    );
-    if (loadingOverlay) loadingOverlay.hidden = true;
-
-    if (!isHeadless) {
-      // Unlock Web Audio cleanly on first user interaction anywhere in the studio
-      const unlockAudio = () => {
-        sfxEngine.resume().then(() => {
-          studioUI.setStatus(`Audio active — "${episodeRunner.episode?.title || ""}"`);
-        }).catch(() => {});
-        window.removeEventListener("pointerdown", unlockAudio);
-        window.removeEventListener("keydown", unlockAudio);
-      };
-      window.addEventListener("pointerdown", unlockAudio, { once: true });
-      window.addEventListener("keydown", unlockAudio, { once: true });
-
-      let lastNow = performance.now();
-      function frameLoop(now) {
-        requestAnimationFrame(frameLoop);
-        const rawDt = Math.min(CONFIG.maxFrameDt, (now - lastNow) / 1000);
-        lastNow = now;
-
-        episodeRunner.update(rawDt);
-        camFill.position.copy(cameraDirector.camera.position);
-        renderer.render(scene, cameraDirector.camera);
-        studioUI.captureCompositeFrame();
-      }
-
-      requestAnimationFrame(frameLoop);
-    } else {
-      camFill.position.copy(cameraDirector.camera.position);
-      renderer.render(scene, cameraDirector.camera);
-    }
-  } catch (err) {
-    console.error("[Granny 3D Cartoon Studio] Startup failed:", err);
-    window.__GRANNY_STUDIO_ERROR__ = err.message;
-    updateLoading(`Startup Error: ${err.message}`);
   }
+
+  setProgress(95, "Retargeting animations for Granny & Grandpa...");
+  const grannyClips = animLib.buildClipsForCharacter(grannyTemplate);
+  const grandpaClips = animLib.buildClipsForCharacter(grandpaTemplate);
+  animLib.disposeSourceTemplates();
+
+  const granny = instantiateCharacter("granny", grannyTemplate, grannyClips, bubbleCache);
+  const grandpa = instantiateCharacter("grandpa", grandpaTemplate, grandpaClips, bubbleCache);
+  scene.add(granny.root);
+  scene.add(grandpa.root);
+
+  const characters = { granny, grandpa };
+
+  const runner = new EpisodeRunner({
+    characters,
+    playerCamera,
+    comedyProps,
+    sfxEngine,
+    house,
+  });
+
+  let ui = null;
+
+  function resizeRenderer(aspectKey = playerCamera.aspectKey) {
+    const { width, height } = getStageTargetSize(aspectKey);
+    renderer.setSize(width, height, false);
+    renderer.domElement.style.width = `${width}px`;
+    renderer.domElement.style.height = `${height}px`;
+    playerCamera.setAspect(aspectKey);
+    playerCamera.camera.aspect = width / height;
+    playerCamera.camera.updateProjectionMatrix();
+  }
+
+  function loadEpisode(epObj) {
+    const info = runner.loadEpisode(epObj);
+    resizeRenderer(playerCamera.aspectKey);
+    ui?.setEpisodeJson(epObj);
+    ui?.syncButtons();
+    ui?.syncState({
+      simTime: runner.simTime,
+      duration: runner.duration,
+      isPlaying: runner.isPlaying,
+      isFinished: runner.isFinished,
+    });
+    return info;
+  }
+
+  if (!isHeadless) {
+    ui = new StudioUI({
+      runner,
+      sfxEngine,
+      playerCamera,
+      characters,
+      renderer,
+      onLoadEpisode: loadEpisode,
+      onAspectChange: (key) => resizeRenderer(key),
+    });
+
+    runner.onStateChange = (st) => ui.syncState(st);
+    runner.onFinish = () => {
+      ui.syncButtons();
+      ui.toast("Episode finished! Hit Play to replay or Edit JSON Skits.");
+    };
+  }
+
+  window.addEventListener("resize", () => resizeRenderer(playerCamera.aspectKey));
+
+  const heldKeys = new Set();
+  window.addEventListener("keydown", (e) => {
+    if (
+      document.activeElement &&
+      ["TEXTAREA", "INPUT", "SELECT"].includes(document.activeElement.tagName)
+    ) {
+      return;
+    }
+    heldKeys.add(e.code);
+  });
+  window.addEventListener("keyup", (e) => heldKeys.delete(e.code));
+
+  const startPresetKey = urlParams.get("preset") || "grandpa_key_pov_44s";
+  const initialEp = EPISODE_PRESETS[startPresetKey] || DEFAULT_EPISODE;
+  loadEpisode(initialEp);
+
+  if (isHeadless) {
+    document.body.classList.add("headless-mode");
+  }
+
+  function renderFrame() {
+    camFill.position.copy(playerCamera.camera.position);
+    camFill.position.y = Math.max(0.8, playerCamera.camera.position.y + 0.1);
+
+    const alpha = playerCamera.fadeAlpha;
+    fadeQuad.visible = alpha > 0.002;
+    fadeQuadMat.opacity = alpha;
+    if (fadeOverlay) {
+      fadeOverlay.style.opacity = String(alpha);
+    }
+
+    renderer.render(scene, playerCamera.camera);
+  }
+
+  renderFrame();
+  setProgress(100, "Ready!");
+  setTimeout(() => {
+    loadingOverlay?.classList.add("hidden");
+  }, 150);
+
+  let lastWall = performance.now();
+  let accumulator = 0;
+
+  function animate(now) {
+    requestAnimationFrame(animate);
+    if (isHeadless) return;
+
+    const frameDt = Math.min(CONFIG.maxFrameDt, (now - lastWall) / 1000);
+    lastWall = now;
+
+    if (runner.isPlaying) {
+      accumulator += frameDt;
+      while (accumulator >= CONFIG.fixedDt) {
+        runner.step(CONFIG.fixedDt);
+        accumulator -= CONFIG.fixedDt;
+      }
+    } else if (heldKeys.size > 0 && playerCamera.mode === "pov") {
+      const speed = 2.6 * frameDt;
+      const forward = new THREE.Vector3(0, 0, -1).applyEuler(
+        new THREE.Euler(0, playerCamera.yaw, 0)
+      );
+      const right = new THREE.Vector3(1, 0, 0).applyEuler(
+        new THREE.Euler(0, playerCamera.yaw, 0)
+      );
+      if (heldKeys.has("KeyW") || heldKeys.has("ArrowUp"))
+        playerCamera.playerPos.addScaledVector(forward, speed);
+      if (heldKeys.has("KeyS") || heldKeys.has("ArrowDown"))
+        playerCamera.playerPos.addScaledVector(forward, -speed);
+      if (heldKeys.has("KeyA") || heldKeys.has("ArrowLeft"))
+        playerCamera.playerPos.addScaledVector(right, -speed);
+      if (heldKeys.has("KeyD") || heldKeys.has("ArrowRight"))
+        playerCamera.playerPos.addScaledVector(right, speed);
+      if (heldKeys.has("KeyQ")) playerCamera.yaw += 1.6 * frameDt;
+      if (heldKeys.has("KeyE")) playerCamera.yaw -= 1.6 * frameDt;
+      playerCamera.update(frameDt, runner.resolver);
+      ui?.syncState({
+        simTime: runner.simTime,
+        duration: runner.duration,
+        isPlaying: false,
+        isFinished: runner.isFinished,
+      });
+    } else if (playerCamera.mode === "orbit") {
+      playerCamera.update(frameDt, runner.resolver);
+    }
+
+    renderFrame();
+  }
+  requestAnimationFrame(animate);
+
+  // -------------------------------------------------------------------------
+  // Headless Deterministic Export Hook (used by scripts/export-video.mjs)
+  // -------------------------------------------------------------------------
+  window.__GRANNY_STUDIO__ = {
+    version: "2.0.0-pov",
+    ready: true,
+    getPresetKeys: () => Object.keys(EPISODE_PRESETS),
+    beginHeadlessExport: ({ episode, pacerEnabled = true, aspectOverride = "" } = {}) => {
+      sfxEngine.setPacerEnabled(pacerEnabled);
+      sfxEngine.startEventCapture();
+      if (episode) {
+        runner.loadEpisode(episode);
+      } else {
+        runner.reset();
+      }
+      if (aspectOverride && CONFIG.aspectModes[aspectOverride]) {
+        resizeRenderer(aspectOverride);
+      } else {
+        resizeRenderer(playerCamera.aspectKey);
+      }
+      renderFrame();
+      return {
+        title: runner.episode?.title || "Granny POV Episode",
+        duration: runner.duration,
+        aspectKey: playerCamera.aspectKey,
+        width: renderer.domElement.width,
+        height: renderer.domElement.height,
+      };
+    },
+    renderExportFrame: (dt) => {
+      if (dt > 0) {
+        const subSteps = Math.max(1, Math.round(dt / CONFIG.fixedDt));
+        const subDt = dt / subSteps;
+        for (let i = 0; i < subSteps; i += 1) {
+          runner.step(subDt);
+        }
+      }
+      renderFrame();
+      return {
+        simTime: runner.simTime,
+        isFinished: runner.isFinished,
+        dataUrl: renderer.domElement.toDataURL("image/png"),
+      };
+    },
+    finishHeadlessExport: () => {
+      return sfxEngine.stopEventCapture(runner.simTime);
+    },
+  };
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error("[Studio] Fatal boot error:", err);
+  window.__GRANNY_STUDIO_ERROR__ = err?.message || String(err);
+  setProgress(100, `Error: ${err.message}`);
+});
