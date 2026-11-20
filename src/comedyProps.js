@@ -191,48 +191,53 @@ export class ThoughtBubbleCache {
 
 function makeEmojiFaceTexture(angry = false) {
   const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 128;
+  canvas.width = 512;
+  canvas.height = 256;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
 
   ctx.fillStyle = angry ? "#fb923c" : "#facc15";
-  ctx.fillRect(0, 0, 256, 128);
+  ctx.fillRect(0, 0, 512, 256);
 
-  // Place face centered at u=0.5, v=0.5 (facing +Z on sphere if rotated -90deg Y)
-  const cx = 128;
-  const cy = 64;
-  ctx.fillStyle = "#0f172a";
-  ctx.beginPath();
-  ctx.arc(cx - 26, cy - 12, 9, 0, Math.PI * 2);
-  ctx.arc(cx + 26, cy - 12, 9, 0, Math.PI * 2);
-  ctx.fill();
-
-  if (angry) {
-    ctx.strokeStyle = "#7f1d1d";
-    ctx.lineWidth = 7;
+  const drawFaceAt = (cx, cy) => {
+    ctx.fillStyle = "#0f172a";
     ctx.beginPath();
-    ctx.moveTo(cx - 38, cy - 28);
-    ctx.lineTo(cx - 12, cy - 18);
-    ctx.moveTo(cx + 38, cy - 28);
-    ctx.lineTo(cx + 12, cy - 18);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(cx, cy + 26, 20, Math.PI * 1.15, Math.PI * 1.85);
-    ctx.stroke();
-  } else {
-    ctx.fillStyle = "#ffffff";
-    ctx.beginPath();
-    ctx.arc(cx - 28, cy - 14, 3, 0, Math.PI * 2);
-    ctx.arc(cx + 24, cy - 14, 3, 0, Math.PI * 2);
+    ctx.arc(cx - 48, cy - 22, 16, 0, Math.PI * 2);
+    ctx.arc(cx + 48, cy - 22, 16, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = "#0f172a";
-    ctx.lineWidth = 7;
-    ctx.beginPath();
-    ctx.arc(cx, cy + 6, 26, 0.15 * Math.PI, 0.85 * Math.PI);
-    ctx.stroke();
-  }
+    if (angry) {
+      ctx.strokeStyle = "#7f1d1d";
+      ctx.lineWidth = 12;
+      ctx.beginPath();
+      ctx.moveTo(cx - 70, cy - 52);
+      ctx.lineTo(cx - 22, cy - 34);
+      ctx.moveTo(cx + 70, cy - 52);
+      ctx.lineTo(cx + 22, cy - 34);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy + 48, 36, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(cx - 52, cy - 26, 6, 0, Math.PI * 2);
+      ctx.arc(cx + 44, cy - 26, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "#0f172a";
+      ctx.lineWidth = 12;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.arc(cx, cy + 12, 48, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.stroke();
+    }
+  };
+
+  // Mirror emoji face on BOTH front (u=0.5) and back (u=0/1 seam) hemispheres
+  drawFaceAt(256, 128);
+  drawFaceAt(0, 128);
+  drawFaceAt(512, 128);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -498,7 +503,7 @@ export class ComedyPropManager {
         mesh.visible = true;
         state.popOut = true;
         state.bounce = true;
-        state.spin = true;
+        state.spin = entry.type !== "emoji_ball";
         state.phase = 0;
         if (params.at && this.waypoints[params.at]) {
           const wp = this.waypoints[params.at];
@@ -527,14 +532,25 @@ export class ComedyPropManager {
     }
   }
 
-  update(dt) {
+  update(dt, cameraPos = null) {
     for (const entry of this.props.values()) {
       const { mesh, state, basePos } = entry;
       if (!mesh.visible) continue;
 
       state.phase += dt;
 
-      if (state.spin) {
+      if (entry.type === "emoji_ball") {
+        // Yaw-track camera with playful cartoon bounce wobble so the emoji face stays visible
+        if (cameraPos) {
+          const dx = cameraPos.x - mesh.position.x;
+          const dz = cameraPos.z - mesh.position.z;
+          if (dx * dx + dz * dz > 1e-4) {
+            mesh.rotation.y = Math.atan2(dx, dz);
+          }
+        }
+        mesh.rotation.z = Math.sin(state.phase * 7.0) * 0.22;
+        mesh.rotation.x = Math.cos(state.phase * 5.5) * 0.12;
+      } else if (state.spin) {
         mesh.rotation.y += dt * 3.4;
       }
 

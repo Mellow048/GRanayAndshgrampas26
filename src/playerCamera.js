@@ -7,6 +7,10 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+// Lock FPS pitch cleanly between -45 deg (down) and +35 deg (up) so the camera never stares at ceilings.
+const MIN_CAMERA_PITCH = -Math.PI / 4; // -45 deg
+const MAX_CAMERA_PITCH = (35 * Math.PI) / 180; // +35 deg
+
 function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
@@ -213,12 +217,14 @@ export class PlayerCamera {
     const prop = resolver.getProp ? resolver.getProp(ref) : null;
     if (prop) {
       out.copy(prop.mesh.position);
-      out.y += 0.2;
+      out.y += 0.08;
       return true;
     }
     const wp = resolver.getWaypoint(ref);
     if (wp) {
-      out.set(wp.x, (wp.y || 0) + 1.35, wp.z);
+      // Surface waypoints (e.g. counter top y=1.13) target just above the surface rather than adding +1.35m eye height.
+      const yOff = (wp.y || 0) > 0.2 ? 0.12 : 1.35;
+      out.set(wp.x, (wp.y || 0) + yOff, wp.z);
       return true;
     }
     return false;
@@ -232,7 +238,7 @@ export class PlayerCamera {
     const horizDist = Math.max(1e-4, Math.hypot(dx, dz));
     // Three.js camera looks down -Z; yaw = atan2(-dx, -dz)
     const yaw = Math.atan2(-dx, -dz);
-    const pitch = clamp(Math.atan2(dy, horizDist), -1.1, 1.1);
+    const pitch = clamp(Math.atan2(dy, horizDist), MIN_CAMERA_PITCH, MAX_CAMERA_PITCH);
     return { yaw, pitch };
   }
 
@@ -481,7 +487,7 @@ export class PlayerCamera {
     }
 
     const finalYaw = this.yaw + gestureYaw;
-    const finalPitch = clamp(this.pitch + gesturePitch, -1.2, 1.2);
+    const finalPitch = clamp(this.pitch + gesturePitch, MIN_CAMERA_PITCH, MAX_CAMERA_PITCH);
     const rightX = Math.cos(finalYaw);
     const rightZ = -Math.sin(finalYaw);
 
