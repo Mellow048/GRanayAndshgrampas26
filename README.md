@@ -9,7 +9,8 @@ A zero-build Three.js (`v0.170.0`) first-person **Granny POV Kids-Comedy 3D Cart
 ## Studio Features
 - **First-Person POV Camera (`src/playerCamera.js`)**: Eye-level A* indoor walking with head-bob, whip-pan double-takes (`player_look`), camera-head gestures (`nod_yes`, `shake_no`, `shake_panic`, `peek_lean`), crouch-hiding (`0.42m`), bottom-right FPS held-item viewmodel, fade-to-black, and `16:9` / `9:16` toggle.
 - **Comedy Props & Thought Bubbles (`src/comedyProps.js`)**: `golden_key`, `padlock`, opening `treasure_chest`, `emoji_ball`, `toy_blaster`, `cookie_jar`, plus 8 comic thought bubbles (`key`, `question`, `exclamation`, `zzz`, `angry`, `laugh`, `food`, `heart`).
-- **Web Audio BGM + 25-SFX Mixer (`src/sfxEngine.js`)**: Looping BGM, `cutBgm` comedy silence cuts, movement-synced footsteps, whip-pan whooshes, bubble pops, and a toggleable 1–2s kids-comedy pacer.
+- **Web Audio BGM + 28-Clip Mixer (`src/sfxEngine.js`)**: Looping comedy & chase BGM (`SoundEffects/backroundMusics/`: `fluffing_a_duck`, `monkeys_spinning_monkeys`, `run_amok`, plus Granny ambience/chase tracks), `cutBgm` comedy silence cuts, movement-synced footsteps, whip-pan whooshes, bubble pops, and a toggleable 1–2s kids-comedy pacer.
+- **Episode Production Guide (`EPISODE_PRODUCTION_GUIDE.md`)**: Complete playbook for generating high-retention Shorts & POV episodes (3-second pacing rules, doorway routing, BGM/SFX table, and copy-paste JSON template).
 - **Waypoints & Live Skit Editor (`src/studioUI.js`)**: Click any indoor `SET_MAP` waypoint to teleport, scout new coordinates with `WASD + Q/E`, test animations/bubbles/SFX, or edit & play multi-skit JSON scripts live.
 
 ## Cloud Video Rendering (No Local Encoding Required)
