@@ -342,6 +342,21 @@ async function bootstrap() {
         height: renderer.domElement.height,
       };
     },
+    advanceExportFrames: (frameCount, dt) => {
+      if (frameCount > 0 && dt > 0) {
+        const subSteps = Math.max(1, Math.round(dt / CONFIG.fixedDt));
+        const subDt = dt / subSteps;
+        for (let f = 0; f < frameCount; f += 1) {
+          for (let i = 0; i < subSteps; i += 1) {
+            runner.step(subDt);
+          }
+        }
+      }
+      return {
+        simTime: runner.simTime,
+        isFinished: runner.isFinished,
+      };
+    },
     renderExportFrame: (dt) => {
       if (dt > 0) {
         const subSteps = Math.max(1, Math.round(dt / CONFIG.fixedDt));

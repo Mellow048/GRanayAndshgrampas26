@@ -128,12 +128,15 @@ export function disposeObject3D(root) {
   });
 }
 
-function configureMaterialsAndShadows(root, { doubleSided = false } = {}) {
+function configureMaterialsAndShadows(
+  root,
+  { doubleSided = false, frustumCulled = false, castShadow = true } = {}
+) {
   root.traverse((node) => {
     if (!node.isMesh) return;
-    node.castShadow = true;
+    node.castShadow = castShadow;
     node.receiveShadow = true;
-    node.frustumCulled = false;
+    node.frustumCulled = node.isSkinnedMesh ? false : frustumCulled;
 
     const mats = Array.isArray(node.material) ? node.material : [node.material];
     for (const mat of mats) {
@@ -459,7 +462,11 @@ export async function loadHouse() {
     spec.textureAliases
   );
   removeEmbeddedCamerasAndLights(rawHouse);
-  configureMaterialsAndShadows(rawHouse, { doubleSided: true });
+  configureMaterialsAndShadows(rawHouse, {
+    doubleSided: true,
+    frustumCulled: true,
+    castShadow: false,
+  });
 
   const houseRoot = new THREE.Group();
   houseRoot.name = "GrannyHouseRoot";
