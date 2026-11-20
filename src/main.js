@@ -320,7 +320,7 @@ async function bootstrap() {
     version: "2.0.0-pov",
     ready: true,
     getPresetKeys: () => Object.keys(EPISODE_PRESETS),
-    beginHeadlessExport: ({ episode, pacerEnabled = true, aspectOverride = "" } = {}) => {
+    beginHeadlessExport: async ({ episode, pacerEnabled = true, aspectOverride = "" } = {}) => {
       sfxEngine.setPacerEnabled(pacerEnabled);
       sfxEngine.startEventCapture();
       if (episode) {
@@ -328,6 +328,7 @@ async function bootstrap() {
       } else {
         runner.reset();
       }
+      await runner._flushMicrotasks();
       if (aspectOverride && CONFIG.aspectModes[aspectOverride]) {
         resizeRenderer(aspectOverride);
       } else {
@@ -342,13 +343,13 @@ async function bootstrap() {
         height: renderer.domElement.height,
       };
     },
-    advanceExportFrames: (frameCount, dt) => {
+    advanceExportFrames: async (frameCount, dt) => {
       if (frameCount > 0 && dt > 0) {
         const subSteps = Math.max(1, Math.round(dt / CONFIG.fixedDt));
         const subDt = dt / subSteps;
         for (let f = 0; f < frameCount; f += 1) {
           for (let i = 0; i < subSteps; i += 1) {
-            runner.step(subDt);
+            await runner.stepAsync(subDt);
           }
         }
       }
@@ -357,12 +358,12 @@ async function bootstrap() {
         isFinished: runner.isFinished,
       };
     },
-    renderExportFrame: (dt) => {
+    renderExportFrame: async (dt) => {
       if (dt > 0) {
         const subSteps = Math.max(1, Math.round(dt / CONFIG.fixedDt));
         const subDt = dt / subSteps;
         for (let i = 0; i < subSteps; i += 1) {
-          runner.step(subDt);
+          await runner.stepAsync(subDt);
         }
       }
       renderFrame();

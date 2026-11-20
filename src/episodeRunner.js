@@ -1,14 +1,15 @@
 import * as THREE from "three";
-import { CONFIG, SET_MAP } from "./config.js";
+import { CONFIG, SET_MAP, NAV_GRAPH } from "./config.js";
 
 const LOCOMOTION_ANIMS = new Set(["walk", "run", "run2", "sneak", "granny_walk", "jump"]);
 const PLAYER_PERSONAL_SPACE = 1.3;
 const ACTOR_SEPARATION = 1.05;
 
-const STAIRS_BOTTOM = new THREE.Vector3(-1.9, 0.0, 4.0);
-const STAIRS_MIDDLE = new THREE.Vector3(-1.9, 1.54, 2.5);
-const STAIRS_TOP = new THREE.Vector3(-1.9, 2.85, 1.25);
-const UPSTAIRS_LANDING = new THREE.Vector3(-1.9, 2.85, 0.95);
+const BASE_WALK_SPEED = CONFIG.baseWalkSpeed ?? 2.5;
+const BASE_RUN_SPEED = CONFIG.baseRunSpeed ?? 3.8;
+const BASE_SNEAK_SPEED = CONFIG.baseSneakSpeed ?? 1.65;
+const BASE_STAIR_SPEED = CONFIG.baseStairSpeed ?? 1.85;
+const BASE_JUMP_SPEED = CONFIG.baseJumpSpeed ?? 2.35;
 
 function getFloorIndex(y) {
   return y < 2.1 ? 1 : 2;
@@ -37,10 +38,11 @@ function isElevatedSurfacePos(pos) {
 
 /**
  * Deterministic 60Hz POV Episode & Multi-Skit Beat Runner.
- * Supports:
- *  - Asynchronous sequential timeline gating (`await: true` / `sync: "sequential"`)
- *  - Cross-floor staircase routing (`stairs_bottom -> stairs_middle -> stairs_top`) with 3D/vertical speed clamping
- *  - Elevated furniture approach + jump-arc hopping
+ * Implements:
+ *  - Connected indoor NavGraph + Dijkstra shortest-path routing (both floors + stairs + elevated furniture)
+ *  - Dynamic distance-based movement duration (`distance / BASE_WALK_SPEED`)
+ *  - True `async/await` Promise-based beat execution for `await: true` / `sync: "sequential"`
+ *  - Y-axis sine-wave parabolic jump arcs onto/off elevated furniture waypoints
  */
 export class EpisodeRunner {
   constructor({
@@ -61,8 +63,14 @@ export class EpisodeRunner {
     this.episode = null;
     this.events = [];
     this.activeCharMoves = [];
-    this.activeBarrier = null;
     this.nextMoveId = 1;
+
+    this._runToken = 0;
+    this._seekToken = 0;
+    this._silentSeek = false;
+    this.isAwaitingBeat = false;
+    this._simWaiters = [];
+    this._timelineWaiters = [];
 
     this.simTime = 0;
     this.timelineTime = 0;
@@ -113,192 +121,148 @@ export class EpisodeRunner {
       x: target.x ?? 0,
       y: target.y ?? 0,
       z: target.z ?? 0,
+      elevated: Boolean(target.elevated),
       approach: target.approach,
+      _name: target._name,
     };
   }
 
-  _findClosestApproach(pos, preferredRef = null) {
-    const floorY = getBaseFloorY(pos.y);
-    if (preferredRef && SET_MAP[preferredRef]) {
-      const wp = SET_MAP[preferredRef];
-      return new THREE.Vector3(wp.x, wp.y ?? floorY, wp.z);
+  findClosestNavNodeId(pos) {
+    if (pos?._name && NAV_GRAPH[pos._name]) {
+      return pos._name;
     }
-    // Search SET_MAP for closest non-elevated waypoint on same floor
-    let best = null;
+    const wantFloor = getFloorIndex(pos.y ?? 0);
+    const wantElevated = isElevatedSurfacePos(pos);
+
+    let bestId = null;
     let bestDist = Infinity;
-    for (const wp of Object.values(SET_MAP)) {
-      if (wp.elevated) continue;
-      if (Math.abs((wp.y ?? 0) - floorY) > 0.25) continue;
-      const d = Math.hypot(wp.x - pos.x, wp.z - pos.z);
-      if (d > 0.35 && d < 3.0 && d < bestDist) {
+    for (const [id, node] of Object.entries(NAV_GRAPH)) {
+      const floorDiff = getFloorIndex(node.y ?? 0) === wantFloor ? 0 : 100;
+      const elevPenalty = Boolean(node.elevated) !== wantElevated ? 25 : 0;
+      const d =
+        Math.hypot((node.x ?? 0) - (pos.x ?? 0), (node.y ?? 0) - (pos.y ?? 0), (node.z ?? 0) - (pos.z ?? 0)) +
+        floorDiff +
+        elevPenalty;
+      if (d < bestDist) {
         bestDist = d;
-        best = wp;
+        bestId = id;
       }
     }
-    if (best) {
-      return new THREE.Vector3(best.x, best.y ?? floorY, best.z);
-    }
-    return new THREE.Vector3(pos.x, floorY, pos.z);
-  }
-
-  _appendFlatRoute(chain, aVec, bVec, floorY) {
-    const startFlat = new THREE.Vector3(aVec.x, floorY, aVec.z);
-    const goalFlat = new THREE.Vector3(bVec.x, floorY, bVec.z);
-    if (startFlat.distanceTo(goalFlat) < 0.08) return;
-
-    if (
-      floorY < 0.25 &&
-      this.house &&
-      typeof this.house.findPath === "function"
-    ) {
-      const path = this.house.findPath(startFlat, goalFlat);
-      if (path && path.length >= 2) {
-        for (let i = 1; i < path.length; i += 1) {
-          const p = path[i];
-          chain.push({
-            pt: new THREE.Vector3(p.x, floorY, p.z),
-            isJumpArc: false,
-            arcHeight: 0,
-          });
-        }
-        return;
-      }
-    }
-    chain.push({ pt: goalFlat, isJumpArc: false, arcHeight: 0 });
+    return bestId || "front_door_view";
   }
 
   /**
-   * Builds a 3D path + per-segment metadata (jump arcs vs stair ramps vs flat walk)
-   * ensuring cross-floor transitions ALWAYS pass sequentially through
-   * `stairs_bottom <-> stairs_middle <-> stairs_top`.
+   * Dijkstra shortest-path search over `NAV_GRAPH`.
+   * Prevents intermediate routing across `elevated` furniture unless it is the start/goal.
+   */
+  findNavPath(startId, goalId) {
+    if (!startId || !goalId) return [];
+    if (startId === goalId) return [startId];
+    if (!NAV_GRAPH[startId] || !NAV_GRAPH[goalId]) return [startId, goalId];
+
+    const dist = new Map();
+    const prev = new Map();
+    const unvisited = new Set(Object.keys(NAV_GRAPH));
+
+    for (const id of unvisited) {
+      dist.set(id, Infinity);
+    }
+    dist.set(startId, 0);
+
+    while (unvisited.size > 0) {
+      let u = null;
+      let bestD = Infinity;
+      for (const id of unvisited) {
+        const d = dist.get(id);
+        if (d < bestD) {
+          bestD = d;
+          u = id;
+        }
+      }
+      if (!u || bestD === Infinity || u === goalId) break;
+      unvisited.delete(u);
+
+      const nodeU = NAV_GRAPH[u];
+      for (const v of nodeU.neighbors || []) {
+        if (!unvisited.has(v)) continue;
+        const nodeV = NAV_GRAPH[v];
+        if (!nodeV) continue;
+        // Do not walk up onto intermediate elevated furniture while traversing a room
+        if (nodeV.elevated && v !== goalId && v !== startId) continue;
+
+        const edgeLen = Math.hypot(
+          (nodeV.x ?? 0) - (nodeU.x ?? 0),
+          (nodeV.y ?? 0) - (nodeU.y ?? 0),
+          (nodeV.z ?? 0) - (nodeU.z ?? 0)
+        );
+        const alt = bestD + edgeLen;
+        if (alt < dist.get(v)) {
+          dist.set(v, alt);
+          prev.set(v, u);
+        }
+      }
+    }
+
+    if (dist.get(goalId) === Infinity) {
+      return [startId, goalId];
+    }
+
+    const path = [];
+    let cur = goalId;
+    while (cur !== undefined) {
+      path.unshift(cur);
+      if (cur === startId) break;
+      cur = prev.get(cur);
+    }
+    return path;
+  }
+
+  /**
+   * Builds a 3D path + per-segment metadata (jump arcs vs stair ramps vs flat floor)
+   * using Dijkstra pathfinding over `NAV_GRAPH`.
    */
   buildPathWithSegments(fromPos, toPos) {
-    const startVec = new THREE.Vector3(fromPos.x, fromPos.y ?? 0, fromPos.z);
-    const goalVec = new THREE.Vector3(toPos.x, toPos.y ?? 0, toPos.z);
+    const startVec = new THREE.Vector3(fromPos.x ?? 0, fromPos.y ?? 0, fromPos.z ?? 0);
+    const goalVec = new THREE.Vector3(toPos.x ?? 0, toPos.y ?? 0, toPos.z ?? 0);
 
     if (startVec.distanceTo(goalVec) < 0.05) {
       return { points: [startVec, goalVec], segments: [{ isJumpArc: false, arcHeight: 0 }] };
     }
 
-    const startFloor = getFloorIndex(startVec.y);
-    const goalFloor = getFloorIndex(goalVec.y);
-    const startOnStairs = isOnStairs(startVec);
-    const goalOnStairs = isOnStairs(goalVec);
+    const startId = this.findClosestNavNodeId(fromPos);
+    const goalId = this.findClosestNavNodeId(toPos);
+    const nodeIds = this.findNavPath(startId, goalId);
 
     const chain = [{ pt: startVec.clone(), isJumpArc: false, arcHeight: 0 }];
-    let cursor = startVec.clone();
 
-    // Direct short furniture-to-furniture hop on the same floor
-    const sameFloorElevated =
-      startFloor === goalFloor &&
-      isElevatedSurfacePos(startVec) &&
-      isElevatedSurfacePos(goalVec) &&
-      Math.hypot(goalVec.x - startVec.x, goalVec.z - startVec.z) < 2.2;
+    for (let i = 0; i < nodeIds.length; i += 1) {
+      const id = nodeIds[i];
+      const node = NAV_GRAPH[id] || SET_MAP[id];
+      if (!node) continue;
+      const pt = new THREE.Vector3(node.x, node.y ?? 0, node.z);
+      const prev = chain[chain.length - 1].pt;
+      if (prev.distanceTo(pt) < 0.06) continue;
 
-    if (sameFloorElevated) {
+      const prevNode = i > 0 ? NAV_GRAPH[nodeIds[i - 1]] : null;
+      const prevElevated = prevNode ? Boolean(prevNode.elevated) : isElevatedSurfacePos(prev);
+      const curElevated = Boolean(node.elevated);
+      const isJumpArc = prevElevated || curElevated;
+      const arcHeight = isJumpArc
+        ? Math.min(0.62, 0.30 + Math.abs(pt.y - prev.y) * 0.25)
+        : 0;
+
+      chain.push({ pt, isJumpArc, arcHeight });
+    }
+
+    const tail = chain[chain.length - 1].pt;
+    if (tail.distanceTo(goalVec) >= 0.06) {
+      const lastNode = NAV_GRAPH[nodeIds[nodeIds.length - 1]];
+      const isJumpArc = Boolean(lastNode?.elevated) || isElevatedSurfacePos(goalVec);
       chain.push({
         pt: goalVec.clone(),
-        isJumpArc: true,
-        arcHeight: 0.34,
+        isJumpArc,
+        arcHeight: isJumpArc ? Math.min(0.62, 0.30 + Math.abs(goalVec.y - tail.y) * 0.25) : 0,
       });
-      return this._finalizeChain(chain);
-    }
-
-    // Step off elevated furniture if starting on one
-    if (isElevatedSurfacePos(cursor)) {
-      const dropPt = this._findClosestApproach(cursor, fromPos.approach);
-      chain.push({
-        pt: dropPt.clone(),
-        isJumpArc: true,
-        arcHeight: Math.min(0.45, 0.22 + Math.abs(cursor.y - dropPt.y) * 0.22),
-      });
-      cursor = dropPt;
-    }
-
-    if (startFloor !== goalFloor || startOnStairs || goalOnStairs) {
-      const goingUp =
-        goalFloor > startFloor || (startFloor === goalFloor && goalVec.y > startVec.y + 0.35);
-      const goingDown =
-        goalFloor < startFloor || (startFloor === goalFloor && goalVec.y < startVec.y - 0.35);
-
-      if (goingUp) {
-        if (!startOnStairs && startFloor === 1) {
-          this._appendFlatRoute(chain, cursor, STAIRS_BOTTOM, 0.0);
-          chain.push({ pt: STAIRS_BOTTOM.clone(), isJumpArc: false, arcHeight: 0 });
-          cursor = STAIRS_BOTTOM.clone();
-        }
-        const stairSeq = [STAIRS_BOTTOM, STAIRS_MIDDLE, STAIRS_TOP];
-        for (const node of stairSeq) {
-          if (node.z < cursor.z - 0.12 && node.y >= cursor.y - 0.05) {
-            chain.push({ pt: node.clone(), isJumpArc: false, arcHeight: 0 });
-            cursor = node.clone();
-          }
-        }
-        if (goalFloor === 2) {
-          if (UPSTAIRS_LANDING.z < cursor.z - 0.08) {
-            chain.push({ pt: UPSTAIRS_LANDING.clone(), isJumpArc: false, arcHeight: 0 });
-            cursor = UPSTAIRS_LANDING.clone();
-          }
-          if (isElevatedSurfacePos(goalVec)) {
-            const app = this._findClosestApproach(goalVec, toPos.approach);
-            this._appendFlatRoute(chain, cursor, app, 2.85);
-            chain.push({
-              pt: goalVec.clone(),
-              isJumpArc: true,
-              arcHeight: Math.min(0.62, 0.32 + Math.abs(goalVec.y - 2.85) * 0.25),
-            });
-          } else if (!goalOnStairs) {
-            this._appendFlatRoute(chain, cursor, goalVec, goalVec.y);
-          }
-        } else if (goalOnStairs) {
-          chain.push({ pt: goalVec.clone(), isJumpArc: false, arcHeight: 0 });
-        }
-      } else if (goingDown) {
-        if (!startOnStairs && startFloor === 2) {
-          this._appendFlatRoute(chain, cursor, UPSTAIRS_LANDING, 2.85);
-          chain.push({ pt: UPSTAIRS_LANDING.clone(), isJumpArc: false, arcHeight: 0 });
-          cursor = UPSTAIRS_LANDING.clone();
-        }
-        const stairSeq = [STAIRS_TOP, STAIRS_MIDDLE, STAIRS_BOTTOM];
-        for (const node of stairSeq) {
-          if (node.z > cursor.z + 0.12 && node.y <= cursor.y + 0.05) {
-            chain.push({ pt: node.clone(), isJumpArc: false, arcHeight: 0 });
-            cursor = node.clone();
-          }
-        }
-        if (goalFloor === 1) {
-          if (isElevatedSurfacePos(goalVec)) {
-            const app = this._findClosestApproach(goalVec, toPos.approach);
-            this._appendFlatRoute(chain, cursor, app, 0.0);
-            chain.push({
-              pt: goalVec.clone(),
-              isJumpArc: true,
-              arcHeight: Math.min(0.58, 0.30 + Math.abs(goalVec.y - 0.0) * 0.24),
-            });
-          } else if (!goalOnStairs) {
-            this._appendFlatRoute(chain, cursor, goalVec, goalVec.y);
-          }
-        } else if (goalOnStairs) {
-          chain.push({ pt: goalVec.clone(), isJumpArc: false, arcHeight: 0 });
-        }
-      } else {
-        chain.push({ pt: goalVec.clone(), isJumpArc: false, arcHeight: 0 });
-      }
-      return this._finalizeChain(chain);
-    }
-
-    // Same floor routing
-    const floorY = getBaseFloorY(goalVec.y);
-    if (isElevatedSurfacePos(goalVec)) {
-      const app = this._findClosestApproach(goalVec, toPos.approach);
-      this._appendFlatRoute(chain, cursor, app, floorY);
-      chain.push({
-        pt: goalVec.clone(),
-        isJumpArc: true,
-        arcHeight: Math.min(0.62, 0.30 + Math.abs(goalVec.y - floorY) * 0.25),
-      });
-    } else {
-      this._appendFlatRoute(chain, cursor, goalVec, floorY);
     }
 
     return this._finalizeChain(chain);
@@ -350,7 +314,7 @@ export class EpisodeRunner {
       cursor = dst;
     }
     if (allPoints.length < 2) {
-      const p0 = new THREE.Vector3(from.x, from.y ?? 0, from.z);
+      const p0 = new THREE.Vector3(from.x ?? 0, from.y ?? 0, from.z ?? 0);
       return {
         points: [p0, p0.clone()],
         segments: [{ isJumpArc: false, arcHeight: 0 }],
@@ -359,11 +323,28 @@ export class EpisodeRunner {
     return { points: allPoints, segments: allSegments };
   }
 
-  _computeMoveTiming(points, segments, requestedDuration, requestedAnim, isPlayer = false) {
+  _computeMoveTiming(
+    points,
+    segments,
+    requestedDuration,
+    requestedAnim,
+    isPlayer = false,
+    customSpeed = null
+  ) {
     const isRun = requestedAnim === "run" || requestedAnim === "run2";
-    const maxFlatSpeed = isPlayer ? 3.2 : isRun ? 3.8 : 2.4;
-    const maxStairSpeed3D = isPlayer ? 2.15 : isRun ? 2.65 : 1.95;
-    const maxVertSpeed = isPlayer ? 1.55 : isRun ? 1.75 : 1.35;
+    const isSneak = requestedAnim === "sneak";
+    const baseFlatSpeed =
+      Number(customSpeed) > 0
+        ? Number(customSpeed)
+        : isPlayer
+          ? BASE_WALK_SPEED
+          : isRun
+            ? BASE_RUN_SPEED
+            : isSneak
+              ? BASE_SNEAK_SPEED
+              : BASE_WALK_SPEED;
+    const stairSpeed = Math.min(baseFlatSpeed, isRun ? 2.45 : BASE_STAIR_SPEED);
+    const maxVertSpeed = isPlayer ? 1.55 : isRun ? 1.75 : 1.4;
 
     const cumWeights = [0];
     let totalWeight = 0;
@@ -380,11 +361,11 @@ export class EpisodeRunner {
 
       let minSegDur;
       if (meta.isJumpArc) {
-        minSegDur = Math.max(0.45, segLen / 2.6);
+        minSegDur = Math.max(0.55, segLen / Math.max(baseFlatSpeed, BASE_JUMP_SPEED));
       } else if (isStair) {
-        minSegDur = Math.max(segLen / maxStairSpeed3D, dy / maxVertSpeed);
+        minSegDur = Math.max(segLen / stairSpeed, dy / maxVertSpeed);
       } else {
-        minSegDur = segLen / maxFlatSpeed;
+        minSegDur = segLen / baseFlatSpeed;
       }
 
       totalLength += segLen;
@@ -398,7 +379,9 @@ export class EpisodeRunner {
       });
     }
 
-    const effectiveDuration = Math.max(0.05, requestedDuration ?? 1.5, totalWeight);
+    // Distance / BASE_WALK_SPEED is the lower bound; never teleport faster than physical walk speed
+    const explicitMin = Number(requestedDuration) > 0 ? Number(requestedDuration) : 0;
+    const effectiveDuration = Math.max(0.08, totalWeight, explicitMin);
     return {
       effectiveDuration,
       cumWeights,
@@ -406,6 +389,7 @@ export class EpisodeRunner {
       totalLength,
       segInfo,
       maxVertSpeed,
+      baseFlatSpeed,
     };
   }
 
@@ -455,14 +439,13 @@ export class EpisodeRunner {
   }
 
   _estimateEpisodeDuration(episode) {
-    // Track virtual positions for accurate precomputed path lengths + await shifts
     const actorPos = {};
     for (const castEntry of episode.cast || []) {
       const sp = this.resolveWaypoint(castEntry.spawn || "back_hall");
-      actorPos[castEntry.id] = { x: sp.x, y: sp.y ?? 0, z: sp.z };
+      actorPos[castEntry.id] = { ...sp };
     }
     const pSp = this.resolveWaypoint(episode.playerSpawn || "back_hall");
-    let playerPos = { x: pSp.x, y: pSp.y ?? 0, z: pSp.z };
+    let playerPos = { ...pSp };
 
     let tlShift = 0;
     let barrierEndSim = 0;
@@ -479,10 +462,23 @@ export class EpisodeRunner {
       if (ev.type === "player_walk") {
         const stops = [...(ev.via || []), ev.to];
         const { points, segments } = this._buildFullStopChain(playerPos, stops);
-        const timing = this._computeMoveTiming(points, segments, effDur, "walk", true);
+        const timing = this._computeMoveTiming(
+          points,
+          segments,
+          ev.duration,
+          "walk",
+          true,
+          ev.speed
+        );
         effDur = timing.effectiveDuration;
         const last = points[points.length - 1];
-        playerPos = { x: last.x, y: last.y, z: last.z };
+        const lastStop = stops[stops.length - 1];
+        playerPos = {
+          x: last.x,
+          y: last.y,
+          z: last.z,
+          _name: typeof lastStop === "string" ? lastStop : undefined,
+        };
       } else if (ev.type === "char_move" || ev.type === "move") {
         const start = ev.from
           ? this.resolveWaypoint(ev.from)
@@ -492,13 +488,20 @@ export class EpisodeRunner {
         const timing = this._computeMoveTiming(
           points,
           segments,
-          effDur,
+          ev.duration,
           ev.anim || "walk",
-          false
+          false,
+          ev.speed
         );
         effDur = timing.effectiveDuration;
         const last = points[points.length - 1];
-        actorPos[ev.actor] = { x: last.x, y: last.y, z: last.z };
+        const lastStop = stops[stops.length - 1];
+        actorPos[ev.actor] = {
+          x: last.x,
+          y: last.y,
+          z: last.z,
+          _name: typeof lastStop === "string" ? lastStop : undefined,
+        };
       } else if ((ev.type === "char_anim" || ev.type === "anim") && effDur === 0) {
         effDur = ev.loop ? 0.5 : 1.05;
       }
@@ -527,12 +530,88 @@ export class EpisodeRunner {
     };
   }
 
+  _clearWaiters() {
+    for (const m of this.activeCharMoves) {
+      if (m.resolve) m.resolve();
+    }
+    this.activeCharMoves = [];
+    for (const w of this._simWaiters) {
+      if (w.resolve) w.resolve();
+    }
+    this._simWaiters = [];
+    for (const w of this._timelineWaiters) {
+      if (w.resolve) w.resolve();
+    }
+    this._timelineWaiters = [];
+    this.isAwaitingBeat = false;
+  }
+
+  _waitSim(duration, runToken) {
+    if (duration <= 1e-5) return Promise.resolve();
+    return new Promise((resolve) => {
+      this._simWaiters.push({
+        targetTime: this.simTime + duration,
+        runToken,
+        resolve,
+      });
+    });
+  }
+
+  _waitTimelineUntil(targetTimelineTime, runToken) {
+    if (this.timelineTime >= targetTimelineTime - 1e-6) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      this._timelineWaiters.push({
+        targetTime: targetTimelineTime,
+        runToken,
+        resolve,
+      });
+    });
+  }
+
+  async _flushMicrotasks() {
+    for (let i = 0; i < 4; i += 1) {
+      await Promise.resolve();
+    }
+  }
+
+  /**
+   * True `async / await` timeline scheduler.
+   * For every beat with `await: true` or `sync: "sequential"`, awaits the beat's
+   * Promise (movement, camera walk, look, animation, or timer) before advancing.
+   */
+  async _driveTimelineAsync(runToken) {
+    while (runToken === this._runToken && this.nextEventIndex < this.events.length) {
+      const ev = this.events[this.nextEventIndex];
+      if (ev.at > this.timelineTime + 1e-6) {
+        await this._waitTimelineUntil(ev.at, runToken);
+      }
+      if (runToken !== this._runToken) return;
+
+      this.nextEventIndex += 1;
+      const beatPromise = this.executeBeat(ev, {
+        silentSeek: this._silentSeek,
+        runToken,
+      });
+
+      if (ev.await === true || ev.sync === "sequential") {
+        this.isAwaitingBeat = true;
+        await beatPromise;
+        if (runToken !== this._runToken) return;
+        this.isAwaitingBeat = false;
+      }
+    }
+  }
+
   reset() {
+    this._runToken += 1;
+    const runToken = this._runToken;
+    this._clearWaiters();
+
     this.simTime = 0;
     this.timelineTime = 0;
     this.nextEventIndex = 0;
-    this.activeCharMoves = [];
-    this.activeBarrier = null;
     this.nextMoveId = 1;
     this.isPlaying = false;
     this.isFinished = false;
@@ -581,7 +660,7 @@ export class EpisodeRunner {
       this.playerCamera.setInspectionMode(false);
     }
 
-    this.dispatchDueEvents(0);
+    this._driveTimelineAsync(runToken);
     this.playerCamera?.update(0, this.resolver);
     this.emitState();
   }
@@ -604,8 +683,9 @@ export class EpisodeRunner {
     this.reset();
   }
 
-  seek(targetTime) {
+  async seek(targetTime) {
     if (!this.episode) return;
+    const seekToken = ++this._seekToken;
     const clamped = Math.max(0, Math.min(this.duration, targetTime));
     const wasPlaying = this.isPlaying;
     const wasExport = this.sfxEngine?.exportMode;
@@ -613,33 +693,50 @@ export class EpisodeRunner {
     if (this.sfxEngine) {
       this.sfxEngine.exportMode = true;
       const savedEvents = [...this.sfxEngine.recordedEvents];
+      this._silentSeek = true;
       this.reset();
+      await this._flushMicrotasks();
       const dt = CONFIG.fixedDt;
       const steps = Math.floor(clamped / dt);
       for (let i = 0; i < steps; i++) {
-        this.step(dt, { silentSeek: true });
+        if (seekToken !== this._seekToken) break;
+        await this.stepAsync(dt, { silentSeek: true });
       }
       const rem = clamped - steps * dt;
-      if (rem > 1e-5) {
-        this.step(rem, { silentSeek: true });
+      if (rem > 1e-5 && seekToken === this._seekToken) {
+        await this.stepAsync(rem, { silentSeek: true });
       }
+      this._silentSeek = false;
       this.sfxEngine.recordedEvents = savedEvents;
       this.sfxEngine.exportMode = Boolean(wasExport);
     }
 
-    this.isPlaying = wasPlaying;
-    this.emitState();
+    if (seekToken === this._seekToken) {
+      this.isPlaying = wasPlaying;
+      this.emitState();
+    }
   }
 
-  _checkBarrierResolved() {
-    if (!this.activeBarrier) return true;
-    if (this.activeBarrier.isDone()) {
-      const done = this.activeBarrier;
-      this.activeBarrier = null;
-      done.resolve();
-      return true;
+  async stepAsync(dt, { silentSeek = false } = {}) {
+    this.step(dt, { silentSeek });
+    await this._flushMicrotasks();
+  }
+
+  _resolveReadyWaiters() {
+    for (let i = this._simWaiters.length - 1; i >= 0; i--) {
+      const w = this._simWaiters[i];
+      if (w.runToken !== this._runToken || this.simTime >= w.targetTime - 1e-6) {
+        this._simWaiters.splice(i, 1);
+        w.resolve();
+      }
     }
-    return false;
+    for (let i = this._timelineWaiters.length - 1; i >= 0; i--) {
+      const w = this._timelineWaiters[i];
+      if (w.runToken !== this._runToken || this.timelineTime >= w.targetTime - 1e-6) {
+        this._timelineWaiters.splice(i, 1);
+        w.resolve();
+      }
+    }
   }
 
   step(dt, { silentSeek = false } = {}) {
@@ -647,27 +744,13 @@ export class EpisodeRunner {
 
     this.simTime += dt;
 
-    // 1. Check sequential `await` / `sync: "sequential"` barrier before advancing timelineTime
-    this._checkBarrierResolved();
-    let freezeTimeline = false;
-    if (this.activeBarrier && this.nextEventIndex < this.events.length) {
-      const nextEv = this.events[this.nextEventIndex];
-      if (nextEv.at <= this.timelineTime + dt + 1e-6) {
-        freezeTimeline = true;
-        this.timelineTime = Math.max(this.timelineTime, Math.min(nextEv.at, this.timelineTime + dt));
-      }
-    }
-
-    if (!freezeTimeline) {
+    if (!this.isAwaitingBeat) {
       this.timelineTime += dt;
     } else if (this.simTime > this.duration) {
       this.duration = this.simTime + 0.05;
     }
 
-    // 2. Dispatch beats scheduled <= timelineTime (halts immediately when an awaited beat fires)
-    this.dispatchDueEvents(this.timelineTime, { silentSeek });
-
-    // 3. Advance character 3D polyline moves (with jump-arc hopping & stair vertical clamping)
+    // 1. Advance character 3D polyline moves (with sine-wave jump arcs & stair slope clamping)
     let anyCharMoving = false;
     let fastestMoveAnim = "walk";
     for (let i = this.activeCharMoves.length - 1; i >= 0; i--) {
@@ -703,13 +786,19 @@ export class EpisodeRunner {
 
       if (segMeta.isJumpArc) {
         m.actor.root.position.y +=
-          Math.sin(localT * Math.PI) * (segMeta.arcHeight || 0.42);
+          Math.sin(localT * Math.PI) * (segMeta.arcHeight || 0.44);
       } else if (segMeta.isStair) {
         const maxStepY = (m.maxVertSpeed || 1.55) * Math.max(dt, 1 / 120) * 1.35;
         const dyStep = m.actor.root.position.y - prevY;
         if (Math.abs(dyStep) > maxStepY) {
           m.actor.root.position.y = prevY + Math.sign(dyStep) * maxStepY;
         }
+      } else {
+        // Strict flat floor lock between same-floor standard nodes
+        m.actor.root.position.y =
+          Math.abs(segEnd.y - segStart.y) < 0.05
+            ? segStart.y
+            : segStart.y + (segEnd.y - segStart.y) * localT;
       }
 
       const dx = segEnd.x - segStart.x;
@@ -740,11 +829,11 @@ export class EpisodeRunner {
         m.actor.root.position.copy(m.points[m.points.length - 1]);
         m.actor.playAnim(m.endAnim || "idle", 0.2, null, true);
         this.activeCharMoves.splice(i, 1);
+        if (m.resolve) m.resolve();
       }
     }
 
-    // 3b. Prevent standing ground-level actors from merging/clipping inside each other
-    // (Skip elevated furniture & active stair moves so nobody gets pushed into thin air.)
+    // 2. Prevent standing ground-level actors from merging/clipping inside each other
     const visibleActors = Object.values(this.characters).filter((c) => c.root.visible);
     const movingActorSet = new Set(this.activeCharMoves.map((m) => m.actor));
     for (let i = 0; i < visibleActors.length; i += 1) {
@@ -779,12 +868,14 @@ export class EpisodeRunner {
       }
     }
 
-    // 4. Advance PlayerCamera & enforce personal space around same-floor standing actors
+    // 3. Advance PlayerCamera & smoothly ease personal space around same-floor standing actors
     this.playerCamera?.update(dt, this.resolver);
     if (this.playerCamera && this.playerCamera.mode === "pov") {
       const pPos = this.playerCamera.playerPos;
       if (!this.playerCamera.isWalking && !isElevatedSurfacePos(pPos) && !isOnStairs(pPos)) {
+        const pushAlpha = Math.min(1, dt * 6);
         for (const actor of visibleActors) {
+          if (movingActorSet.has(actor)) continue;
           if (Math.abs(pPos.y - actor.root.position.y) > 0.65) continue;
           const dx = pPos.x - actor.root.position.x;
           const dz = pPos.z - actor.root.position.z;
@@ -792,8 +883,10 @@ export class EpisodeRunner {
           if (dist > 1e-4 && dist < PLAYER_PERSONAL_SPACE) {
             const nx = dx / dist;
             const nz = dz / dist;
-            const candX = actor.root.position.x + nx * PLAYER_PERSONAL_SPACE;
-            const candZ = actor.root.position.z + nz * PLAYER_PERSONAL_SPACE;
+            const targetX = actor.root.position.x + nx * PLAYER_PERSONAL_SPACE;
+            const targetZ = actor.root.position.z + nz * PLAYER_PERSONAL_SPACE;
+            const candX = pPos.x + (targetX - pPos.x) * pushAlpha;
+            const candZ = pPos.z + (targetZ - pPos.z) * pushAlpha;
             if (!this.house || pPos.y >= 0.4 || this.house.isPointInsideWalkable(candX, candZ)) {
               pPos.x = candX;
               pPos.z = candZ;
@@ -806,30 +899,32 @@ export class EpisodeRunner {
     }
     const playerMoving = Boolean(this.playerCamera?.isWalking);
 
-    // 5. Update Characters
+    // 4. Update Characters
     const playerCam = this.playerCamera?.camera || null;
     const playerCamPos = playerCam?.position || null;
     for (const char of visibleActors) {
       char.update(dt, playerCamPos, playerCam);
     }
 
-    // 6. Update 3D Comedy Props
+    // 5. Update 3D Comedy Props
     this.comedyProps?.update(dt, playerCamPos);
 
-    // 7. Advance SFX Pacer & movement footsteps
+    // 6. Advance SFX Pacer & movement footsteps
     if (!silentSeek && this.sfxEngine) {
       const anyMoving = playerMoving || anyCharMoving;
       const moveAnim = playerMoving ? "walk" : fastestMoveAnim;
       this.sfxEngine.tickPacer(dt, this.simTime, { anyMoving, moveAnim });
     }
 
-    // Re-check barrier at end of step so next tick has zero latency
-    this._checkBarrierResolved();
+    // 7. Resolve timeline & simulation-time Promises ready on this tick
+    this._resolveReadyWaiters();
 
-    // 8. Check completion (only finish when all events dispatched and no barrier active)
+    // 8. Check completion (only finish when all events dispatched and no awaited beat active)
     if (
       this.nextEventIndex >= this.events.length &&
-      !this.activeBarrier &&
+      !this.isAwaitingBeat &&
+      this.activeCharMoves.length === 0 &&
+      !this.playerCamera?.isWalking &&
       this.simTime >= this.duration - 1e-5 &&
       !this.isFinished
     ) {
@@ -844,85 +939,7 @@ export class EpisodeRunner {
     }
   }
 
-  _createBarrierForBeat(ev, waitHandle) {
-    let resolveFn = () => {};
-    const promise = new Promise((resolve) => {
-      resolveFn = resolve;
-    });
-    const startedAt = this.simTime;
-    const type = ev.type;
-
-    const isDone = () => {
-      if (type === "char_move" || type === "move") {
-        return !this.activeCharMoves.some((m) => m.moveId === waitHandle);
-      }
-      if (type === "player_walk") {
-        return !this.playerCamera || !this.playerCamera.isWalking;
-      }
-      if (type === "player_look") {
-        return (
-          !this.playerCamera ||
-          this.playerCamera.lookElapsed >= this.playerCamera.lookDuration
-        );
-      }
-      if (type === "player_gesture") {
-        return (
-          !this.playerCamera ||
-          (!this.playerCamera.activeGesture && this.playerCamera.quakeTimer <= 0)
-        );
-      }
-      if (type === "player_crouch") {
-        return (
-          !this.playerCamera ||
-          this.playerCamera.crouchElapsed >= this.playerCamera.crouchDuration
-        );
-      }
-      if (type === "fade") {
-        return (
-          !this.playerCamera ||
-          this.playerCamera.fadeElapsed >= this.playerCamera.fadeDuration
-        );
-      }
-      if (type === "char_anim" || type === "anim") {
-        const actor = this.characters[ev.actor];
-        const minWait = ev.duration ?? 0;
-        if (minWait > 0) {
-          return this.simTime - startedAt >= minWait - 1e-5;
-        }
-        const act = actor?.currentAction;
-        if (!act || act.loop === THREE.LoopRepeat) {
-          return this.simTime - startedAt >= 0.45;
-        }
-        const clipDur = act.getClip()?.duration || 1.0;
-        return !act.isRunning() || act.time >= clipDur - 0.03 || this.simTime - startedAt >= clipDur + 0.15;
-      }
-      return this.simTime - startedAt >= (ev.duration ?? 0) - 1e-5;
-    };
-
-    return { ev, startedAt, promise, resolve: resolveFn, isDone };
-  }
-
-  dispatchDueEvents(currentTimelineTime, { silentSeek = false } = {}) {
-    while (
-      !this.activeBarrier &&
-      this.nextEventIndex < this.events.length &&
-      this.events[this.nextEventIndex].at <= currentTimelineTime + 1e-6
-    ) {
-      const ev = this.events[this.nextEventIndex];
-      this.nextEventIndex += 1;
-      const waitHandle = this.executeBeat(ev, { silentSeek });
-      if (ev.await === true || ev.sync === "sequential") {
-        const barrier = this._createBarrierForBeat(ev, waitHandle);
-        if (!barrier.isDone()) {
-          this.activeBarrier = barrier;
-          break; // Strict sequential halt: wait for promise/move to resolve before dispatching next beat
-        }
-        barrier.resolve();
-      }
-    }
-  }
-
-  executeBeat(ev, { silentSeek = false } = {}) {
+  async executeBeat(ev, { silentSeek = false, runToken = this._runToken } = {}) {
     const type = ev.type;
 
     if (type === "player_walk" && this.playerCamera) {
@@ -933,18 +950,18 @@ export class EpisodeRunner {
       };
       const stops = [...(ev.via || []), ev.to];
       const { points, segments } = this._buildFullStopChain(from, stops);
-      this.playerCamera.startWalk({
+      return this.playerCamera.startWalk({
         points,
         segments,
-        duration: ev.duration ?? 2.0,
+        duration: ev.duration,
+        speed: ev.speed,
         autoLook: ev.lookAhead !== false,
       });
-      return "player_walk";
     }
 
     if (type === "player_look" && this.playerCamera) {
       const dur = ev.duration ?? 0.2;
-      this.playerCamera.lookAt(
+      const lookPromise = this.playerCamera.lookAt(
         ev.target,
         { duration: dur, track: Boolean(ev.track) },
         this.resolver
@@ -952,20 +969,18 @@ export class EpisodeRunner {
       if (!silentSeek) {
         this.sfxEngine?.notifyWhipPan(dur, this.simTime);
       }
-      return null;
+      return lookPromise;
     }
 
     if (type === "player_gesture" && this.playerCamera) {
-      this.playerCamera.triggerGesture(ev.gesture, ev.duration ?? 0.8);
-      return null;
+      return this.playerCamera.triggerGesture(ev.gesture, ev.duration ?? 0.8);
     }
 
     if (type === "player_crouch" && this.playerCamera) {
-      this.playerCamera.crouch({
+      return this.playerCamera.crouch({
         crouched: Boolean(ev.crouched),
         duration: ev.duration ?? 0.35,
       });
-      return null;
     }
 
     if (type === "player_hold" && this.playerCamera) {
@@ -978,20 +993,19 @@ export class EpisodeRunner {
       if (ev.use) {
         this.playerCamera.useHeldProp();
       }
-      return null;
+      return this._waitSim(ev.duration ?? 0, runToken);
     }
 
     if (type === "fade" && this.playerCamera) {
-      this.playerCamera.startFade({
+      return this.playerCamera.startFade({
         to: ev.to ?? 0,
         duration: ev.duration ?? 0.6,
       });
-      return null;
     }
 
     if (type === "char_anim" || type === "anim") {
       const actor = this.characters[ev.actor];
-      if (!actor) return null;
+      if (!actor) return;
       actor.playAnim(
         ev.anim,
         ev.fadeDuration ?? 0.16,
@@ -1001,14 +1015,23 @@ export class EpisodeRunner {
       if (!silentSeek) {
         this.sfxEngine?.notifyAction(ev.anim, this.simTime);
       }
-      return null;
+      const clipDur = actor.currentAction?.getClip()?.duration || 1.0;
+      const waitDur = ev.duration ?? (ev.loop ? 0.45 : clipDur);
+      return this._waitSim(waitDur, runToken);
     }
 
     if (type === "char_move" || type === "move") {
       const actor = this.characters[ev.actor];
-      if (!actor) return null;
+      if (!actor) return;
 
-      this.activeCharMoves = this.activeCharMoves.filter((m) => m.actor !== actor);
+      // Cancel any prior active move for the same actor cleanly
+      for (let i = this.activeCharMoves.length - 1; i >= 0; i--) {
+        if (this.activeCharMoves[i].actor === actor) {
+          if (this.activeCharMoves[i].resolve) this.activeCharMoves[i].resolve();
+          this.activeCharMoves.splice(i, 1);
+        }
+      }
+
       const from = ev.from
         ? this.resolveWaypoint(ev.from)
         : {
@@ -1024,9 +1047,10 @@ export class EpisodeRunner {
       const timing = this._computeMoveTiming(
         points,
         segments,
-        ev.duration ?? 1.5,
+        ev.duration,
         anim,
-        false
+        false,
+        ev.speed
       );
 
       const worldSpeed = timing.totalLength / timing.effectiveDuration;
@@ -1040,27 +1064,29 @@ export class EpisodeRunner {
       actor.playAnim(anim, 0.14, animSpeed, true);
 
       const moveId = this.nextMoveId++;
-      this.activeCharMoves.push({
-        moveId,
-        actor,
-        points,
-        cumWeights: timing.cumWeights,
-        totalWeight: timing.totalWeight,
-        segInfo: timing.segInfo,
-        maxVertSpeed: timing.maxVertSpeed,
-        anim,
-        animSpeed,
-        keepFacing: Boolean(ev.keepFacing),
-        endAnim: ev.endAnim || "idle",
-        startTime: this.simTime,
-        duration: timing.effectiveDuration,
+      return new Promise((resolve) => {
+        this.activeCharMoves.push({
+          moveId,
+          actor,
+          points,
+          cumWeights: timing.cumWeights,
+          totalWeight: timing.totalWeight,
+          segInfo: timing.segInfo,
+          maxVertSpeed: timing.maxVertSpeed,
+          anim,
+          animSpeed,
+          keepFacing: Boolean(ev.keepFacing),
+          endAnim: ev.endAnim || "idle",
+          startTime: this.simTime,
+          duration: timing.effectiveDuration,
+          resolve,
+        });
       });
-      return moveId;
     }
 
     if (type === "char_face" || type === "face") {
       const actor = this.characters[ev.actor];
-      if (!actor) return null;
+      if (!actor) return;
       const speed = ev.instant ? 999 : 14;
       if (typeof ev.followPlayer === "boolean") {
         actor.lookAtPlayer(ev.followPlayer);
@@ -1073,24 +1099,24 @@ export class EpisodeRunner {
       } else if (ev.target) {
         actor.faceTarget(this.resolveWaypoint(ev.target), speed);
       }
-      return null;
+      return this._waitSim(ev.duration ?? 0, runToken);
     }
 
     if (type === "char_bubble") {
       const actor = this.characters[ev.actor];
-      if (!actor) return null;
+      if (!actor) return;
       actor.showBubble(ev.icon || "question", ev.duration ?? 2.0);
       if (!silentSeek) {
         this.sfxEngine?.notifyBubblePop(ev.icon, this.simTime);
       }
-      return null;
+      return this._waitSim(ev.duration ?? 0, runToken);
     }
 
     if (type === "char_prop") {
       const actor = this.characters[ev.actor];
-      if (!actor) return null;
+      if (!actor) return;
       actor.setProp(ev.prop ?? null);
-      return null;
+      return this._waitSim(ev.duration ?? 0, runToken);
     }
 
     if (type === "prop_action") {
@@ -1102,7 +1128,7 @@ export class EpisodeRunner {
         duration: ev.duration,
         yOffset: ev.yOffset ?? 0.25,
       });
-      return null;
+      return this._waitSim(ev.duration ?? 0, runToken);
     }
 
     if (type === "bgm" && !silentSeek) {
@@ -1110,12 +1136,12 @@ export class EpisodeRunner {
         volume: ev.volume ?? 0.24,
         simTime: this.simTime,
       });
-      return null;
+      return;
     }
 
     if (type === "stop_bgm" && !silentSeek) {
       this.sfxEngine?.stopBgm(this.simTime);
-      return null;
+      return;
     }
 
     if (type === "sfx" && !silentSeek) {
@@ -1127,7 +1153,10 @@ export class EpisodeRunner {
         cutBgmDuration: ev.cutBgmDuration ?? 1.4,
       });
     }
-    return null;
+
+    if ((ev.duration ?? 0) > 0) {
+      return this._waitSim(ev.duration, runToken);
+    }
   }
 
   emitState() {

@@ -7,9 +7,13 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
-// Lock FPS pitch cleanly between -45 deg (down) and +35 deg (up) so the camera never stares at ceilings.
-const MIN_CAMERA_PITCH = -Math.PI / 4; // -45 deg
-const MAX_CAMERA_PITCH = (35 * Math.PI) / 180; // +35 deg
+// Lock FPS pitch cleanly between -38 deg (down) and +28 deg (up) so the camera frames rooms comfortably.
+const MIN_CAMERA_PITCH = (-38 * Math.PI) / 180;
+const MAX_CAMERA_PITCH = (28 * Math.PI) / 180;
+const PLAYER_EYE_HEIGHT = CONFIG.playerEyeHeight ?? 1.55;
+const BASE_WALK_SPEED = CONFIG.baseWalkSpeed ?? 2.5;
+const BASE_STAIR_SPEED = CONFIG.baseStairSpeed ?? 1.85;
+const BASE_JUMP_SPEED = CONFIG.baseJumpSpeed ?? 2.35;
 
 function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
@@ -162,6 +166,21 @@ export class PlayerCamera {
   }
 
   reset(spawnPos = null, lookAtPos = null) {
+    if (this.activeWalk?._resolve) this.activeWalk._resolve();
+    if (this._lookResolve) {
+      this._lookResolve();
+      this._lookResolve = null;
+    }
+    if (this._crouchResolve) {
+      this._crouchResolve();
+      this._crouchResolve = null;
+    }
+    if (this._fadeResolve) {
+      this._fadeResolve();
+      this._fadeResolve = null;
+    }
+    if (this.activeGesture?._resolve) this.activeGesture._resolve();
+
     this.activeWalk = null;
     this.isWalking = false;
     this.bobPhase = 0;
@@ -171,9 +190,9 @@ export class PlayerCamera {
     this.quakeTimer = 0;
     this.trackingRef = null;
 
-    this.baseEyeHeight = CONFIG.playerEyeHeight;
-    this.crouchStartHeight = CONFIG.playerEyeHeight;
-    this.crouchTargetHeight = CONFIG.playerEyeHeight;
+    this.baseEyeHeight = PLAYER_EYE_HEIGHT;
+    this.crouchStartHeight = PLAYER_EYE_HEIGHT;
+    this.crouchTargetHeight = PLAYER_EYE_HEIGHT;
     this.crouchElapsed = 1;
 
     this.fadeAlpha = 0;
@@ -195,7 +214,7 @@ export class PlayerCamera {
       this.pitch = pitch;
     } else {
       this.yaw = 0;
-      this.pitch = 0;
+      this.pitch = -0.04;
     }
     this.lookStartYaw = this.yaw;
     this.lookTargetYaw = this.yaw;
@@ -244,19 +263,39 @@ export class PlayerCamera {
     return { yaw, pitch };
   }
 
+  _sampleAlongWalk(walk, dist) {
+    const out = new THREE.Vector3();
+    if (!walk || !walk.points || walk.points.length === 0) return out;
+    if (dist <= 0 || walk.totalLength < 1e-4) return out.copy(walk.points[0]);
+    if (dist >= walk.totalLength) return out.copy(walk.points[walk.points.length - 1]);
+
+    let seg = 0;
+    while (seg < walk.cumDist.length - 2 && walk.cumDist[seg + 1] < dist) {
+      seg += 1;
+    }
+    const segStart = walk.cumDist[seg];
+    const segLen = Math.max(1e-5, walk.cumDist[seg + 1] - segStart);
+    const alpha = clamp((dist - segStart) / segLen, 0, 1);
+    return out.lerpVectors(walk.points[seg], walk.points[seg + 1], alpha);
+  }
+
   startWalk({
     points,
-    duration = 2.5,
+    duration = null,
+    speed = null,
     autoLook = true,
     segments = null,
-    maxWalkSpeed = 3.2,
-    maxStairSpeed3D = 2.15,
     maxVerticalSpeed = 1.55,
   }) {
-    if (!points || points.length < 2) return;
+    if (this.activeWalk?._resolve) {
+      this.activeWalk._resolve();
+    }
+    if (!points || points.length < 2) return Promise.resolve();
+
+    const walkSpeed = Math.max(0.4, Number(speed) || BASE_WALK_SPEED);
     const cumDist = [0];
     let totalLength = 0;
-    let minWalkDuration = 0;
+    let computedDuration = 0;
     const segMeta = [];
 
     for (let i = 1; i < points.length; i += 1) {
@@ -268,24 +307,37 @@ export class PlayerCamera {
       const isJumpArc = Boolean(meta.isJumpArc);
       const isStair = !isJumpArc && dy > 0.15;
 
+      let segDur = 0;
       if (isJumpArc) {
-        minWalkDuration += Math.max(0.42, segLen / 2.6);
+        segDur = Math.max(0.55, segLen / Math.max(walkSpeed, BASE_JUMP_SPEED));
       } else if (isStair) {
-        minWalkDuration += Math.max(segLen / maxStairSpeed3D, dy / maxVerticalSpeed);
+        const stairSpd = Math.min(walkSpeed, BASE_STAIR_SPEED);
+        segDur = Math.max(segLen / stairSpd, dy / maxVerticalSpeed);
       } else {
-        minWalkDuration += segLen / maxWalkSpeed;
+        segDur = segLen / walkSpeed;
       }
 
+      computedDuration += segDur;
       segMeta.push({
         isJumpArc,
         isStair,
-        arcHeight: meta.arcHeight || 0.42,
+        arcHeight: meta.arcHeight || 0.44,
+        startY: a.y,
+        endY: b.y,
       });
       totalLength += segLen;
       cumDist.push(totalLength);
     }
 
-    const effectiveDuration = Math.max(0.1, duration, minWalkDuration);
+    // Dynamic distance-based timing: never teleport across long routes on short fixed durations.
+    const requestedMin = Number(duration) > 0 ? Number(duration) : 0;
+    const effectiveDuration = Math.max(0.18, computedDuration, requestedMin);
+
+    let resolveWalk = null;
+    const donePromise = new Promise((resolve) => {
+      resolveWalk = resolve;
+    });
+
     this.activeWalk = {
       points,
       cumDist,
@@ -295,16 +347,23 @@ export class PlayerCamera {
       duration: effectiveDuration,
       maxVerticalSpeed,
       autoLook,
+      _resolve: resolveWalk,
     };
     this.isWalking = true;
-    if (autoLook && points.length >= 2) {
-      const lookAhead = points[1].clone();
-      lookAhead.y = this.playerPos.y + this.baseEyeHeight;
+
+    if (autoLook && totalLength > 0.08) {
+      const lookAhead = this._sampleAlongWalk(this.activeWalk, Math.min(totalLength, 1.25));
+      lookAhead.y = this.playerPos.y + this.baseEyeHeight - 0.05;
       this.lookAtPosition(lookAhead, { duration: 0.35, trackRef: null });
     }
+    return donePromise;
   }
 
   lookAtPosition(targetPos, { duration = 0.25, trackRef = null } = {}) {
+    if (this._lookResolve) {
+      this._lookResolve();
+      this._lookResolve = null;
+    }
     const { yaw, pitch } = this._computeYawPitchTo(targetPos);
     this.lookStartYaw = this.yaw;
     this.lookStartPitch = this.pitch;
@@ -313,41 +372,58 @@ export class PlayerCamera {
     this.lookElapsed = 0;
     this.lookDuration = Math.max(0.01, duration);
     this.trackingRef = trackRef;
+    return new Promise((resolve) => {
+      this._lookResolve = resolve;
+    });
   }
 
   lookAt(ref, { duration = 0.25, track = false } = {}, resolver) {
     if (this._resolveTargetPosition(ref, resolver, this._tmpTargetPos)) {
-      this.lookAtPosition(this._tmpTargetPos, {
+      return this.lookAtPosition(this._tmpTargetPos, {
         duration,
         trackRef: track ? ref : null,
       });
     }
+    return Promise.resolve();
   }
 
   crouch({ crouched = true, duration = 0.35 } = {}) {
+    if (this._crouchResolve) {
+      this._crouchResolve();
+      this._crouchResolve = null;
+    }
     this.crouchStartHeight = this.baseEyeHeight;
     this.crouchTargetHeight = crouched
       ? CONFIG.playerCrouchHeight
-      : CONFIG.playerEyeHeight;
+      : PLAYER_EYE_HEIGHT;
     this.crouchElapsed = 0;
     this.crouchDuration = Math.max(0.05, duration);
+    return new Promise((resolve) => {
+      this._crouchResolve = resolve;
+    });
   }
 
   triggerGesture(type = "nod_yes", duration = 0.7) {
     if (type === "shake_panic") {
-      this.shakeIntensity = Math.max(this.shakeIntensity, 0.45);
-      return;
+      this.shakeIntensity = Math.max(this.shakeIntensity, 0.4);
+      return Promise.resolve();
     }
     if (type === "shake_earthquake") {
       this.quakeTimer = Math.max(this.quakeTimer, Math.max(0.5, duration));
-      this.shakeIntensity = Math.max(this.shakeIntensity, 0.88);
-      return;
+      this.shakeIntensity = Math.max(this.shakeIntensity, 0.72);
+      return Promise.resolve();
     }
-    this.activeGesture = {
-      type,
-      elapsed: 0,
-      duration: Math.max(0.2, duration),
-    };
+    if (this.activeGesture?._resolve) {
+      this.activeGesture._resolve();
+    }
+    return new Promise((resolve) => {
+      this.activeGesture = {
+        type,
+        elapsed: 0,
+        duration: Math.max(0.2, duration),
+        _resolve: resolve,
+      };
+    });
   }
 
   holdProp(propType = null) {
@@ -389,10 +465,17 @@ export class PlayerCamera {
   }
 
   startFade({ to = 1, duration = 0.4 } = {}) {
+    if (this._fadeResolve) {
+      this._fadeResolve();
+      this._fadeResolve = null;
+    }
     this.fadeStart = this.fadeAlpha;
     this.fadeTarget = clamp(to, 0, 1);
     this.fadeElapsed = 0;
     this.fadeDuration = Math.max(0.02, duration);
+    return new Promise((resolve) => {
+      this._fadeResolve = resolve;
+    });
   }
 
   getEyeWorldPosition(out = new THREE.Vector3()) {
@@ -409,6 +492,11 @@ export class PlayerCamera {
       this.fadeElapsed = Math.min(this.fadeDuration, this.fadeElapsed + dt);
       const ft = easeInOutSine(this.fadeElapsed / this.fadeDuration);
       this.fadeAlpha = this.fadeStart + (this.fadeTarget - this.fadeStart) * ft;
+      if (this.fadeElapsed >= this.fadeDuration && this._fadeResolve) {
+        const res = this._fadeResolve;
+        this._fadeResolve = null;
+        res();
+      }
     }
 
     if (this.mode === "orbit") {
@@ -422,6 +510,11 @@ export class PlayerCamera {
       const ct = easeInOutSine(this.crouchElapsed / this.crouchDuration);
       this.baseEyeHeight =
         this.crouchStartHeight + (this.crouchTargetHeight - this.crouchStartHeight) * ct;
+      if (this.crouchElapsed >= this.crouchDuration && this._crouchResolve) {
+        const res = this._crouchResolve;
+        this._crouchResolve = null;
+        res();
+      }
     }
 
     // Walking along polyline
@@ -429,7 +522,7 @@ export class PlayerCamera {
       const prevY = this.playerPos.y;
       this.activeWalk.elapsed += dt;
       const rawT = clamp(this.activeWalk.elapsed / this.activeWalk.duration, 0, 1);
-      const t = rawT * 0.88 + easeInOutSine(rawT) * 0.12;
+      const t = rawT * 0.9 + easeInOutSine(rawT) * 0.1;
       const targetDist = t * this.activeWalk.totalLength;
 
       if (this.activeWalk.totalLength < 1e-4 || this.activeWalk.points.length < 2) {
@@ -452,41 +545,46 @@ export class PlayerCamera {
         this.playerPos.lerpVectors(pA, pB, alpha);
 
         if (meta.isJumpArc) {
-          this.playerPos.y += Math.sin(alpha * Math.PI) * (meta.arcHeight || 0.42);
-        } else {
-          // Clamp vertical Y step to match staircase slope (never launch upward)
+          // Smooth parabolic jump onto/off elevated furniture
+          this.playerPos.y += Math.sin(alpha * Math.PI) * (meta.arcHeight || 0.44);
+        } else if (meta.isStair) {
+          // Staircase traversal: smoothly clamp vertical speed to staircase slope
           const maxStepY = (this.activeWalk.maxVerticalSpeed || 1.55) * Math.max(dt, 1 / 120) * 1.35;
           const dyStep = this.playerPos.y - prevY;
-          if (Math.abs(dyStep) > maxStepY && Math.abs(pB.y - pA.y) > 0.1) {
+          if (Math.abs(dyStep) > maxStepY) {
             this.playerPos.y = prevY + Math.sign(dyStep) * maxStepY;
           }
+        } else {
+          // Strict flat floor lock: keep player Y locked to floor node.y (eye = node.y + 1.55)
+          this.playerPos.y = Math.abs(pB.y - pA.y) < 0.05 ? pA.y : pA.y + (pB.y - pA.y) * alpha;
         }
 
         if (this.activeWalk.autoLook && !this.trackingRef && this.lookElapsed >= this.lookDuration) {
-          const ahead = pB;
+          const lookDist = Math.min(this.activeWalk.totalLength, targetDist + 1.15);
+          const ahead = this._sampleAlongWalk(this.activeWalk, lookDist);
           const dx = ahead.x - this.playerPos.x;
           const dz = ahead.z - this.playerPos.z;
           const horiz = Math.hypot(dx, dz);
-          if (horiz * horiz > 0.02) {
+          if (horiz > 0.12) {
             const desiredYaw = Math.atan2(-dx, -dz);
-            this.yaw += wrapAngleDiff(desiredYaw, this.yaw) * Math.min(1, dt * 6);
-            if (meta.isStair) {
-              const desiredPitch = clamp(Math.atan2(ahead.y - pA.y, Math.max(0.25, horiz)) * 0.45, -0.35, 0.28);
-              this.pitch += (desiredPitch - this.pitch) * Math.min(1, dt * 4);
-            }
+            this.yaw += wrapAngleDiff(desiredYaw, this.yaw) * Math.min(1, dt * 5.2);
           }
+          const desiredPitch = meta.isStair
+            ? clamp(Math.atan2(pB.y - pA.y, Math.max(0.4, Math.hypot(pB.x - pA.x, pB.z - pA.z))) * 0.42, -0.26, 0.22)
+            : -0.04;
+          this.pitch += (desiredPitch - this.pitch) * Math.min(1, dt * 4.5);
         }
       }
 
-      this.bobPhase += dt * 11.5;
+      this.bobPhase += dt * 11.2;
       this.bobAmount += (1 - this.bobAmount) * Math.min(1, dt * 10);
 
       if (rawT >= 1) {
-        this.playerPos.copy(
-          this.activeWalk.points[this.activeWalk.points.length - 1]
-        );
+        const finished = this.activeWalk;
+        this.playerPos.copy(finished.points[finished.points.length - 1]);
         this.activeWalk = null;
         this.isWalking = false;
+        if (finished._resolve) finished._resolve();
       }
     } else {
       this.bobAmount *= Math.exp(-10 * dt);
@@ -499,8 +597,8 @@ export class PlayerCamera {
         this.lookTargetYaw = this.lookStartYaw + wrapAngleDiff(yaw, this.lookStartYaw);
         this.lookTargetPitch = pitch;
       } else {
-        this.yaw += wrapAngleDiff(yaw, this.yaw) * Math.min(1, dt * 11);
-        this.pitch += (pitch - this.pitch) * Math.min(1, dt * 11);
+        this.yaw += wrapAngleDiff(yaw, this.yaw) * Math.min(1, dt * 10);
+        this.pitch += (pitch - this.pitch) * Math.min(1, dt * 10);
       }
     }
 
@@ -509,6 +607,11 @@ export class PlayerCamera {
       const lt = easeOutCubic(this.lookElapsed / this.lookDuration);
       this.yaw = this.lookStartYaw + (this.lookTargetYaw - this.lookStartYaw) * lt;
       this.pitch = this.lookStartPitch + (this.lookTargetPitch - this.lookStartPitch) * lt;
+      if (this.lookElapsed >= this.lookDuration && this._lookResolve) {
+        const res = this._lookResolve;
+        this._lookResolve = null;
+        res();
+      }
     }
 
     // Gestures
@@ -521,34 +624,38 @@ export class PlayerCamera {
       const gt = clamp(this.activeGesture.elapsed / this.activeGesture.duration, 0, 1);
       const envelope = Math.sin(gt * Math.PI);
       if (this.activeGesture.type === "nod_yes") {
-        gesturePitch = Math.sin(gt * Math.PI * 4) * 0.22 * envelope;
+        gesturePitch = Math.sin(gt * Math.PI * 4) * 0.18 * envelope;
       } else if (this.activeGesture.type === "shake_no") {
-        gestureYaw = Math.sin(gt * Math.PI * 4) * 0.28 * envelope;
+        gestureYaw = Math.sin(gt * Math.PI * 4) * 0.24 * envelope;
       } else if (this.activeGesture.type === "peek_lean") {
-        gestureLeanX = Math.sin(gt * Math.PI) * 0.36;
-        gestureRoll = -Math.sin(gt * Math.PI) * 0.14;
+        gestureLeanX = Math.sin(gt * Math.PI) * 0.32;
+        gestureRoll = -Math.sin(gt * Math.PI) * 0.12;
       }
       if (gt >= 1) {
+        const doneGesture = this.activeGesture;
         this.activeGesture = null;
+        if (doneGesture._resolve) doneGesture._resolve();
       }
     }
 
-    // Head-bob + handheld shake
-    const bobY = Math.sin(this.bobPhase) * 0.042 * this.bobAmount;
-    const bobX = Math.cos(this.bobPhase * 0.5) * 0.02 * this.bobAmount;
+    // Subtle footsteps head-bob + damped handheld shake
+    const bobY = Math.sin(this.bobPhase) * 0.028 * this.bobAmount;
+    const bobX = Math.cos(this.bobPhase * 0.5) * 0.014 * this.bobAmount;
 
     let shakeX = 0;
     let shakeY = 0;
+    let shakeRoll = 0;
     if (this.quakeTimer > 0) {
       this.quakeTimer = Math.max(0, this.quakeTimer - dt);
-      this.shakeIntensity = Math.max(this.shakeIntensity, 0.88);
+      this.shakeIntensity = Math.max(this.shakeIntensity, 0.72);
     }
     if (this.shakeIntensity > 0.002) {
-      this.shakePhase += dt * 48;
-      shakeX = Math.sin(this.shakePhase * 1.1) * this.shakeIntensity * 0.08;
-      shakeY = Math.cos(this.shakePhase * 1.45) * this.shakeIntensity * 0.08;
+      this.shakePhase += dt * 28;
+      shakeX = Math.sin(this.shakePhase * 1.1) * this.shakeIntensity * 0.028;
+      shakeY = Math.cos(this.shakePhase * 1.45) * this.shakeIntensity * 0.028;
+      shakeRoll = Math.sin(this.shakePhase * 0.9) * this.shakeIntensity * 0.022;
       if (this.quakeTimer <= 0) {
-        this.shakeIntensity *= Math.exp(-6.5 * dt);
+        this.shakeIntensity *= Math.exp(-7.5 * dt);
       }
     } else {
       this.shakeIntensity = 0;
@@ -578,7 +685,7 @@ export class PlayerCamera {
       this.camera.position.copy(this._tmpFinalPos);
     }
 
-    this.camera.rotation.set(finalPitch, finalYaw, gestureRoll, "YXZ");
+    this.camera.rotation.set(finalPitch, finalYaw, gestureRoll + shakeRoll, "YXZ");
 
     // Animate bottom-right FPS held prop (deterministic viewmodel pass)
     if (this.heldPropMesh) {
