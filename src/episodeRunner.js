@@ -419,8 +419,10 @@ export class EpisodeRunner {
             at,
             duration,
           });
-          beatCursor = isAwait ? at + duration : at;
-          skitMaxEnd = Math.max(skitMaxEnd, at + duration);
+          // Awaited beats freeze timelineTime in _driveTimelineAsync while awaiting their Promise,
+          // so beatCursor stays at `at` (preventing double-counting `duration` on `after:` offsets).
+          beatCursor = at;
+          skitMaxEnd = Math.max(skitMaxEnd, at + (isAwait ? 0 : duration));
         }
         skitCursor = skitMaxEnd;
       }
@@ -448,15 +450,10 @@ export class EpisodeRunner {
     let playerPos = { ...pSp };
 
     let tlShift = 0;
-    let barrierEndSim = 0;
     let maxEnd = 1.0;
 
     for (const ev of this.events) {
-      let fireSim = ev.at + tlShift;
-      if (fireSim < barrierEndSim) {
-        tlShift += barrierEndSim - fireSim;
-        fireSim = barrierEndSim;
-      }
+      const fireSim = ev.at + tlShift;
 
       let effDur = Math.max(0, ev.duration ?? 0);
       if (ev.type === "player_walk") {
@@ -503,12 +500,12 @@ export class EpisodeRunner {
           _name: typeof lastStop === "string" ? lastStop : undefined,
         };
       } else if ((ev.type === "char_anim" || ev.type === "anim") && effDur === 0) {
-        effDur = ev.loop ? 0.5 : 1.05;
+        effDur = ev.loop ? 0.45 : 1.0;
       }
 
       maxEnd = Math.max(maxEnd, fireSim + effDur);
       if (ev.await === true || ev.sync === "sequential") {
-        barrierEndSim = Math.max(barrierEndSim, fireSim + effDur);
+        tlShift += effDur;
       }
     }
 

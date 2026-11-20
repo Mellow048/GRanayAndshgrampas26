@@ -266,19 +266,25 @@ async function bootstrap() {
 
   let lastWall = performance.now();
   let accumulator = 0;
+  let liveStepBusy = false;
 
-  function animate(now) {
+  async function animate(now) {
     requestAnimationFrame(animate);
-    if (isHeadless) return;
+    if (isHeadless || liveStepBusy) return;
 
     const frameDt = Math.min(CONFIG.maxFrameDt, (now - lastWall) / 1000);
     lastWall = now;
 
     if (runner.isPlaying) {
-      accumulator += frameDt;
-      while (accumulator >= CONFIG.fixedDt) {
-        runner.step(CONFIG.fixedDt);
-        accumulator -= CONFIG.fixedDt;
+      liveStepBusy = true;
+      try {
+        accumulator += frameDt;
+        while (accumulator >= CONFIG.fixedDt) {
+          await runner.stepAsync(CONFIG.fixedDt);
+          accumulator -= CONFIG.fixedDt;
+        }
+      } finally {
+        liveStepBusy = false;
       }
     } else if (heldKeys.size > 0 && playerCamera.mode === "pov") {
       const speed = 2.6 * frameDt;

@@ -375,16 +375,24 @@ function buildIndoorNavigation(houseRoot, allHouseMeshes) {
   }
 
   /**
-   * Ensures a camera position stays indoors, below ceiling height, and unobstructed by walls.
+   * Ensures a camera position stays indoors, below actual local ceiling height, and unobstructed by walls.
    */
   function clampCameraPosition(lookTarget, desiredPos, minDist = 0.85) {
     const out = desiredPos.clone();
-    if (lookTarget.y < 2.2) {
-      out.y = Math.min(out.y, 2.48);
-      out.y = Math.max(out.y, 0.35);
+    out.y = Math.max(out.y, 0.35);
+
+    // Raycast upward from chest/waist level below lookTarget to detect the real ceiling above out.(x,z)
+    const probeBaseY = Math.max(0.35, Math.min(lookTarget.y - 0.85, out.y - 0.85));
+    ray.set(tmpA.set(out.x, probeBaseY, out.z), up);
+    ray.far = 6.5;
+    const ceilHits = ray.intersectObjects(allHouseMeshes, false);
+    if (ceilHits.length > 0) {
+      const localCeilY = ceilHits[0].point.y - 0.16;
+      if (out.y > localCeilY) {
+        out.y = Math.max(0.35, localCeilY);
+      }
     } else {
-      out.y = Math.min(out.y, 5.42);
-      out.y = Math.max(out.y, 3.15);
+      out.y = Math.min(out.y, 5.45);
     }
 
     tmpDir.subVectors(out, lookTarget);
