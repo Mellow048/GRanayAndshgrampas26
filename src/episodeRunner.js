@@ -382,8 +382,8 @@ export class EpisodeRunner {
       char.update(dt, playerCamPos, playerCam);
     }
 
-    // 5. Update 3D Comedy Props
-    this.comedyProps?.update(dt);
+    // 5. Update 3D Comedy Props (pass player camera position so Emoji Ball faces viewer)
+    this.comedyProps?.update(dt, playerCamPos);
 
     // 6. Advance SFX Pacer & movement footsteps
     if (!silentSeek && this.sfxEngine) {
