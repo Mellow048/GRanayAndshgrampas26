@@ -585,18 +585,26 @@ export class EpisodeRunner {
         await this._waitTimelineUntil(ev.at, runToken);
       }
       if (runToken !== this._runToken) return;
-
       this.nextEventIndex += 1;
       const beatPromise = this.executeBeat(ev, {
         silentSeek: this._silentSeek,
         runToken,
       });
-
       if (ev.await === true || ev.sync === "sequential") {
         this.isAwaitingBeat = true;
         await beatPromise;
         if (runToken !== this._runToken) return;
         this.isAwaitingBeat = false;
+        
+        // CRITICAL FIX: Shift all future events forward by the time we spent waiting
+        // so they don't fire instantly all at once.
+        const shiftAmount = this.simTime - this.timelineTime;
+        if (shiftAmount > 0) {
+          for (let i = this.nextEventIndex; i < this.events.length; i++) {
+            this.events[i].at += shiftAmount;
+          }
+          this.timelineTime = this.simTime;
+        }
       }
     }
   }
@@ -616,6 +624,7 @@ export class EpisodeRunner {
     this.sfxEngine?.resetPacerClock(0);
 
     if (!this.episode) return;
+    this.events = this.compileTimeline(this.episode);
 
     if (this.episode.aspect && this.playerCamera) {
       this.playerCamera.setAspect(this.episode.aspect);
