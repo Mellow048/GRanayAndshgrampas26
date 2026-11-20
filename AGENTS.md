@@ -1,6 +1,14 @@
 # AGENTS.md — Granny POV 3D Cartoon Studio Playbook
 
-This repository is a zero-build Three.js (`v0.170.0` via importmap) first-person **POV Kids-Comedy 3D Cartoon Studio** inside the Granny 1 House (`./Assets/granny-1-house/source/GrannyHouse.fbx`), with deterministic 60Hz animation, Mixamo retargeting (`Granny` + `Grandpa`), procedural 3D comedy props + 2D comic thought bubbles, a Web Audio SFX/BGM mixer (`./SoundEffects`), and a GitHub Actions cloud video exporter (`16:9` widescreen & `9:16` Shorts).
+> **Episode Producers / Script Generators:** Read **`EPISODE_PRODUCTION_GUIDE.md`** before generating any JSON episode! It contains the full `SET_MAP` doorway chains, all 28 SFX/BGM keys (including `SoundEffects/backroundMusics/`), and the mandatory kids-comedy pacing checklist.
+
+This repository is a zero-build Three.js (`v0.170.0` via importmap) first-person **POV Kids-Comedy 3D Cartoon Studio** inside the Granny 1 House (`./Assets/granny-1-house/source/GrannyHouse.fbx`), with deterministic 60Hz animation, Mixamo retargeting (`Granny` + `Grandpa`), procedural 3D comedy props + 2D comic thought bubbles, a Web Audio SFX/BGM mixer (`./SoundEffects` + `./SoundEffects/backroundMusics`), and a GitHub Actions cloud video exporter (`16:9` widescreen & `9:16` Shorts).
+
+## Mandatory Kids-Comedy Pacing Rules (For Every New Episode)
+
+1. **No beat over 2–2.5s without movement ("Zero Dead Air"):** Never hold the camera on a bobbing prop or idle pose for 3–5s. If a prop pops out, immediately send it across the room (`to` + `travelDuration`), bonk someone, or grab it (`player_hold`).
+2. **Show cause-and-effect visually (no shadowboxing thin air):** Never trigger `punch`/`hit` from 3m away in a doorway. Bounce the prop into Granny's face *first*, or sprint Granny (`run2`) within `1.4m` of her target before swinging.
+3. **End on motion, not a still pose:** End the final `2–3s` before `fade` (`to: 1`) on Granny lunging toward the camera (`run2` + `jumpscare`) or Grandpa panicking and sprinting out of the room while Granny chases him right behind.
 
 ## Architecture Overview
 
@@ -10,9 +18,9 @@ This repository is a zero-build Three.js (`v0.170.0` via importmap) first-person
 - `src/animationLibrary.js` — Mixamo `.fbx` template extraction, root-motion stripping, jump arc extraction (`0.32m` cap), and rest-pose quaternion retargeting (`AnimationLibrary`).
 - `src/playerCamera.js` — First-person POV controller (`PlayerCamera`): eye-level walking (`1.50m`) with head-bob, whip-pan `lookAt` + tracking, `nod_yes` / `shake_no` / `shake_panic` / `peek_lean` gestures, crouch (`0.42m`), bottom-right FPS held-item viewmodel (`holdProp`, `useHeldProp`), fade-to-black, wall clamping, and `16:9` / `9:16` aspect toggling + Orbit calibrator toggle.
 - `src/comedyProps.js` — `ThoughtBubbleCache` (`key`, `question`, `exclamation`, `zzz`, `angry`, `laugh`, `food`, `heart`) and `ComedyPropManager` (`golden_key`, `padlock`, `treasure_chest`, `emoji_ball`, `toy_blaster`, `cookie_jar`).
-- `src/sfxEngine.js` — Web Audio mixer (`SfxEngine`): looping BGM (`playBgm`, `stopBgm`), `cutBgm` silence ducking, movement-synced footsteps, whip-pan/bubble/pickup/action foley, 1–2s gap pacer, and deterministic offline capture for FFmpeg.
+- `src/sfxEngine.js` — Web Audio mixer (`SfxEngine`): looping BGM (`fluffing_a_duck`, `monkeys_spinning_monkeys`, `run_amok` in `SoundEffects/backroundMusics/`, plus `granny_ambience`, `granny_good_part`, `granny_chase`), `cutBgm` silence ducking, movement-synced footsteps, whip-pan/bubble/pickup/action foley, 1–2s gap pacer, and deterministic offline capture for FFmpeg.
 - `src/episodeRunner.js` — Deterministic 60Hz multi-skit timeline (`EpisodeRunner`) compiling `skits[].beats` (`at` / `after`) and legacy `actions`.
-- `src/studioUI.js` & `src/main.js` — Director controls, 25-clip Soundboard, Waypoint Calibrator (`WASD + Q/E`), Live Multi-Skit JSON Editor, and `window.__GRANNY_STUDIO__` headless export hooks.
+- `src/studioUI.js` & `src/main.js` — Director controls, 28-clip Soundboard, Waypoint Calibrator (`WASD + Q/E`), Live Multi-Skit JSON Editor, and `window.__GRANNY_STUDIO__` headless export hooks.
 - `scripts/export-video.mjs` & `.github/workflows/export-video.yml` — Headless Playwright (SwiftShader WebGL) + FFmpeg video/BGM/ducking/SFX pipeline auto-publishing `.mp4`/`.webm` + `export-summary.json` to the `latest-export` GitHub Release.
 
 ## Rigging & House Rules (Must Preserve)

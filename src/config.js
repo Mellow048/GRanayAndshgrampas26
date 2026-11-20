@@ -231,6 +231,9 @@ export const SFX_MANIFEST = {
   swoosh: { path: "./SoundEffects/swoosh-sound-effects.mp3", category: "cut", defaultVolume: 0.68 },
   vine_boom: { path: "./SoundEffects/vine Boom.mp3", category: "boom", defaultVolume: 0.85 },
   whoosh: { path: "./SoundEffects/whoosh-wind.mp3", category: "cut", defaultVolume: 0.65 },
+  fluffing_a_duck: { path: "./SoundEffects/backroundMusics/Fluffing-a-Duck(chosic.com).mp3", category: "bgm", defaultVolume: 0.24 },
+  monkeys_spinning_monkeys: { path: "./SoundEffects/backroundMusics/Monkeys-Spinning-Monkeys(chosic.com).mp3", category: "bgm", defaultVolume: 0.24 },
+  run_amok: { path: "./SoundEffects/backroundMusics/Run-Amok(chosic.com).mp3", category: "bgm", defaultVolume: 0.26 },
 };
 
 /**
