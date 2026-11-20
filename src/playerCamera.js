@@ -317,11 +317,14 @@ export class PlayerCamera {
         segDur = segLen / walkSpeed;
       }
 
+      const rawArc = meta.arcHeight || 0.44;
+      const safeArc = Math.max(a.y, b.y) < 1.5 ? Math.min(rawArc, 0.18) : rawArc;
+
       computedDuration += segDur;
       segMeta.push({
         isJumpArc,
         isStair,
-        arcHeight: meta.arcHeight || 0.44,
+        arcHeight: safeArc,
         startY: a.y,
         endY: b.y,
       });
