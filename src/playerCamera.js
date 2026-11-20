@@ -103,10 +103,11 @@ export class PlayerCamera {
     this.bobPhase = 0;
     this.bobAmount = 0;
 
-    // Gestures (nod_yes, shake_no, shake_panic, peek_lean)
+    // Gestures (nod_yes, shake_no, shake_panic, shake_earthquake, peek_lean)
     this.activeGesture = null;
     this.shakeIntensity = 0;
     this.shakePhase = 0;
+    this.quakeTimer = 0;
 
     // Fade-to-black state
     this.fadeAlpha = 0;
@@ -167,6 +168,7 @@ export class PlayerCamera {
     this.bobAmount = 0;
     this.activeGesture = null;
     this.shakeIntensity = 0;
+    this.quakeTimer = 0;
     this.trackingRef = null;
 
     this.baseEyeHeight = CONFIG.playerEyeHeight;
@@ -300,6 +302,11 @@ export class PlayerCamera {
       this.shakeIntensity = Math.max(this.shakeIntensity, 0.45);
       return;
     }
+    if (type === "shake_earthquake") {
+      this.quakeTimer = Math.max(this.quakeTimer, Math.max(0.5, duration));
+      this.shakeIntensity = Math.max(this.shakeIntensity, 0.88);
+      return;
+    }
     this.activeGesture = {
       type,
       elapsed: 0,
@@ -333,6 +340,8 @@ export class PlayerCamera {
       mesh.rotation.set(0.3, -0.4, -0.35);
     } else if (propType === "toy_blaster") {
       mesh.rotation.set(0.05, -0.15, 0);
+    } else if (propType === "red_button") {
+      mesh.rotation.set(0.35, -0.25, 0);
     }
     this.heldItemMount.add(mesh);
     this.heldPropMesh = mesh;
@@ -477,11 +486,17 @@ export class PlayerCamera {
 
     let shakeX = 0;
     let shakeY = 0;
+    if (this.quakeTimer > 0) {
+      this.quakeTimer = Math.max(0, this.quakeTimer - dt);
+      this.shakeIntensity = Math.max(this.shakeIntensity, 0.88);
+    }
     if (this.shakeIntensity > 0.002) {
       this.shakePhase += dt * 48;
       shakeX = Math.sin(this.shakePhase * 1.1) * this.shakeIntensity * 0.08;
       shakeY = Math.cos(this.shakePhase * 1.45) * this.shakeIntensity * 0.08;
-      this.shakeIntensity *= Math.exp(-6.5 * dt);
+      if (this.quakeTimer <= 0) {
+        this.shakeIntensity *= Math.exp(-6.5 * dt);
+      }
     } else {
       this.shakeIntensity = 0;
     }
