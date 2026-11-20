@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import { spawnSync } from "node:child_process";
@@ -31,6 +32,7 @@ function parseArgs(argv) {
     fps: 30,
     pacer: true,
     format: "mp4",
+    workers: 0,
     outDir: path.join(REPO_ROOT, "output"),
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -41,6 +43,7 @@ function parseArgs(argv) {
     else if (a === "--fps") opts.fps = Number(argv[++i]) || 30;
     else if (a === "--pacer") opts.pacer = argv[++i] !== "false";
     else if (a === "--format") opts.format = argv[++i] || "mp4";
+    else if (a === "--workers") opts.workers = Number(argv[++i]) || 0;
     else if (a === "--out-dir") opts.outDir = path.resolve(argv[++i]);
   }
   return opts;
@@ -87,6 +90,172 @@ function runFfmpeg(args) {
   }
 }
 
+async function openStudioSession({
+  chromium,
+  port,
+  localThreeDir,
+  hasLocalThree,
+  episode,
+  pacer,
+  aspect,
+}) {
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      "--use-gl=angle",
+      "--use-angle=swiftshader",
+      "--enable-webgl",
+      "--ignore-gpu-blocklist",
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-background-timer-throttling",
+      "--disable-renderer-backgrounding",
+    ],
+  });
+
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 1280 },
+    deviceScaleFactor: 1,
+  });
+  const page = await context.newPage();
+
+  const errors = [];
+  page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
+  page.on("console", (msg) => {
+    if (msg.type() === "error") {
+      errors.push(`console.error: ${msg.text()}`);
+    }
+  });
+
+  if (hasLocalThree) {
+    for (const prefix of [
+      "https://unpkg.com/three@0.170.0/",
+      "https://cdn.jsdelivr.net/npm/three@0.170.0/",
+    ]) {
+      await page.route(`${prefix}**`, async (route) => {
+        const url = route.request().url();
+        const sub = url.replace(prefix, "");
+        const localFile = path.resolve(localThreeDir, sub);
+        if (localFile.startsWith(localThreeDir) && fs.existsSync(localFile)) {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/javascript; charset=utf-8",
+            body: fs.readFileSync(localFile),
+          });
+          return;
+        }
+        await route.continue();
+      });
+    }
+  }
+
+  await page.goto(`http://127.0.0.1:${port}/?headless=1`, {
+    waitUntil: "domcontentloaded",
+    timeout: 120000,
+  });
+
+  await page.waitForFunction(
+    () => Boolean(window.__GRANNY_STUDIO__?.ready || window.__GRANNY_STUDIO_ERROR__),
+    { timeout: 120000 }
+  );
+
+  const startupErr = await page.evaluate(() => window.__GRANNY_STUDIO_ERROR__ || null);
+  if (startupErr) {
+    await browser.close();
+    throw new Error(`Studio startup failed: ${startupErr}`);
+  }
+
+  const meta = await page.evaluate(
+    ({ ep, pacerEnabled, aspectOverride }) =>
+      window.__GRANNY_STUDIO__.beginHeadlessExport({
+        episode: ep,
+        pacerEnabled,
+        aspectOverride,
+      }),
+    { ep: episode, pacerEnabled: pacer, aspectOverride: aspect }
+  );
+
+  return { browser, page, errors, meta };
+}
+
+function buildSfxFilterChain(ev, inIdx, outLbl) {
+  const delayMs = Math.max(0, Math.round(ev.time * 1000));
+  const pitch = Math.max(0.5, Math.min(2.0, Number(ev.pitch) || 1.0));
+  const vol = Math.max(0, Math.min(2.0, Number(ev.volume) || 0.7));
+  const chain = [
+    `[${inIdx}:a]aformat=sample_rates=44100:channel_layouts=stereo`,
+  ];
+  if (ev.maxDuration && ev.maxDuration > 0) {
+    chain.push(`atrim=0:${ev.maxDuration}`);
+  }
+  if (Math.abs(pitch - 1.0) > 0.005) {
+    chain.push(`asetrate=44100*${pitch.toFixed(4)},aresample=44100`);
+  }
+  chain.push(`volume=${vol.toFixed(3)}`);
+  if (delayMs > 0) {
+    chain.push(`adelay=${delayMs}|${delayMs}`);
+  }
+  return `${chain.join(",")}${outLbl}`;
+}
+
+function preMixSfxBatches(sfxEvents, duration, framesDir, batchSize = 40) {
+  const validEvents = sfxEvents.filter((ev) =>
+    fs.existsSync(path.resolve(REPO_ROOT, ev.path))
+  );
+  if (validEvents.length <= batchSize) {
+    return { batchWavPaths: [], remainingEvents: validEvents };
+  }
+
+  const batchWavPaths = [];
+  for (let i = 0; i < validEvents.length; i += batchSize) {
+    const chunk = validEvents.slice(i, i + batchSize);
+    const batchIdx = Math.floor(i / batchSize);
+    const wavPath = path.join(framesDir, `sfx_batch_${batchIdx}.wav`);
+
+    const inputs = [
+      "-y",
+      "-f",
+      "lavfi",
+      "-t",
+      String(duration),
+      "-i",
+      "anullsrc=channel_layout=stereo:sample_rate=44100",
+    ];
+    const filters = ["[0:a]aformat=sample_rates=44100:channel_layouts=stereo[a0]"];
+    const labels = ["[a0]"];
+
+    chunk.forEach((ev, idx) => {
+      const inIdx = idx + 1;
+      inputs.push("-i", path.resolve(REPO_ROOT, ev.path));
+      const lbl = `[s${inIdx}]`;
+      filters.push(buildSfxFilterChain(ev, inIdx, lbl));
+      labels.push(lbl);
+    });
+
+    filters.push(
+      `${labels.join("")}amix=inputs=${labels.length}:duration=first:dropout_transition=0:normalize=0[bout]`
+    );
+
+    runFfmpeg([
+      ...inputs,
+      "-filter_complex",
+      filters.join(";"),
+      "-map",
+      "[bout]",
+      "-t",
+      String(duration),
+      "-c:a",
+      "pcm_f32le",
+      wavPath,
+    ]);
+    batchWavPaths.push(wavPath);
+  }
+  console.log(
+    `[Export] Pre-mixed ${validEvents.length} SFX events into ${batchWavPaths.length} intermediate stems.`
+  );
+  return { batchWavPaths, remainingEvents: [] };
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const { chromium } = await import("playwright");
@@ -114,118 +283,127 @@ async function main() {
   const localThreeDir = path.join(REPO_ROOT, "node_modules/three");
   const hasLocalThree = fs.existsSync(localThreeDir);
 
-  const browser = await chromium.launch({
-    headless: true,
-    args: [
-      "--use-gl=angle",
-      "--use-angle=swiftshader",
-      "--enable-webgl",
-      "--ignore-gpu-blocklist",
-      "--no-sandbox",
-      "--disable-dev-shm-usage",
-    ],
-  });
+  const activeBrowsers = [];
 
   try {
-    const context = await browser.newContext({
-      viewport: { width: 1280, height: 1280 },
-      deviceScaleFactor: 1,
+    console.log(`[Export] Launching primary studio on http://127.0.0.1:${port}/?headless=1`);
+    const primary = await openStudioSession({
+      chromium,
+      port,
+      localThreeDir,
+      hasLocalThree,
+      episode,
+      pacer: opts.pacer,
+      aspect: opts.aspect,
     });
-    const page = await context.newPage();
+    activeBrowsers.push(primary.browser);
 
-    const errors = [];
-    page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
-    page.on("console", (msg) => {
-      if (msg.type() === "error") {
-        errors.push(`console.error: ${msg.text()}`);
-      }
-    });
-
-    if (hasLocalThree) {
-      for (const prefix of [
-        "https://unpkg.com/three@0.170.0/",
-        "https://cdn.jsdelivr.net/npm/three@0.170.0/",
-      ]) {
-        await page.route(`${prefix}**`, async (route) => {
-          const url = route.request().url();
-          const sub = url.replace(prefix, "");
-          const localFile = path.resolve(localThreeDir, sub);
-          if (localFile.startsWith(localThreeDir) && fs.existsSync(localFile)) {
-            await route.fulfill({
-              status: 200,
-              contentType: "application/javascript; charset=utf-8",
-              body: fs.readFileSync(localFile),
-            });
-            return;
-          }
-          await route.continue();
-        });
-      }
-    }
-
-    console.log(`[Export] Launching studio on http://127.0.0.1:${port}/?headless=1`);
-    await page.goto(`http://127.0.0.1:${port}/?headless=1`, {
-      waitUntil: "domcontentloaded",
-      timeout: 120000,
-    });
-
-    await page.waitForFunction(
-      () => Boolean(window.__GRANNY_STUDIO__?.ready || window.__GRANNY_STUDIO_ERROR__),
-      { timeout: 120000 }
-    );
-
-    const startupErr = await page.evaluate(() => window.__GRANNY_STUDIO_ERROR__ || null);
-    if (startupErr) {
-      throw new Error(`Studio startup failed: ${startupErr}`);
-    }
-
-    const meta = await page.evaluate(
-      ({ ep, pacer, aspect }) =>
-        window.__GRANNY_STUDIO__.beginHeadlessExport({
-          episode: ep,
-          pacerEnabled: pacer,
-          aspectOverride: aspect,
-        }),
-      { ep: episode, pacer: opts.pacer, aspect: opts.aspect }
-    );
-
+    const meta = primary.meta;
     const fps = opts.fps;
     const totalFrames = Math.max(1, Math.ceil(meta.duration * fps));
     const stepDt = 1 / fps;
+
+    const autoWorkers = Math.min(4, Math.max(1, os.cpus().length));
+    let workerCount = opts.workers > 0 ? opts.workers : autoWorkers;
+    if (totalFrames < 120) workerCount = 1;
+    workerCount = Math.max(1, Math.min(workerCount, totalFrames));
+
     console.log(
-      `[Export] Rendering "${meta.title}" [${meta.aspectKey} ${meta.width}x${meta.height}] (${meta.duration.toFixed(2)}s @ ${fps}fps = ${totalFrames} frames)...`
+      `[Export] Rendering "${meta.title}" [${meta.aspectKey} ${meta.width}x${meta.height}] (${meta.duration.toFixed(2)}s @ ${fps}fps = ${totalFrames} frames) across ${workerCount} worker(s)...`
     );
 
-    for (let idx = 0; idx < totalFrames; idx += 1) {
-      const frame = await page.evaluate(
-        (dt) => window.__GRANNY_STUDIO__.renderExportFrame(dt),
-        idx === 0 ? 0 : stepDt
-      );
-      const base64 = frame.dataUrl.split(",")[1];
-      const ext = frame.dataUrl.startsWith("data:image/jpeg") ? "jpg" : "png";
-      const framePath = path.join(framesDir, `frame_${String(idx).padStart(5, "0")}.${ext}`);
-      fs.writeFileSync(framePath, Buffer.from(base64, "base64"));
-
-      if ((idx + 1) % 60 === 0 || idx === totalFrames - 1) {
-        console.log(`[Export] Frame ${idx + 1}/${totalFrames} (t=${frame.simTime.toFixed(2)}s)`);
-      }
+    const renderStartMs = Date.now();
+    const ranges = [];
+    for (let w = 0; w < workerCount; w += 1) {
+      const startIdx = Math.floor((w * totalFrames) / workerCount);
+      const endIdx = Math.floor(((w + 1) * totalFrames) / workerCount);
+      ranges.push({ workerId: w, startIdx, endIdx });
     }
-    const frameExt = fs.existsSync(path.join(framesDir, "frame_00000.jpg")) ? "jpg" : "png";
 
-    const audioCapture = await page.evaluate(() =>
-      window.__GRANNY_STUDIO__.finishHeadlessExport()
+    async function runWorker(range, existingSession = null) {
+      const session =
+        existingSession ||
+        (await openStudioSession({
+          chromium,
+          port,
+          localThreeDir,
+          hasLocalThree,
+          episode,
+          pacer: opts.pacer,
+          aspect: opts.aspect,
+        }));
+      if (!existingSession) {
+        activeBrowsers.push(session.browser);
+      }
+
+      const { page, errors } = session;
+      const { workerId, startIdx, endIdx } = range;
+
+      if (startIdx > 0) {
+        await page.evaluate(
+          ({ count, dt }) => window.__GRANNY_STUDIO__.advanceExportFrames(count, dt),
+          { count: startIdx - 1, dt: stepDt }
+        );
+      }
+
+      for (let idx = startIdx; idx < endIdx; idx += 1) {
+        const frame = await page.evaluate(
+          (dt) => window.__GRANNY_STUDIO__.renderExportFrame(dt),
+          idx === 0 ? 0 : stepDt
+        );
+        const base64 = frame.dataUrl.split(",")[1];
+        const ext = frame.dataUrl.startsWith("data:image/jpeg") ? "jpg" : "png";
+        const framePath = path.join(framesDir, `frame_${String(idx).padStart(5, "0")}.${ext}`);
+        fs.writeFileSync(framePath, Buffer.from(base64, "base64"));
+
+        const doneInChunk = idx - startIdx + 1;
+        const chunkLen = endIdx - startIdx;
+        if (doneInChunk % 60 === 0 || idx === endIdx - 1) {
+          const elapsedS = ((Date.now() - renderStartMs) / 1000).toFixed(1);
+          console.log(
+            `[Worker ${workerId}] ${doneInChunk}/${chunkLen} (global frame ${idx + 1}/${totalFrames}, t=${frame.simTime.toFixed(2)}s, elapsed=${elapsedS}s)`
+          );
+        }
+      }
+
+      let audioCapture = null;
+      if (workerId === 0) {
+        if (endIdx < totalFrames) {
+          await page.evaluate(
+            ({ count, dt }) => window.__GRANNY_STUDIO__.advanceExportFrames(count, dt),
+            { count: totalFrames - endIdx, dt: stepDt }
+          );
+        }
+        audioCapture = await page.evaluate(() =>
+          window.__GRANNY_STUDIO__.finishHeadlessExport()
+        );
+      }
+
+      if (errors.length > 0) {
+        throw new Error(`Browser errors in worker ${workerId}:\n${errors.join("\n")}`);
+      }
+
+      if (!existingSession) {
+        await session.browser.close();
+      }
+      return audioCapture;
+    }
+
+    const workerResults = await Promise.all(
+      ranges.map((r) => runWorker(r, r.workerId === 0 ? primary : null))
     );
+
+    const audioCapture = workerResults[0];
+    await primary.browser.close();
+
+    const frameExt = fs.existsSync(path.join(framesDir, "frame_00000.jpg")) ? "jpg" : "png";
     const sfxEvents = audioCapture?.sfx || [];
     const bgmSegments = audioCapture?.bgm || [];
     const bgmDucks = audioCapture?.ducks || [];
 
     console.log(
-      `[Export] Captured ${sfxEvents.length} SFX events, ${bgmSegments.length} BGM segments, ${bgmDucks.length} duck cuts.`
+      `[Export] All ${totalFrames} frames rendered in ${((Date.now() - renderStartMs) / 1000).toFixed(1)}s. Captured ${sfxEvents.length} SFX events, ${bgmSegments.length} BGM segments, ${bgmDucks.length} duck cuts.`
     );
-
-    if (errors.length > 0) {
-      throw new Error(`Browser errors during render:\n${errors.join("\n")}`);
-    }
 
     const slug = (meta.title || "granny-pov-episode")
       .toLowerCase()
@@ -283,31 +461,29 @@ async function main() {
       mixLabels.push(outLbl);
     }
 
-    // 2. Mix SFX clips
-    for (const ev of sfxEvents) {
+    // 2. Mix SFX clips (batched into intermediate stems when > 40 events)
+    const { batchWavPaths, remainingEvents } = preMixSfxBatches(
+      sfxEvents,
+      meta.duration,
+      framesDir,
+      40
+    );
+
+    for (const wavPath of batchWavPaths) {
+      const inIdx = nextInputIdx++;
+      ffInputs.push("-i", wavPath);
+      const outLbl = `[stem${inIdx}]`;
+      filterParts.push(`[${inIdx}:a]anull${outLbl}`);
+      mixLabels.push(outLbl);
+    }
+
+    for (const ev of remainingEvents) {
       const sfxFullPath = path.resolve(REPO_ROOT, ev.path);
       if (!fs.existsSync(sfxFullPath)) continue;
       const inIdx = nextInputIdx++;
       ffInputs.push("-i", sfxFullPath);
-
-      const delayMs = Math.max(0, Math.round(ev.time * 1000));
-      const pitch = Math.max(0.5, Math.min(2.0, Number(ev.pitch) || 1.0));
-      const vol = Math.max(0, Math.min(2.0, Number(ev.volume) || 0.7));
-      const chain = [
-        `[${inIdx}:a]aformat=sample_rates=44100:channel_layouts=stereo`,
-      ];
-      if (ev.maxDuration && ev.maxDuration > 0) {
-        chain.push(`atrim=0:${ev.maxDuration}`);
-      }
-      if (Math.abs(pitch - 1.0) > 0.005) {
-        chain.push(`asetrate=44100*${pitch.toFixed(4)},aresample=44100`);
-      }
-      chain.push(`volume=${vol.toFixed(3)}`);
-      if (delayMs > 0) {
-        chain.push(`adelay=${delayMs}|${delayMs}`);
-      }
       const outLbl = `[sfx${inIdx}]`;
-      filterParts.push(`${chain.join(",")}${outLbl}`);
+      filterParts.push(buildSfxFilterChain(ev, inIdx, outLbl));
       mixLabels.push(outLbl);
     }
 
@@ -365,7 +541,13 @@ async function main() {
       )
     );
   } finally {
-    await browser.close();
+    for (const b of activeBrowsers) {
+      try {
+        await b.close();
+      } catch {
+        // ignore already-closed browser
+      }
+    }
     server.close();
     fs.rmSync(framesDir, { recursive: true, force: true });
   }
