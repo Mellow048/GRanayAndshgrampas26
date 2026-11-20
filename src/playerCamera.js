@@ -244,20 +244,56 @@ export class PlayerCamera {
     return { yaw, pitch };
   }
 
-  startWalk({ points, duration = 2.5, autoLook = true }) {
+  startWalk({
+    points,
+    duration = 2.5,
+    autoLook = true,
+    segments = null,
+    maxWalkSpeed = 3.2,
+    maxStairSpeed3D = 2.15,
+    maxVerticalSpeed = 1.55,
+  }) {
     if (!points || points.length < 2) return;
     const cumDist = [0];
     let totalLength = 0;
+    let minWalkDuration = 0;
+    const segMeta = [];
+
     for (let i = 1; i < points.length; i += 1) {
-      totalLength += points[i].distanceTo(points[i - 1]);
+      const a = points[i - 1];
+      const b = points[i];
+      const segLen = a.distanceTo(b);
+      const dy = Math.abs(b.y - a.y);
+      const meta = segments?.[i - 1] || {};
+      const isJumpArc = Boolean(meta.isJumpArc);
+      const isStair = !isJumpArc && dy > 0.15;
+
+      if (isJumpArc) {
+        minWalkDuration += Math.max(0.42, segLen / 2.6);
+      } else if (isStair) {
+        minWalkDuration += Math.max(segLen / maxStairSpeed3D, dy / maxVerticalSpeed);
+      } else {
+        minWalkDuration += segLen / maxWalkSpeed;
+      }
+
+      segMeta.push({
+        isJumpArc,
+        isStair,
+        arcHeight: meta.arcHeight || 0.42,
+      });
+      totalLength += segLen;
       cumDist.push(totalLength);
     }
+
+    const effectiveDuration = Math.max(0.1, duration, minWalkDuration);
     this.activeWalk = {
       points,
       cumDist,
+      segMeta,
       totalLength,
       elapsed: 0,
-      duration: Math.max(0.1, duration),
+      duration: effectiveDuration,
+      maxVerticalSpeed,
       autoLook,
     };
     this.isWalking = true;
@@ -390,6 +426,7 @@ export class PlayerCamera {
 
     // Walking along polyline
     if (this.activeWalk) {
+      const prevY = this.playerPos.y;
       this.activeWalk.elapsed += dt;
       const rawT = clamp(this.activeWalk.elapsed / this.activeWalk.duration, 0, 1);
       const t = rawT * 0.88 + easeInOutSine(rawT) * 0.12;
@@ -408,19 +445,35 @@ export class PlayerCamera {
         const segStart = this.activeWalk.cumDist[seg];
         const segLen = Math.max(1e-5, this.activeWalk.cumDist[seg + 1] - segStart);
         const alpha = clamp((targetDist - segStart) / segLen, 0, 1);
-        this.playerPos.lerpVectors(
-          this.activeWalk.points[seg],
-          this.activeWalk.points[seg + 1],
-          alpha
-        );
+        const pA = this.activeWalk.points[seg];
+        const pB = this.activeWalk.points[seg + 1];
+        const meta = this.activeWalk.segMeta?.[seg] || {};
+
+        this.playerPos.lerpVectors(pA, pB, alpha);
+
+        if (meta.isJumpArc) {
+          this.playerPos.y += Math.sin(alpha * Math.PI) * (meta.arcHeight || 0.42);
+        } else {
+          // Clamp vertical Y step to match staircase slope (never launch upward)
+          const maxStepY = (this.activeWalk.maxVerticalSpeed || 1.55) * Math.max(dt, 1 / 120) * 1.35;
+          const dyStep = this.playerPos.y - prevY;
+          if (Math.abs(dyStep) > maxStepY && Math.abs(pB.y - pA.y) > 0.1) {
+            this.playerPos.y = prevY + Math.sign(dyStep) * maxStepY;
+          }
+        }
 
         if (this.activeWalk.autoLook && !this.trackingRef && this.lookElapsed >= this.lookDuration) {
-          const ahead = this.activeWalk.points[seg + 1];
+          const ahead = pB;
           const dx = ahead.x - this.playerPos.x;
           const dz = ahead.z - this.playerPos.z;
-          if (dx * dx + dz * dz > 0.02) {
+          const horiz = Math.hypot(dx, dz);
+          if (horiz * horiz > 0.02) {
             const desiredYaw = Math.atan2(-dx, -dz);
             this.yaw += wrapAngleDiff(desiredYaw, this.yaw) * Math.min(1, dt * 6);
+            if (meta.isStair) {
+              const desiredPitch = clamp(Math.atan2(ahead.y - pA.y, Math.max(0.25, horiz)) * 0.45, -0.35, 0.28);
+              this.pitch += (desiredPitch - this.pitch) * Math.min(1, dt * 4);
+            }
           }
         }
       }

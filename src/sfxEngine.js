@@ -371,6 +371,7 @@ export class SfxEngine {
       punch: { key: "bonk", volume: 0.78, pitch: 1.0, maxDuration: 0.85 },
       laugh: { key: "granny_laugh", volume: 0.72, pitch: 1.0, maxDuration: 1.35 },
       terrified: { key: "glitch", volume: 0.55, pitch: 1.05, maxDuration: 0.8 },
+      panic: { key: "glitch", volume: 0.62, pitch: 1.12, maxDuration: 0.85 },
     };
     const spec = map[animName];
     if (spec) {

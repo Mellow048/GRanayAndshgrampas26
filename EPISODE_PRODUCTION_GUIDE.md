@@ -8,12 +8,12 @@ Use this guide whenever you write, generate, or render a new **Granny POV 3D Car
 
 | What you need | Where to find it | Notes |
 | --- | --- | --- |
-| **Waypoints, Cast, SFX/BGM Manifest & Presets** | `src/config.js` | `SET_MAP`, `SFX_MANIFEST`, `ASSET_MANIFEST`, `GRANDPA_KEY_POV_44S`, `JUMP_RUN_WALK_EPISODE` |
+| **Waypoints, Cast, SFX/BGM Manifest & Presets** | `src/config.js` | `SET_MAP`, `SFX_MANIFEST`, `ASSET_MANIFEST`, `GRANDPA_KEY_POV_44S`, `FLOOR_IS_LAVA_4M`, `JUMP_RUN_WALK_EPISODE` |
 | **Background Music (Looping Comedy/Chase BGM)** | `SoundEffects/backroundMusics/` + `SoundEffects/*.mp3` | Registered in `SFX_MANIFEST` with `category: "bgm"` — auto-loops in browser & FFmpeg |
 | **22 Sound Effects (Impacts, Voices, UI, Cuts)** | `SoundEffects/*.mp3` | Registered in `SFX_MANIFEST` in `src/config.js` |
 | **3D House & Character Models + Mixamo Clips** | `Assets/` | `GrannyHouse.fbx`, `GrannyTest6.fbx`, `grandpach3.fbx`, `Assets/AnimationTemplates/*.fbx` |
-| **Timeline Engine & Beats** | `src/episodeRunner.js` | Compiles `skits[].beats` (`at` / `after`), enforces `LoopRepeat` walk/run, 1.3m personal space |
-| **POV Camera & FPS Viewmodel** | `src/playerCamera.js` | Clamps pitch `[-45°, +35°]`, depth-cleared bottom-right `viewmodelScene`, gestures, fade |
+| **Timeline Engine & Beats** | `src/episodeRunner.js` | Compiles `skits[].beats` (`at` / `after`), `await: true` / `sync: "sequential"` barriers, auto stair routing, jump-arc hops, 1.3m personal space |
+| **POV Camera & FPS Viewmodel** | `src/playerCamera.js` | Clamps pitch `[-45°, +35°]`, stair vertical clamping, jump-arc hops, depth-cleared `viewmodelScene`, gestures, fade |
 | **Props & Thought Bubbles** | `src/comedyProps.js` | 6 props + 8 icon bubbles (`Emoji Ball` double-sided + camera yaw-tracking) |
 | **Cloud Video Exporter** | `.github/workflows/export-video.yml` & `scripts/export-video.mjs` | Renders 30fps `.mp4`/`.webm` + mixed audio in GitHub Actions → `latest-export` release |
 
@@ -74,19 +74,31 @@ Sync SFX directly to visible actions (`1.2s–1.85s` rhythm; avoid overlapping v
 
 **NEVER** hardcode raw `(x, y, z)` coordinates in episode JSON—always use `SET_MAP` names, and **ALWAYS** list doorway waypoints in `via: [...]` when moving between rooms so the camera and characters pass cleanly through doorway centers without clipping wall corners!
 
-### Safe Room-to-Room `via` Chains
+### Safe Room-to-Room `via` Chains & Vertical Stair Routing
 - **Back Hall ↔ Living Room (Grandpa's Room):**
   - `back_hall` → `back_room_east` → **`doorway_living`** → **`living_room_entry`** → `living_room_view`
+- **Foyer ↔ Dining Room / Kitchen:**
+  - `front_door_view` → `stairs_bottom` → `dining_corner` → `dining_table_front` → `kitchen`
 - **Back Hall ↔ Dining Room / Kitchen:**
   - `back_hall` → **`doorway_dining`** → `dining_center` → `kitchen_lane` → `kitchen`
-- **Full Cross-House Run (Kitchen → Living Room):**
-  - `via: ["dining_center", "doorway_dining", "back_hall", "back_room_east", "doorway_living", "living_room_entry"]`, `to: "living_room_view"`
+- **Ground Floor ↔ Upstairs (Automatic Staircase Routing):**
+  - Any cross-floor `char_move` or `player_walk` automatically routes through `stairs_bottom` (`-1.9, 0.0, 4.0`) ↔ `stairs_middle` (`-1.9, 1.54, 2.5`) ↔ `stairs_top` (`-1.9, 2.85, 1.25`) ↔ `upstairs_landing` (`-1.9, 2.85, 0.95`) with vertical speed clamping (`<= 1.75 m/s` actors, `<= 1.55 m/s` player) so nobody flies diagonally through floors or ceilings.
+- **Upstairs North Doorway & East Wing:**
+  - `upstairs_landing` → `up_hall_north_door` (`-1.4, 2.85, -0.6`) → `up_hall_north` (`-1.4, 2.85, -2.4`) → `up_bed_north` / `upstairs_east_north` (`1.5, 2.85, -1.8`)
+
+### Elevated Furniture Waypoints (`elevated: true`) & Jump Arcs
+Targets with `elevated: true` in `SET_MAP` automatically route to their ground `approach` waypoint first, then perform a parabolic jump-arc hop (`jump` animation for characters) onto the elevated surface—or hop directly between adjacent surfaces (`< 2.2m` apart on the same floor):
+- **Ground Floor Elevated:** `dining_table_top` (`y=1.11`), `dining_table_top_west` (`y=1.11`), `kitchen_table_top` (`y=1.13`), `kitchen_counter_top` (`y=1.13`), `back_bed_top` (`y=0.98`), `living_room_sofa` (`y=0.47`), `living_room_shelf_top` (`y=0.72`)
+- **Upstairs Elevated:** `up_bed_top` (`y=3.83`), `up_bed_top_west` (`y=3.83`), `upstairs_west_desk_top` (`y=3.54`), `upstairs_east_bed_top` (`y=3.54`)
+
+### Timeline Synchronization (`await: true` & `sync: "sequential"`)
+- Add `"await": true` (or `"sync": "sequential"`) to any `char_move`, `player_walk`, `char_anim`, `player_look`, or `player_gesture` beat to **halt timeline advancement** until that character/camera movement or one-shot animation finishes before dispatching the next beat.
+- Use `"after": <seconds>` for delta timing relative to the **previous beat** (or immediately after the previous `await: true` beat finishes). Keep any single `await: true` walk segment under `~2.2s` (or fire reaction beats right before it) to satisfy Rule 1 (`<= 2.5s` pacing).
 
 ### Key Waypoints Reference (`src/config.js`)
 - **Living Room (Grandpa's Room):** `doorway_living` (`4.4, 0, -0.7`), `living_room_entry` (`4.7, 0, 0.2`), `living_room_view` (`5.4, 0, 0.6`), `living_room` (`5.4, 0, 2.0`), `living_room_ball_bounce` (`5.5, 0, 1.7`), `granny_living_burst` (`4.2, 0, -0.7`), `chest_spot` (`6.2, 0, 2.6`), `chest_padlock` (`5.95, 0, 2.35`), `grandpa_chest_side` (`4.3, 0, 2.5`), `grandpa_step_back` (`4.0, 0, 2.9`)
-- **Back Hallway & Bedroom Stairs:** `back_hall` (`0.0, 0, -2.2`), `back_hall_left` (`-0.8, 0, -3.5`), `back_hall_right` (`0.6, 0, -2.6`), `hallway` (`0.8, 0, -2.4`), `back_room_east` (`3.2, 0, -1.8`), `under_bed` (`-3.2, 0, -2.8`), `stairs` (`-3.4, 0, -2.6`)
+- **Back Hallway & Bedroom Stairs:** `back_hall` (`0.0, 0, -2.2`), `back_hall_left` (`-0.8, 0, -3.5`), `back_hall_right` (`0.6, 0, -2.6`), `hallway` (`0.8, 0, -2.4`), `back_room_east` (`3.2, 0, -1.8`), `under_bed` (`-3.2, 0, -2.8`), `stairs_bottom` (`-1.9, 0, 4.0`), `stairs_middle` (`-1.9, 1.54, 2.5`), `stairs_top` (`-1.9, 2.85, 1.25`), `upstairs_landing` (`-1.9, 2.85, 0.95`)
 - **Dining Room & Kitchen:** `doorway_dining` (`-3.6, 0, -1.2`), `dining_center` (`-3.6, 0, 0.4`), `hide_table` (`-4.2, 0, 2.3`), `kitchen_lane` (`-5.8, 0, 0.8`), `kitchen` (`-6.4, 0, 1.4`), `key_spot` (`-7.35, 1.13, 1.4` — elevated counter top!)
-- **Other:** `foyer` (`-0.8, 0, 0.2`), `bedroom` (`-4.2, 2.85, 2.1`, upstairs)
 - **Avoid:** The unroofed front porch (`x = -2.4..+1.8, z = +1.6..+5.8`) and cellar stair hole (`x = +2.4, z = -0.2..+2.8`).
 
 ---
@@ -95,8 +107,8 @@ Sync SFX directly to visible actions (`1.2s–1.85s` rhythm; avoid overlapping v
 
 - **Characters (`cast[]`):** `granny` (`1.65m`), `grandpa` (`1.72m`). Always spawn characters facing into the open room (`facing: "living_room_view"`, etc.), and use `char_face` with `followPlayer: true, instant: true` before dialogue/reaction beats.
 - **Animations (`anim`):**
-  - **Looping locomotion (use in `char_move`):** `walk`, `run`, `run2` (fast sprint), `sneak`, `granny_walk` (Granny only). `EpisodeRunner` automatically enforces `LoopRepeat` and crossfades back to `idle` on arrival.
-  - **Emotes & actions (use in `char_anim`):** `idle`, `laugh` (`loop: true`), `terrified` (`loop: true`), `sit` (`loop: true`), `jump` (`loop: false`), `punch` (`loop: false`), plus Granny-only `look`, `hit`, `look_bed`.
+  - **Looping locomotion (use in `char_move`):** `walk`, `run`, `run2` (fast sprint), `sneak`, `granny_walk` (Granny only). `EpisodeRunner` automatically enforces `LoopRepeat` and crossfades back to `endAnim` (`idle` by default) on arrival.
+  - **Emotes & actions (use in `char_anim`):** `idle`, `laugh` (`loop: true`), `terrified` (`loop: true`), `panic` (`loop: true`, sped-up `Terrified.fbx` for instant hazard reactions), `sit` (`loop: true`), `jump` (`loop: false`), `punch` (`loop: false`), plus Granny-only `look`, `hit`, `look_bed`.
 - **Thought Bubbles (`icon`):** `key`, `question`, `exclamation`, `zzz`, `angry`, `laugh`, `food`, `heart`. Keep duration `1.4s–2.4s`. Viewport NDC clamping prevents top-edge cropping automatically.
 - **Comedy Props (`type`):** `golden_key`, `padlock`, `treasure_chest`, `emoji_ball`, `toy_blaster`, `cookie_jar`, `delivery_box` (`open` opens flaps), `red_button` (`press` slams cap), `rising_lava` (`rise_to` with `targetY` & `duration` animates rising molten lava).
   - Use `player_hold` (`{ "prop": "golden_key" }`) for the non-clipping bottom-right FPS viewmodel, `{ "prop": "golden_key", "use": true }` to poke/activate, and `{ "prop": null }` to clear.
