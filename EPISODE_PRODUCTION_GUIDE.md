@@ -98,9 +98,9 @@ Sync SFX directly to visible actions (`1.2s–1.85s` rhythm; avoid overlapping v
   - **Looping locomotion (use in `char_move`):** `walk`, `run`, `run2` (fast sprint), `sneak`, `granny_walk` (Granny only). `EpisodeRunner` automatically enforces `LoopRepeat` and crossfades back to `idle` on arrival.
   - **Emotes & actions (use in `char_anim`):** `idle`, `laugh` (`loop: true`), `terrified` (`loop: true`), `sit` (`loop: true`), `jump` (`loop: false`), `punch` (`loop: false`), plus Granny-only `look`, `hit`, `look_bed`.
 - **Thought Bubbles (`icon`):** `key`, `question`, `exclamation`, `zzz`, `angry`, `laugh`, `food`, `heart`. Keep duration `1.4s–2.4s`. Viewport NDC clamping prevents top-edge cropping automatically.
-- **Comedy Props (`type`):** `golden_key`, `padlock`, `treasure_chest`, `emoji_ball`, `toy_blaster`, `cookie_jar`.
+- **Comedy Props (`type`):** `golden_key`, `padlock`, `treasure_chest`, `emoji_ball`, `toy_blaster`, `cookie_jar`, `delivery_box` (`open` opens flaps), `red_button` (`press` slams cap), `rising_lava` (`rise_to` with `targetY` & `duration` animates rising molten lava).
   - Use `player_hold` (`{ "prop": "golden_key" }`) for the non-clipping bottom-right FPS viewmodel, `{ "prop": "golden_key", "use": true }` to poke/activate, and `{ "prop": null }` to clear.
-  - Pitch is clamped `[-45°, +35°]`, and elevated waypoints (`y > 0.2`, e.g. `key_spot`) automatically target the prop rather than the ceiling.
+  - Gestures (`player_gesture`): `nod_yes`, `shake_no`, `shake_panic`, `shake_earthquake` (sustained `duration` camera rumble), `peek_lean`. Pitch is clamped `[-45°, +35°]`, and elevated waypoints (`y > 0.2`, e.g. `key_spot`) automatically target the prop rather than the ceiling.
 
 ---
 

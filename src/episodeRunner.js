@@ -339,11 +339,11 @@ export class EpisodeRunner {
           const az = a.z - nz * push;
           const bx = b.x + nx * push;
           const bz = b.z + nz * push;
-          if (!this.house || this.house.isPointInsideWalkable(ax, az)) {
+          if (!this.house || a.y >= 0.4 || this.house.isPointInsideWalkable(ax, az)) {
             a.x = ax;
             a.z = az;
           }
-          if (!this.house || this.house.isPointInsideWalkable(bx, bz)) {
+          if (!this.house || b.y >= 0.4 || this.house.isPointInsideWalkable(bx, bz)) {
             b.x = bx;
             b.z = bz;
           }
@@ -364,7 +364,7 @@ export class EpisodeRunner {
           const nz = dz / dist;
           const candX = actor.root.position.x + nx * PLAYER_PERSONAL_SPACE;
           const candZ = actor.root.position.z + nz * PLAYER_PERSONAL_SPACE;
-          if (!this.house || this.house.isPointInsideWalkable(candX, candZ)) {
+          if (!this.house || pPos.y >= 0.4 || this.house.isPointInsideWalkable(candX, candZ)) {
             pPos.x = candX;
             pPos.z = candZ;
             this.playerCamera.camera.position.x = candX;
@@ -600,6 +600,8 @@ export class EpisodeRunner {
         at: ev.waypoint,
         to: ev.to,
         travelDuration: ev.travelDuration,
+        targetY: ev.targetY,
+        duration: ev.duration,
         yOffset: ev.yOffset ?? 0.25,
       });
       return;

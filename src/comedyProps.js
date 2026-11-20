@@ -189,6 +189,66 @@ export class ThoughtBubbleCache {
   }
 }
 
+function makeLavaTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  ctx.fillStyle = "#b91c1c";
+  ctx.fillRect(0, 0, 512, 512);
+
+  const blobs = [
+    [90, 80, 68, "#f97316"], [240, 120, 85, "#fb923c"], [410, 90, 72, "#facc15"],
+    [150, 260, 92, "#ea580c"], [340, 280, 76, "#facc15"], [440, 400, 82, "#f97316"],
+    [80, 410, 74, "#fb923c"], [250, 430, 88, "#ea580c"], [40, 220, 54, "#fef08a"],
+    [300, 50, 50, "#fef08a"], [460, 240, 60, "#fef08a"], [190, 180, 42, "#450a0a"],
+    [360, 170, 38, "#7c2d12"], [120, 340, 44, "#450a0a"], [330, 380, 46, "#7c2d12"],
+  ];
+  for (const [cx, cy, r, col] of blobs) {
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(9, 9);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function makePackageLabelTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  ctx.fillStyle = "#fef3c7";
+  ctx.fillRect(0, 0, 256, 128);
+  ctx.strokeStyle = "#dc2626";
+  ctx.lineWidth = 8;
+  ctx.strokeRect(8, 8, 240, 112);
+  ctx.fillStyle = "#dc2626";
+  ctx.font = "900 34px ui-sans-serif, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("MYSTERY!", 128, 48);
+  ctx.fillStyle = "#0f172a";
+  ctx.font = "800 22px ui-sans-serif, system-ui, sans-serif";
+  ctx.fillText("DO NOT PRESS", 128, 92);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 function makeEmojiFaceTexture(angry = false) {
   const canvas = document.createElement("canvas");
   canvas.width = 512;
@@ -392,6 +452,86 @@ export function createPropMesh(propType) {
       break;
     }
 
+    case "delivery_box": {
+      const cardboard = new THREE.MeshStandardMaterial({ color: 0xc28e5c, roughness: 0.78 });
+      const tape = new THREE.MeshStandardMaterial({ color: 0xfde68a, roughness: 0.45 });
+      const labelMat = new THREE.MeshBasicMaterial({ map: makePackageLabelTexture() });
+
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.42, 0.52), cardboard);
+      body.position.y = 0.21;
+      body.castShadow = true;
+      body.receiveShadow = true;
+
+      const labelFront = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.22), labelMat);
+      labelFront.position.set(0, 0.22, -0.265);
+      labelFront.rotation.y = Math.PI;
+      const labelBack = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.22), labelMat);
+      labelBack.position.set(0, 0.22, 0.265);
+
+      const flapLPivot = new THREE.Group();
+      flapLPivot.name = "BoxFlapL";
+      flapLPivot.position.set(-0.31, 0.42, 0);
+      const flapL = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.03, 0.52), cardboard);
+      flapL.position.set(0.155, 0.015, 0);
+      const tapeL = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.034, 0.1), tape);
+      tapeL.position.set(0.155, 0.016, 0);
+      flapLPivot.add(flapL, tapeL);
+
+      const flapRPivot = new THREE.Group();
+      flapRPivot.name = "BoxFlapR";
+      flapRPivot.position.set(0.31, 0.42, 0);
+      const flapR = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.03, 0.52), cardboard);
+      flapR.position.set(-0.155, 0.015, 0);
+      const tapeR = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.034, 0.1), tape);
+      tapeR.position.set(-0.155, 0.016, 0);
+      flapRPivot.add(flapR, tapeR);
+
+      group.add(body, labelFront, labelBack, flapLPivot, flapRPivot);
+      break;
+    }
+
+    case "red_button": {
+      const baseMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4, metalness: 0.5 });
+      const warnMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.35 });
+      const btnMat = new THREE.MeshStandardMaterial({
+        color: 0xef4444,
+        emissive: 0xdc2626,
+        emissiveIntensity: 0.55,
+        roughness: 0.25,
+      });
+
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.09, 0.42), baseMat);
+      base.position.y = 0.045;
+      base.castShadow = true;
+      const trim = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.035, 0.45), warnMat);
+      trim.position.y = 0.025;
+      const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.05, 18), baseMat);
+      collar.position.y = 0.11;
+
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.145, 0.09, 20), btnMat);
+      cap.position.y = 0.155;
+      cap.name = "ButtonCap";
+      cap.castShadow = true;
+
+      group.add(base, trim, collar, cap);
+      break;
+    }
+
+    case "rising_lava": {
+      const lavaTex = makeLavaTexture();
+      const lavaMat = new THREE.MeshBasicMaterial({
+        map: lavaTex,
+        color: 0xffaa44,
+        transparent: true,
+        opacity: 0.92,
+      });
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(44, 44, 1, 1), lavaMat);
+      plane.rotation.x = -Math.PI * 0.5;
+      plane.name = "LavaPlane";
+      group.add(plane);
+      break;
+    }
+
     case "cookie_jar":
     default: {
       const jarMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.3 });
@@ -450,6 +590,12 @@ export class ComedyPropManager {
           bounce: false,
           popOut: false,
           lidOpen: false,
+          pressed: false,
+          riseActive: false,
+          riseStartY: basePos.y,
+          riseTargetY: basePos.y,
+          riseElapsed: 0,
+          riseDuration: 1,
           phase: 0,
         },
       });
@@ -468,10 +614,21 @@ export class ComedyPropManager {
     switch (action) {
       case "show":
         mesh.visible = true;
+        state.bounce = false;
+        state.popOut = false;
+        state.spin = false;
+        if (params.at && this.waypoints[params.at]) {
+          const wp = this.waypoints[params.at];
+          basePos.set(wp.x, wp.y + (params.yOffset || 0), wp.z);
+          mesh.position.copy(basePos);
+        }
         break;
       case "hide":
       case "pickup":
         mesh.visible = false;
+        state.bounce = false;
+        state.popOut = false;
+        state.spin = false;
         break;
       case "open":
         mesh.visible = true;
@@ -489,6 +646,21 @@ export class ComedyPropManager {
             }
           }
         }
+        break;
+      case "press":
+        mesh.visible = true;
+        state.pressed = true;
+        break;
+      case "unpress":
+        state.pressed = false;
+        break;
+      case "rise_to":
+        mesh.visible = true;
+        state.riseActive = true;
+        state.riseStartY = basePos.y;
+        state.riseTargetY = params.targetY ?? basePos.y + 0.5;
+        state.riseElapsed = 0;
+        state.riseDuration = Math.max(0.1, params.duration || 3.0);
         break;
       case "close":
         state.lidOpen = false;
@@ -561,6 +733,24 @@ export class ComedyPropManager {
         mesh.position.z = basePos.z;
       }
 
+      if (state.riseActive) {
+        state.riseElapsed = Math.min(state.riseDuration, state.riseElapsed + dt);
+        const rt = state.riseElapsed / state.riseDuration;
+        basePos.y = state.riseStartY + (state.riseTargetY - state.riseStartY) * rt;
+        mesh.position.y = basePos.y + Math.sin(state.phase * 3.5) * 0.025;
+        if (rt >= 1) state.riseActive = false;
+      } else if (entry.type === "rising_lava") {
+        mesh.position.y = basePos.y + Math.sin(state.phase * 3.5) * 0.025;
+      }
+
+      if (entry.type === "rising_lava") {
+        const lavaPlane = mesh.getObjectByName("LavaPlane");
+        if (lavaPlane?.material?.map) {
+          lavaPlane.material.map.offset.x = (state.phase * 0.08) % 1;
+          lavaPlane.material.map.offset.y = (state.phase * 0.05) % 1;
+        }
+      }
+
       if (state.float) {
         mesh.position.y = basePos.y + Math.sin(state.phase * 3.5) * 0.06;
       } else if (state.bounce) {
@@ -577,6 +767,25 @@ export class ComedyPropManager {
       if (lid) {
         const targetAngle = state.lidOpen ? -1.95 : 0;
         lid.rotation.x += (targetAngle - lid.rotation.x) * Math.min(1, dt * 12);
+      }
+
+      const flapL = mesh.getObjectByName("BoxFlapL");
+      const flapR = mesh.getObjectByName("BoxFlapR");
+      if (flapL && flapR) {
+        const openAngle = state.lidOpen ? 2.15 : 0;
+        flapL.rotation.z += (openAngle - flapL.rotation.z) * Math.min(1, dt * 10);
+        flapR.rotation.z += (-openAngle - flapR.rotation.z) * Math.min(1, dt * 10);
+      }
+
+      const btnCap = mesh.getObjectByName("ButtonCap");
+      if (btnCap) {
+        const targetCapY = state.pressed ? 0.118 : 0.155;
+        btnCap.position.y += (targetCapY - btnCap.position.y) * Math.min(1, dt * 18);
+        if (btnCap.material) {
+          btnCap.material.emissiveIntensity = state.pressed
+            ? 1.15
+            : 0.45 + Math.sin(state.phase * 6) * 0.25;
+        }
       }
 
       const sparkles = mesh.getObjectByName("ChestSparkles");

@@ -39,7 +39,7 @@ function setupCartoonLighting(scene) {
   const sun = new THREE.DirectionalLight(0xfff8e7, 1.35);
   sun.position.set(10, 18, 12);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.mapSize.set(isHeadless ? 512 : 1024, isHeadless ? 512 : 1024);
   sun.shadow.camera.near = 1;
   sun.shadow.camera.far = 45;
   sun.shadow.camera.left = -12;
@@ -93,13 +93,13 @@ async function bootstrap() {
   const { camFill } = setupCartoonLighting(scene);
 
   const renderer = new THREE.WebGLRenderer({
-    antialias: true,
+    antialias: !isHeadless,
     powerPreference: "high-performance",
     preserveDrawingBuffer: true,
   });
   renderer.setPixelRatio(isHeadless ? 1 : Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = isHeadless ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.24;
@@ -354,7 +354,7 @@ async function bootstrap() {
       return {
         simTime: runner.simTime,
         isFinished: runner.isFinished,
-        dataUrl: renderer.domElement.toDataURL("image/jpeg", 0.96),
+        dataUrl: renderer.domElement.toDataURL("image/jpeg", 0.90),
       };
     },
     finishHeadlessExport: () => {

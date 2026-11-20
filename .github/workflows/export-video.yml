@@ -9,6 +9,7 @@ on:
         default: "grandpa_key_pov_44s"
         options:
           - grandpa_key_pov_44s
+          - floor_is_lava_4m
           - jump_run_walk_6s
           - custom_json
       episode_json:
@@ -29,6 +30,7 @@ on:
         type: choice
         default: "30"
         options:
+          - "24"
           - "30"
           - "60"
       sfx_pacer:
@@ -50,7 +52,7 @@ permissions:
 jobs:
   render-pov:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
