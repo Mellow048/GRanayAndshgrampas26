@@ -381,7 +381,10 @@ function buildIndoorNavigation(houseRoot, allHouseMeshes) {
     const out = desiredPos.clone();
     if (lookTarget.y < 2.2) {
       out.y = Math.min(out.y, 2.48);
-      out.y = Math.max(out.y, 0.45);
+      out.y = Math.max(out.y, 0.35);
+    } else {
+      out.y = Math.min(out.y, 5.42);
+      out.y = Math.max(out.y, 3.15);
     }
 
     tmpDir.subVectors(out, lookTarget);
@@ -603,6 +606,48 @@ export function instantiateCharacter(id, template, animationClips) {
     template.spec.rigType === "bip01" ? "Bip01_R_Hand" : "hand_R_001";
   const handBone = rigHolder.getObjectByName(handBoneName) || null;
 
+  // Embedded character hand/head sub-meshes (Grandpa's Shotgun vs Cane, spare Glasses, Granny's Bat)
+  const embeddedProps = {
+    cane: [rigHolder.getObjectByName("Kapp")].filter(Boolean),
+    shotgun: ["ShotgunPipaGP", "ShotgunGP_1"]
+      .map((name) => rigHolder.getObjectByName(name))
+      .filter(Boolean),
+    bat: [rigHolder.getObjectByName("BatBloody")].filter(Boolean),
+    spareGlasses: rigHolder.getObjectByName("Grandpa_Glasses_1") || null,
+    redEyes: rigHolder.getObjectByName("GrandpaRedEyes2") || null,
+  };
+
+  /**
+   * Strictly toggles Grandpa's built-in Cane ("cane") vs Shotgun ("shotgun") vs "none".
+   * Guarantees Shotgun and Cane can NEVER both be visible at the same time.
+   */
+  function toggleBuiltInProp(mode = "default") {
+    if (embeddedProps.spareGlasses) {
+      embeddedProps.spareGlasses.visible = false;
+    }
+    if (embeddedProps.redEyes) {
+      embeddedProps.redEyes.visible = false;
+    }
+
+    if (embeddedProps.cane.length > 0 || embeddedProps.shotgun.length > 0) {
+      const wantShotgun = mode === "shotgun";
+      const wantNone = mode === "none";
+      const showCane = !wantNone && !wantShotgun;
+      const showShotgun = !wantNone && wantShotgun;
+
+      for (const m of embeddedProps.shotgun) m.visible = showShotgun;
+      for (const m of embeddedProps.cane) m.visible = showCane;
+    }
+
+    if (embeddedProps.bat.length > 0) {
+      const showBat = mode !== "none";
+      for (const m of embeddedProps.bat) m.visible = showBat;
+    }
+  }
+
+  // Default: Grandpa holds Cane ONLY (Shotgun.visible = false, Cane.visible = true)
+  toggleBuiltInProp("cane");
+
   // Floating 2D Comic Thought Bubble Sprite attached above the character's head
   const bubbleMat = new THREE.SpriteMaterial({
     transparent: true,
@@ -744,7 +789,24 @@ export function instantiateCharacter(id, template, animationClips) {
       disposeObject3D(heldPropGroup);
       heldPropGroup = null;
     }
-    if (!propName) return;
+
+    if (
+      propName === "cane" ||
+      propName === "shotgun" ||
+      propName === "bat" ||
+      propName === "none"
+    ) {
+      toggleBuiltInProp(propName);
+      return;
+    }
+
+    if (!propName) {
+      toggleBuiltInProp("cane");
+      return;
+    }
+
+    // Hide built-in hand weapons while holding an external comedy prop so nothing clips
+    toggleBuiltInProp("none");
 
     heldPropGroup = createPropMesh(propName);
     const parent = handBone || rigHolder;
@@ -924,6 +986,7 @@ export function instantiateCharacter(id, template, animationClips) {
     showBubble,
     hideBubble: () => showBubble(null),
     setProp,
+    toggleBuiltInProp,
     setSpeaking,
     setJumpOffset,
     getHeadWorldPosition,
