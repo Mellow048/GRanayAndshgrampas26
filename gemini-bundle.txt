@@ -1,8 +1,8 @@
 GRANNY POV 3D CARTOON STUDIO - COMPLETE CODE BUNDLE FOR GEMINI
 Repository: https://github.com/Mellow048/GRanayAndshgrampas26
 Branch: arena/c1c9bad0-granayandshgrampas26
-Commit: e93dd77
-Generated: 2026-11-21T01:59:08Z
+Commit: f628076
+Generated: 2026-11-21T03:19:20Z
 
 This bundle contains EVERY text/code file in this branch. Binary assets (FBX models,
 PNG textures, MP3 music/SFX) are intentionally NOT included - they are listed in the
@@ -768,7 +768,8 @@ output/
         color: var(--muted);
         font-family: monospace;
       }
-      #coordReadout {
+      #coordReadout,
+      .spatial-readout {
         font-family: monospace;
         font-size: 11px;
         background: #020617;
@@ -776,6 +777,34 @@ output/
         border-radius: 5px;
         border: 1px solid var(--border);
         word-break: break-all;
+        line-height: 1.45;
+      }
+      .spatial-memory-bar {
+        margin: 8px 10px 0 10px;
+        padding: 8px 10px;
+        background: var(--panel-alt);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .spatial-memory-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .spatial-memory-head h3 {
+        margin: 0;
+        font-size: 11px;
+        color: #38bdf8;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .spatial-actions {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 5px;
       }
       #episodeEditor {
         width: 100%;
@@ -906,6 +935,21 @@ output/
             <button type="button" data-tab="waypoints">Waypoints</button>
             <button type="button" data-tab="json">JSON Skits</button>
           </div>
+
+          <section id="spatialMemoryPanel" class="spatial-memory-bar">
+            <div class="spatial-memory-head">
+              <h3>Spatial Memory</h3>
+              <span style="font-size: 10px; color: var(--muted);">Click any 3D object</span>
+            </div>
+            <div id="spatialMemoryReadout" class="spatial-readout">
+              Click a table, door, character, or prop on the 3D stage to inspect its Mesh Name, Tag, and World Coordinate.
+            </div>
+            <div class="spatial-actions">
+              <button type="button" id="copyTagBtn" title="Copy selected object tag">Copy Tag</button>
+              <button type="button" id="focusTagBtn" title="Smart Focus camera on tag">Focus</button>
+              <button type="button" id="walkTagBtn" title="Dynamic Proximity Walk (0.8m)">Walk 0.8m</button>
+            </div>
+          </section>
 
           <div class="panel-body">
             <!-- Director Tab -->
@@ -2175,7 +2219,7 @@ export class AnimationLibrary {
 import * as THREE from "three";
 import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
-import { ASSET_MANIFEST, CONFIG } from "./config.js";
+import { ASSET_MANIFEST, CONFIG, SEMANTIC_MESH_TAGS, SEMANTIC_OBJECT_REGIONS } from "./config.js";
 import { createPropMesh, ThoughtBubbleCache } from "./comedyProps.js";
 
 const sharedBubbleCache = new ThoughtBubbleCache();
@@ -2673,15 +2717,258 @@ export async function loadHouse() {
     }
   });
 
+  const semanticRegistry = assignSemanticTagsToHouse(houseRoot, allHouseMeshes);
   const nav = buildIndoorNavigation(houseRoot, allHouseMeshes);
 
   return {
     root: houseRoot,
     floorMeshes,
     allHouseMeshes,
+    semanticRegistry,
     ...nav,
     dispose: () => disposeObject3D(houseRoot),
   };
+}
+
+export function toSemanticTag(rawName = "") {
+  return String(rawName)
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+/**
+ * Assigns semantic tags (`mesh.userData.tag`, `aliases`, `semanticLabel`) to every
+ * GrannyHouse.fbx mesh and attaches lightweight Spatial Memory anchor volumes for
+ * individual furniture pieces inside combined FBX meshes (e.g. `kitchen_table`, `dining_table`).
+ */
+export function assignSemanticTagsToHouse(houseRoot, allHouseMeshes = []) {
+  const taggedMeshes = [];
+
+  for (const mesh of allHouseMeshes) {
+    const rule = SEMANTIC_MESH_TAGS[mesh.name];
+    const tag = rule ? rule.tag : toSemanticTag(mesh.name || "house_mesh");
+    const aliases = rule?.aliases ? [...rule.aliases] : [];
+    const label = rule?.label || mesh.name || tag;
+
+    mesh.userData.tag = tag;
+    mesh.userData.aliases = aliases;
+    mesh.userData.semanticLabel = label;
+    mesh.userData.rawMeshName = mesh.name;
+    taggedMeshes.push({ meshName: mesh.name, tag, aliases, label });
+  }
+
+  let anchorGroup = houseRoot.getObjectByName("SemanticAnchors");
+  if (!anchorGroup) {
+    anchorGroup = new THREE.Group();
+    anchorGroup.name = "SemanticAnchors";
+    houseRoot.add(anchorGroup);
+  }
+
+  for (const [tag, region] of Object.entries(SEMANTIC_OBJECT_REGIONS)) {
+    const min = region.min;
+    const max = region.max;
+    const sx = Math.max(0.05, max[0] - min[0]);
+    const sy = Math.max(0.05, max[1] - min[1]);
+    const sz = Math.max(0.05, max[2] - min[2]);
+    const cx = (min[0] + max[0]) * 0.5;
+    const cy = (min[1] + max[1]) * 0.5;
+    const cz = (min[2] + max[2]) * 0.5;
+
+    const anchorMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(sx, sy, sz),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    anchorMesh.name = `Anchor_${tag}`;
+    anchorMesh.visible = false;
+    anchorMesh.position.set(cx, cy, cz);
+    anchorMesh.userData.tag = tag;
+    anchorMesh.userData.aliases = region.aliases ? [...region.aliases] : [];
+    anchorMesh.userData.semanticLabel = region.label || tag;
+    anchorMesh.userData.isSemanticAnchor = true;
+    anchorMesh.userData.parentMeshName = region.parentMesh || null;
+    anchorMesh.userData.regionMin = [...min];
+    anchorMesh.userData.regionMax = [...max];
+
+    anchorGroup.add(anchorMesh);
+    taggedMeshes.push({
+      meshName: region.parentMesh || anchorMesh.name,
+      tag,
+      aliases: anchorMesh.userData.aliases,
+      label: anchorMesh.userData.semanticLabel,
+      isAnchor: true,
+    });
+  }
+
+  houseRoot.updateMatrixWorld(true);
+  return taggedMeshes;
+}
+
+/**
+ * Finds the best Object3D in a Three.js scene matching a semantic tag, alias, or mesh name.
+ * Prefers SemanticAnchors, Actor_* roots, and Prop_* roots so bounding boxes wrap the whole entity.
+ */
+export function findTaggedObject(scene, tagOrName) {
+  if (!scene || !tagOrName) return null;
+  const query = String(tagOrName).trim();
+  if (!query) return null;
+  const queryLower = query.toLowerCase();
+
+  let bestMatch = null;
+  let bestScore = -1;
+
+  scene.traverse((node) => {
+    const ud = node.userData || {};
+    const tag = ud.tag ? String(ud.tag) : "";
+    const aliases = Array.isArray(ud.aliases) ? ud.aliases.map(String) : [];
+    const name = node.name ? String(node.name) : "";
+
+    let matchTypeScore = 0;
+    if (tag === query) matchTypeScore = 100;
+    else if (tag.toLowerCase() === queryLower) matchTypeScore = 95;
+    else if (aliases.includes(query) || aliases.some((a) => a.toLowerCase() === queryLower)) matchTypeScore = 85;
+    else if (name === query) matchTypeScore = 75;
+    else if (name.toLowerCase() === queryLower) matchTypeScore = 70;
+    else if (toSemanticTag(name) === queryLower) matchTypeScore = 60;
+
+    if (matchTypeScore === 0) return;
+
+    // Prefer root groups (Actor_*, Prop_*) and SemanticAnchors over individual child sub-meshes
+    let roleBonus = 0;
+    if (ud.isSemanticAnchor) roleBonus += 25;
+    if (name.startsWith("Actor_") || name.startsWith("Prop_")) roleBonus += 20;
+    if (!node.isMesh && (ud.actorId || ud.propId)) roleBonus += 15;
+    if (node.visible || ud.isSemanticAnchor) roleBonus += 5;
+
+    const totalScore = matchTypeScore + roleBonus;
+    if (totalScore > bestScore) {
+      bestScore = totalScore;
+      bestMatch = node;
+    }
+  });
+
+  return bestMatch;
+}
+
+/**
+ * Computes an accurate world-space THREE.Box3 for any tagged object, SemanticAnchor,
+ * prop group, or SkinnedMesh character.
+ */
+export function getObjectBounds(obj, outBox = new THREE.Box3()) {
+  outBox.makeEmpty();
+  if (!obj) return outBox;
+
+  obj.updateMatrixWorld(true);
+  const ud = obj.userData || {};
+
+  if (ud.isSemanticAnchor && Array.isArray(ud.regionMin) && Array.isArray(ud.regionMax)) {
+    outBox.min.set(ud.regionMin[0], ud.regionMin[1], ud.regionMin[2]);
+    outBox.max.set(ud.regionMax[0], ud.regionMax[1], ud.regionMax[2]);
+    return outBox;
+  }
+
+  // SkinnedMesh rigs compute dynamic pose bounds via Box3.setFromObject in Three r170,
+  // but if a character mesh hasn't updated its bone matrices yet or is empty, fall back
+  // safely to a standing torso/body volume anchored at world position.
+  outBox.setFromObject(obj);
+
+  if (ud.actorId) {
+    const wp = new THREE.Vector3();
+    obj.getWorldPosition(wp);
+    const size = new THREE.Vector3();
+    outBox.getSize(size);
+    if (outBox.isEmpty() || size.y < 0.4 || size.y > 4.0) {
+      outBox.min.set(wp.x - 0.34, wp.y, wp.z - 0.34);
+      outBox.max.set(wp.x + 0.34, wp.y + 1.65, wp.z + 0.34);
+    }
+  }
+
+  return outBox;
+}
+
+/**
+ * Resolves the most specific semantic tag + world bounds at a Raycaster hit point
+ * (e.g. clicking the dining table inside combined mesh Furniture3 resolves to `dining_table`).
+ */
+export function resolveSemanticTagAtPoint(hitObject, hitPoint) {
+  if (!hitObject) return null;
+
+  const meshName = hitObject.name || "";
+  if (hitPoint && meshName) {
+    let bestRegion = null;
+    let bestVolume = Infinity;
+
+    for (const [tag, region] of Object.entries(SEMANTIC_OBJECT_REGIONS)) {
+      if (region.parentMesh && region.parentMesh !== meshName) continue;
+      const [minX, minY, minZ] = region.min;
+      const [maxX, maxY, maxZ] = region.max;
+      const pad = 0.22;
+      if (
+        hitPoint.x >= minX - pad && hitPoint.x <= maxX + pad &&
+        hitPoint.y >= minY - pad && hitPoint.y <= maxY + pad &&
+        hitPoint.z >= minZ - pad && hitPoint.z <= maxZ + pad
+      ) {
+        const vol = (maxX - minX) * (maxY - minY) * (maxZ - minZ);
+        if (vol < bestVolume) {
+          bestVolume = vol;
+          bestRegion = { tag, region };
+        }
+      }
+    }
+
+    if (bestRegion) {
+      const box = new THREE.Box3(
+        new THREE.Vector3(...bestRegion.region.min),
+        new THREE.Vector3(...bestRegion.region.max)
+      );
+      return {
+        tag: bestRegion.tag,
+        label: bestRegion.region.label || bestRegion.tag,
+        meshName,
+        isSubRegion: true,
+        box,
+      };
+    }
+  }
+
+  let cursor = hitObject;
+  while (cursor) {
+    if (cursor.userData?.tag) {
+      return {
+        tag: cursor.userData.tag,
+        label: cursor.userData.semanticLabel || cursor.userData.tag,
+        meshName: meshName || cursor.name || "UnnamedMesh",
+        isSubRegion: false,
+        box: getObjectBounds(
+          cursor.userData.actorId || cursor.userData.propId
+            ? findTopTaggedAncestor(hitObject, cursor.userData.tag) || cursor
+            : hitObject
+        ),
+      };
+    }
+    cursor = cursor.parent;
+  }
+
+  return {
+    tag: toSemanticTag(meshName || "untagged_object"),
+    label: meshName || "Untagged Object",
+    meshName: meshName || "UnnamedMesh",
+    isSubRegion: false,
+    box: getObjectBounds(hitObject),
+  };
+}
+
+function findTopTaggedAncestor(node, tag) {
+  let top = node;
+  let cursor = node;
+  while (cursor) {
+    if (cursor.userData?.tag === tag) {
+      top = cursor;
+    }
+    cursor = cursor.parent;
+  }
+  return top;
 }
 
 /**
@@ -2757,9 +3044,17 @@ export async function loadCharacterTemplate(charKey) {
 export function instantiateCharacter(id, template, animationClips) {
   const root = new THREE.Group();
   root.name = `Actor_${id}`;
+  root.userData.tag = id;
+  root.userData.actorId = id;
+  root.userData.semanticLabel = template.spec?.name || id;
 
   const rigHolder = SkeletonUtils.clone(template.root);
   rigHolder.name = `${id}_RigHolder`;
+  rigHolder.traverse((node) => {
+    node.userData.tag = id;
+    node.userData.actorId = id;
+    node.userData.semanticLabel = template.spec?.name || id;
+  });
   root.add(rigHolder);
 
   const mixer = new THREE.AnimationMixer(rigHolder);
@@ -4080,6 +4375,22 @@ export class ComedyPropManager {
     this.clear();
     for (const def of propDefs) {
       const mesh = createPropMesh(def.type);
+      const propTag = def.tag || def.id;
+      const propLabel = def.label || def.id;
+      mesh.name = `Prop_${def.id}`;
+      mesh.userData.tag = propTag;
+      mesh.userData.propId = def.id;
+      mesh.userData.semanticLabel = propLabel;
+      mesh.userData.aliases = [def.id, def.type].filter((v, i, arr) => v && arr.indexOf(v) === i);
+      mesh.traverse((child) => {
+        if (!child.name) {
+          child.name = `${def.id}_Part`;
+        }
+        child.userData.tag = propTag;
+        child.userData.propId = def.id;
+        child.userData.semanticLabel = propLabel;
+        child.userData.aliases = mesh.userData.aliases;
+      });
       const wp = this.waypoints[def.spawn];
       const basePos = wp
         ? new THREE.Vector3(wp.x, wp.y + (def.yOffset || 0), wp.z)
@@ -4387,6 +4698,115 @@ export const CONFIG = {
     footstepIntervalSneak: 0.56,
     globalCooldownSec: 0.16,
     masterVolume: 0.85,
+  },
+};
+
+/**
+ * Semantic Mesh Tagging Rules for GrannyHouse.fbx meshes.
+ * Populated into `mesh.userData.tag` on load for click-to-tag & spatial memory queries.
+ */
+export const SEMANTIC_MESH_TAGS = {
+  ExitDoor: { tag: "front_door", aliases: ["exit_door", "door"], label: "Front Exit Door" },
+  Microwave: { tag: "microwave", aliases: ["kitchen_microwave"], label: "Kitchen Microwave" },
+  ElectricCabinet: { tag: "electric_cabinet", aliases: ["breaker_box"], label: "Electric Cabinet" },
+  HouseFloor: { tag: "house_floor", aliases: ["floor"], label: "House Floor" },
+  HouseWalls: { tag: "house_walls", aliases: ["walls"], label: "House Walls" },
+  Furniture3: {
+    tag: "kitchen_dining_furniture",
+    aliases: ["kitchen_furniture", "dining_furniture"],
+    label: "Kitchen & Dining Furniture",
+  },
+  Furniture2: {
+    tag: "living_room_furniture",
+    aliases: ["living_furniture"],
+    label: "Living Room Furniture",
+  },
+  Furniture1: {
+    tag: "back_hall_furniture",
+    aliases: ["back_furniture"],
+    label: "Back Hall & Bedroom Furniture",
+  },
+  Furniture4: {
+    tag: "upstairs_west_furniture",
+    aliases: [],
+    label: "Upstairs West Furniture",
+  },
+  Furniture5: {
+    tag: "upstairs_east_furniture",
+    aliases: [],
+    label: "Upstairs East Furniture",
+  },
+  Furniture6: {
+    tag: "foyer_furniture",
+    aliases: ["stairs_railing"],
+    label: "Foyer & Staircase Furniture",
+  },
+  Furniture7: {
+    tag: "basement_furniture",
+    aliases: [],
+    label: "Basement Furniture",
+  },
+  Fur: { tag: "basement_shelf_1", aliases: [], label: "Basement Shelf 1" },
+  Fur1: { tag: "basement_shelf_2", aliases: [], label: "Basement Shelf 2" },
+  cup: { tag: "basement_cup", aliases: [], label: "Basement Cup" },
+  blood: { tag: "basement_blood", aliases: [], label: "Basement Stain" },
+};
+
+/**
+ * Sub-object semantic bounding regions inside combined FBX furniture meshes
+ * (calibrated directly from GrannyHouse.fbx vertex clusters).
+ * Exposed as tagged spatial memory anchors (`userData.tag`) so `player_look` and
+ * `player_walk` can target individual tables, counters, sofas, and beds by tag.
+ */
+export const SEMANTIC_OBJECT_REGIONS = {
+  kitchen_table: {
+    parentMesh: "Furniture3",
+    aliases: ["kitchen_counter", "kitchen_counter_top", "kitchen_table_top"],
+    min: [-8.05, 0.08, 0.40],
+    max: [-6.79, 1.28, 3.07],
+    label: "Kitchen Table / Counter",
+  },
+  dining_table: {
+    parentMesh: "Furniture3",
+    aliases: ["dining_table_top", "dining_table_top_west"],
+    min: [-5.80, 0.05, 1.90],
+    max: [-4.45, 1.15, 3.60],
+    label: "Dining Room Table",
+  },
+  living_room_sofa: {
+    parentMesh: "Furniture2",
+    aliases: ["sofa", "living_sofa"],
+    min: [7.19, 0.05, -0.58],
+    max: [8.57, 0.89, 0.90],
+    label: "Living Room Sofa",
+  },
+  back_bed: {
+    parentMesh: "Furniture1",
+    aliases: ["back_bed_top", "downstairs_bed"],
+    min: [-6.05, 0.11, -4.44],
+    max: [-3.83, 1.29, -2.20],
+    label: "Downstairs Back Bed",
+  },
+  up_bed: {
+    parentMesh: "Furniture4",
+    aliases: ["up_bed_top", "up_bed_top_west", "upstairs_bed"],
+    min: [-5.40, 2.85, -2.00],
+    max: [-3.30, 3.85, -0.80],
+    label: "Upstairs High Bed",
+  },
+  upstairs_desk: {
+    parentMesh: "Furniture4",
+    aliases: ["upstairs_west_desk_top"],
+    min: [-7.55, 2.85, -3.20],
+    max: [-6.45, 3.60, -2.00],
+    label: "Upstairs West Desk",
+  },
+  upstairs_east_bed: {
+    parentMesh: "Furniture5",
+    aliases: ["upstairs_east_bed_top"],
+    min: [1.30, 2.85, -4.90],
+    max: [2.70, 3.60, -3.70],
+    label: "Upstairs East Bed",
   },
 };
 
@@ -4935,11 +5355,13 @@ export const FLOOR_IS_LAVA_4M = {
       beats: [
         { at: 0, type: "bgm", sound: "fluffing_a_duck", volume: 0.24 },
         { at: 0, type: "fade", to: 0, duration: 0.4 },
-        { after: 1.0, type: "player_walk", to: "front_door_pkg", await: true },
+        { after: 1.0, type: "player_walk", target: "package", standoff: 0.85, await: true },
         { after: 0.2, type: "prop_action", prop: "package", action: "open" },
         { after: 0.1, type: "sfx", sound: "tada", volume: 0.75 },
         { after: 0.5, type: "prop_action", prop: "red_button", action: "pop_out", waypoint: "front_door_pkg", yOffset: 0.44 },
-        { after: 0.1, type: "sfx", sound: "ding" }
+        { after: 0.1, type: "player_look", target: "red_button", duration: 0.25 },
+        { after: 0.1, type: "sfx", sound: "ding" },
+        { after: 0.4, type: "player_look", target: "granny", duration: 0.3, track: true }
       ]
     },
     {
@@ -4960,10 +5382,10 @@ export const FLOOR_IS_LAVA_4M = {
       name: "Act 3: Escape to High Ground",
       beats: [
         { after: 0.2, type: "char_bubble", actor: "granny", icon: "exclamation", duration: 1.5 },
-        { after: 0.5, type: "char_move", actor: "granny", via: ["stairs_bottom", "dining_corner", "dining_table_side", "kitchen"], to: "kitchen_counter_top", anim: "run2", endAnim: "panic", await: true },
-        { after: 0.2, type: "char_move", actor: "grandpa", via: ["living_room_entry", "doorway_living", "back_room_east", "back_hall", "doorway_dining", "dining_center", "dining_table_front"], to: "dining_table_top", anim: "run2", endAnim: "panic", await: true },
-        { after: 0.2, type: "player_walk", via: ["stairs_bottom"], to: "stairs_middle", speed: 3.5, await: true },
-        { after: 0.2, type: "player_look", target: "dining_table_top", duration: 0.3 }
+        { after: 0.5, type: "char_move", actor: "granny", via: ["stairs_bottom", "dining_corner", "dining_table_side", "kitchen"], to: "kitchen_counter_top", anim: "run2", endAnim: "panic" },
+        { after: 0.2, type: "char_move", actor: "grandpa", via: ["living_room_entry", "doorway_living", "back_room_east", "back_hall", "doorway_dining", "dining_center", "dining_table_front"], to: "dining_table_top", anim: "run2", endAnim: "panic" },
+        { after: 0.2, type: "player_walk", via: ["stairs_bottom"], target: "dining_table", standoff: 0.8, speed: 3.5, await: true },
+        { after: 0.2, type: "player_look", target: "grandpa", duration: 0.3 }
       ]
     },
     {
@@ -4973,7 +5395,9 @@ export const FLOOR_IS_LAVA_4M = {
         { after: 0.1, type: "char_face", actor: "granny", followPlayer: true, instant: true },
         { after: 0.2, type: "char_bubble", actor: "grandpa", icon: "angry", duration: 2.0 },
         { after: 0.2, type: "prop_action", prop: "lava", action: "rise_to", targetY: 0.85, duration: 4.0 },
-        { after: 0.5, type: "player_gesture", gesture: "shake_panic", duration: 1.5 },
+        { after: 0.6, type: "player_look", target: "granny", duration: 0.35 },
+        { after: 1.2, type: "player_look", target: "grandpa", duration: 0.35 },
+        { after: 0.2, type: "player_gesture", gesture: "shake_panic", duration: 1.5 },
         { after: 1.5, type: "fade", to: 1, duration: 1.5 }
       ]
     }
@@ -4994,6 +5418,7 @@ export const DEFAULT_EPISODE = GRANDPA_KEY_POV_44S;
 ================================================================
 import * as THREE from "three";
 import { CONFIG, SET_MAP, NAV_GRAPH } from "./config.js";
+import { findTaggedObject, getObjectBounds } from "./assetLoader.js";
 
 const LOCOMOTION_ANIMS = new Set(["walk", "run", "run2", "sneak", "granny_walk", "jump"]);
 const PLAYER_PERSONAL_SPACE = 1.3;
@@ -5080,6 +5505,7 @@ export class EpisodeRunner {
       getActor: (id) => this.characters[id] || null,
       getProp: (id) => this.comedyProps?.getProp(id) || null,
       getWaypoint: (id) => (typeof id === "string" ? SET_MAP[id] || null : id),
+      getScene: () => this.playerCamera?.scene || this.comedyProps?.scene || null,
     };
   }
 
@@ -5107,6 +5533,17 @@ export class EpisodeRunner {
           y: prop.mesh.position.y,
           z: prop.mesh.position.z,
         };
+      }
+      const scene = this.resolver.getScene();
+      if (scene) {
+        const obj = findTaggedObject(scene, target);
+        if (obj) {
+          const box = getObjectBounds(obj, new THREE.Box3());
+          if (!box.isEmpty()) {
+            const center = box.getCenter(new THREE.Vector3());
+            return { x: center.x, y: box.min.y, z: center.z };
+          }
+        }
       }
       console.warn(`[EpisodeRunner] Unknown target "${target}"`);
       return { x: 0, y: 0, z: 0 };
@@ -5451,7 +5888,27 @@ export class EpisodeRunner {
 
       let effDur = Math.max(0, ev.duration ?? 0);
       if (ev.type === "player_walk") {
-        const stops = [...(ev.via || []), ev.to];
+        let finalStop = ev.to;
+        if (ev.target && this.playerCamera) {
+          const viaTail = ev.via?.length
+            ? this.resolveWaypoint(ev.via[ev.via.length - 1])
+            : playerPos;
+          const approach = this.playerCamera.resolveApproachPoint(ev.target, {
+            standoff: ev.standoff ?? 0.8,
+            fromPos: viaTail,
+            resolver: this.resolver,
+          });
+          if (approach) {
+            finalStop = {
+              x: approach.standoffPos.x,
+              y: approach.standoffPos.y,
+              z: approach.standoffPos.z,
+            };
+          } else {
+            finalStop = finalStop || ev.target;
+          }
+        }
+        const stops = [...(ev.via || []), finalStop].filter(Boolean);
         const { points, segments } = this._buildFullStopChain(playerPos, stops);
         const timing = this._computeMoveTiming(
           points,
@@ -5511,9 +5968,9 @@ export class EpisodeRunner {
       typeof episodeJson === "string" ? JSON.parse(episodeJson) : episodeJson;
 
     this.episode = episode;
-    this.events = this.compileTimeline(episode);
-    this.duration = this._estimateEpisodeDuration(episode);
     this.reset();
+    this.duration = this._estimateEpisodeDuration(episode);
+    this.emitState();
     return {
       title: episode.title ?? "Untitled Episode",
       duration: this.duration,
@@ -5948,7 +6405,31 @@ export class EpisodeRunner {
         y: this.playerCamera.playerPos.y,
         z: this.playerCamera.playerPos.z,
       };
-      const stops = [...(ev.via || []), ev.to];
+      let finalStop = ev.to;
+      let faceTarget = ev.faceTarget || null;
+      if (ev.target) {
+        const viaTail = ev.via?.length
+          ? this.resolveWaypoint(ev.via[ev.via.length - 1])
+          : from;
+        const approach = this.playerCamera.resolveApproachPoint(ev.target, {
+          standoff: ev.standoff ?? 0.8,
+          fromPos: viaTail,
+          resolver: this.resolver,
+        });
+        if (approach) {
+          finalStop = {
+            x: approach.standoffPos.x,
+            y: approach.standoffPos.y,
+            z: approach.standoffPos.z,
+          };
+          if (ev.faceTarget !== false) {
+            faceTarget = ev.target;
+          }
+        } else {
+          finalStop = finalStop || ev.target;
+        }
+      }
+      const stops = [...(ev.via || []), finalStop].filter(Boolean);
       const { points, segments } = this._buildFullStopChain(from, stops);
       return this.playerCamera.startWalk({
         points,
@@ -5956,6 +6437,8 @@ export class EpisodeRunner {
         duration: ev.duration,
         speed: ev.speed,
         autoLook: ev.lookAhead !== false,
+        faceTarget,
+        resolver: this.resolver,
       });
     }
 
@@ -6287,7 +6770,7 @@ async function bootstrap() {
   renderer.domElement.className = "studio-canvas";
   stageContainer.appendChild(renderer.domElement);
 
-  const playerCamera = new PlayerCamera(renderer.domElement);
+  const playerCamera = new PlayerCamera(renderer.domElement, null, scene);
   scene.add(playerCamera.camera);
 
   // Dedicated fullscreen fade pass rendered after world + FPS viewmodel
@@ -6381,6 +6864,7 @@ async function bootstrap() {
       playerCamera,
       characters,
       renderer,
+      scene,
       onLoadEpisode: loadEpisode,
       onAspectChange: (key) => resizeRenderer(key),
     });
@@ -6415,6 +6899,7 @@ async function bootstrap() {
   }
 
   function renderFrame() {
+    ui?.updateTagHighlight?.(performance.now());
     camFill.position.copy(playerCamera.camera.position);
     camFill.position.y = Math.max(0.8, playerCamera.camera.position.y + 0.1);
 
@@ -6576,6 +7061,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CONFIG } from "./config.js";
 import { createPropMesh } from "./comedyProps.js";
+import { findTaggedObject, getObjectBounds } from "./assetLoader.js";
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
@@ -6611,8 +7097,9 @@ function wrapAngleDiff(target, current) {
  * viewmodel, fade-to-black overlay, and 16:9 / 9:16 aspect toggling.
  */
 export class PlayerCamera {
-  constructor(domElement, house = null) {
+  constructor(domElement, house = null, scene = null) {
     this.house = house;
+    this.scene = scene;
     this.aspectKey = CONFIG.defaultAspect || "16:9";
     const aspectSpec = CONFIG.aspectModes[this.aspectKey];
 
@@ -6697,10 +7184,17 @@ export class PlayerCamera {
     this._tmpTargetPos = new THREE.Vector3();
     this._tmpEyePos = new THREE.Vector3();
     this._tmpFinalPos = new THREE.Vector3();
+    this._tmpBox = new THREE.Box3();
+    this._tmpBoxCenter = new THREE.Vector3();
+    this._tmpBoxSize = new THREE.Vector3();
   }
 
   setHouse(house) {
     this.house = house;
+  }
+
+  setScene(scene) {
+    this.scene = scene;
   }
 
   setAspect(aspectKey) {
@@ -6797,12 +7291,143 @@ export class PlayerCamera {
     this.lookElapsed = 1;
   }
 
-  _resolveTargetPosition(ref, resolver, out) {
-    if (!ref || !resolver) return false;
+  _resolveTaggedObject(ref, resolver) {
+    const activeScene = this.scene || resolver?.getScene?.() || null;
+    if (!activeScene || typeof ref !== "string") return null;
+    return findTaggedObject(activeScene, ref);
+  }
+
+  /**
+   * Computes a world-space point `standoff` meters (default 0.8m) outside the
+   * bounding box edge of a tagged mesh/object, preferring a walkable spot with
+   * clear line-of-sight facing the object's center.
+   */
+  resolveApproachPoint(tagOrName, { standoff = 0.8, fromPos = null, resolver = null } = {}) {
+    const obj = this._resolveTaggedObject(tagOrName, resolver);
+    if (!obj) return null;
+
+    const box = getObjectBounds(obj, new THREE.Box3());
+    if (box.isEmpty()) return null;
+
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const hx = Math.max(0.12, size.x * 0.5);
+    const hz = Math.max(0.12, size.z * 0.5);
+
+    const origin = fromPos
+      ? new THREE.Vector3(fromPos.x, fromPos.y ?? 0, fromPos.z)
+      : this.playerPos.clone();
+
+    const floorY = center.y >= 2.1 && Math.abs(origin.y - 2.85) < 0.8 ? 2.85 : 0.0;
+    const rawDx = origin.x - center.x;
+    const rawDz = origin.z - center.z;
+    const rawLen = Math.hypot(rawDx, rawDz);
+    const primaryDir = rawLen > 1e-3
+      ? { x: rawDx / rawLen, z: rawDz / rawLen }
+      : { x: 0, z: 1 };
+
+    const candidateDirs = [
+      primaryDir,
+      { x: 1, z: 0 },
+      { x: -1, z: 0 },
+      { x: 0, z: 1 },
+      { x: 0, z: -1 },
+      { x: Math.SQRT1_2, z: Math.SQRT1_2 },
+      { x: -Math.SQRT1_2, z: Math.SQRT1_2 },
+      { x: Math.SQRT1_2, z: -Math.SQRT1_2 },
+      { x: -Math.SQRT1_2, z: -Math.SQRT1_2 },
+    ];
+
+    let bestCandidate = null;
+    let bestScore = Infinity;
+
+    for (let idx = 0; idx < candidateDirs.length; idx += 1) {
+      const dir = candidateDirs[idx];
+      const tx = Math.abs(dir.x) > 1e-4 ? hx / Math.abs(dir.x) : Infinity;
+      const tz = Math.abs(dir.z) > 1e-4 ? hz / Math.abs(dir.z) : Infinity;
+      const edgeDist = Math.min(tx, tz);
+      const cx = center.x + dir.x * (edgeDist + standoff);
+      const cz = center.z + dir.z * (edgeDist + standoff);
+
+      const candidate = new THREE.Vector3(cx, floorY, cz);
+      const walkable =
+        !this.house || typeof this.house.isPointInsideWalkable !== "function"
+          ? true
+          : this.house.isPointInsideWalkable(candidate);
+      if (!walkable) continue;
+
+      let clearSight = true;
+      if (this.house && typeof this.house.hasClearSight === "function") {
+        const eyeTest = new THREE.Vector3(cx, floorY + this.baseEyeHeight, cz);
+        const lookTest = new THREE.Vector3(center.x, Math.max(floorY + 0.35, center.y), center.z);
+        clearSight = this.house.hasClearSight(eyeTest, lookTest);
+      }
+
+      const travelDist = Math.hypot(cx - origin.x, cz - origin.z);
+      const sightPenalty = clearSight ? 0 : 12.0;
+      const primaryBonus = idx === 0 ? -0.35 : 0;
+      const score = travelDist + sightPenalty + primaryBonus;
+
+      if (score < bestScore) {
+        bestScore = score;
+        bestCandidate = candidate;
+      }
+    }
+
+    if (!bestCandidate) {
+      const tx = Math.abs(primaryDir.x) > 1e-4 ? hx / Math.abs(primaryDir.x) : Infinity;
+      const tz = Math.abs(primaryDir.z) > 1e-4 ? hz / Math.abs(primaryDir.z) : Infinity;
+      const edgeDist = Math.min(tx, tz);
+      bestCandidate = new THREE.Vector3(
+        center.x + primaryDir.x * (edgeDist + standoff),
+        floorY,
+        center.z + primaryDir.z * (edgeDist + standoff)
+      );
+    }
+
+    return {
+      object: obj,
+      box,
+      center,
+      standoffPos: bestCandidate,
+    };
+  }
+
+  _resolveTargetPosition(ref, resolver, out, { liveTrack = false } = {}) {
+    if (!ref) return false;
     if (typeof ref === "object" && "x" in ref && "z" in ref) {
       out.set(ref.x, ref.y ?? 1.35, ref.z);
       return true;
     }
+
+    const taggedObj = this._resolveTaggedObject(ref, resolver);
+    if (taggedObj) {
+      if (liveTrack && taggedObj.userData?.actorId) {
+        const actor = resolver?.getActor?.(taggedObj.userData.actorId);
+        if (actor) {
+          actor.getHeadWorldPosition(out);
+          out.y -= 0.08;
+          return true;
+        }
+        taggedObj.getWorldPosition(out);
+        out.y += 1.25;
+        return true;
+      }
+
+      const box = getObjectBounds(taggedObj, this._tmpBox);
+      if (!box.isEmpty()) {
+        box.getCenter(this._tmpBoxCenter);
+        box.getSize(this._tmpBoxSize);
+        out.copy(this._tmpBoxCenter);
+        // For characters, bias framing slightly toward upper torso/face inside the bounding box.
+        if (taggedObj.userData?.actorId) {
+          out.y = box.min.y + this._tmpBoxSize.y * 0.72;
+        }
+        return true;
+      }
+    }
+
+    if (!resolver) return false;
     const actor = resolver.getActor(ref);
     if (actor) {
       actor.getHeadWorldPosition(out);
@@ -6854,17 +7479,40 @@ export class PlayerCamera {
   }
 
   startWalk({
-    points,
+    points = null,
+    target = null,
+    standoff = 0.8,
     duration = null,
     speed = null,
     autoLook = true,
     segments = null,
     maxVerticalSpeed = 1.55,
+    faceTarget = null,
+    resolver = null,
   }) {
     if (this.activeWalk?._resolve) {
       this.activeWalk._resolve();
     }
-    if (!points || points.length < 2) return Promise.resolve();
+
+    let resolvedPoints = points;
+    let resolvedFaceTarget = faceTarget;
+    if ((!resolvedPoints || resolvedPoints.length < 2) && target) {
+      const approach = this.resolveApproachPoint(target, {
+        standoff,
+        fromPos: this.playerPos,
+        resolver,
+      });
+      if (approach) {
+        resolvedFaceTarget = resolvedFaceTarget || target;
+        if (this.house && typeof this.house.findPath === "function") {
+          resolvedPoints = this.house.findPath(this.playerPos, approach.standoffPos);
+        } else {
+          resolvedPoints = [this.playerPos.clone(), approach.standoffPos];
+        }
+      }
+    }
+
+    if (!resolvedPoints || resolvedPoints.length < 2) return Promise.resolve();
 
     const walkSpeed = Math.max(0.4, Number(speed) || BASE_WALK_SPEED);
     const cumDist = [0];
@@ -6872,9 +7520,9 @@ export class PlayerCamera {
     let computedDuration = 0;
     const segMeta = [];
 
-    for (let i = 1; i < points.length; i += 1) {
-      const a = points[i - 1];
-      const b = points[i];
+    for (let i = 1; i < resolvedPoints.length; i += 1) {
+      const a = resolvedPoints[i - 1];
+      const b = resolvedPoints[i];
       const segLen = a.distanceTo(b);
       const dy = Math.abs(b.y - a.y);
       const meta = segments?.[i - 1] || {};
@@ -6916,7 +7564,7 @@ export class PlayerCamera {
     });
 
     this.activeWalk = {
-      points,
+      points: resolvedPoints,
       cumDist,
       segMeta,
       totalLength,
@@ -6924,6 +7572,8 @@ export class PlayerCamera {
       duration: effectiveDuration,
       maxVerticalSpeed,
       autoLook,
+      faceTarget: resolvedFaceTarget,
+      finalLookTriggered: false,
       _resolve: resolveWalk,
     };
     this.isWalking = true;
@@ -7136,7 +7786,23 @@ export class PlayerCamera {
           this.playerPos.y = Math.abs(pB.y - pA.y) < 0.05 ? pA.y : pA.y + (pB.y - pA.y) * alpha;
         }
 
-        if (this.activeWalk.autoLook && !this.trackingRef && this.lookElapsed >= this.lookDuration) {
+        const lookDuringApproach =
+          this.activeWalk.faceTarget &&
+          (this.activeWalk.totalLength - targetDist <= 0.75 || rawT >= 0.82);
+
+        if (lookDuringApproach && !this.activeWalk.finalLookTriggered && !this.trackingRef) {
+          this.activeWalk.finalLookTriggered = true;
+          this.lookAt(
+            this.activeWalk.faceTarget,
+            { duration: Math.max(0.22, this.activeWalk.duration - this.activeWalk.elapsed) },
+            resolver
+          );
+        } else if (
+          this.activeWalk.autoLook &&
+          !this.activeWalk.finalLookTriggered &&
+          !this.trackingRef &&
+          this.lookElapsed >= this.lookDuration
+        ) {
           const lookDist = Math.min(this.activeWalk.totalLength, targetDist + 1.15);
           const ahead = this._sampleAlongWalk(this.activeWalk, lookDist);
           const dx = ahead.x - this.playerPos.x;
@@ -7161,6 +7827,9 @@ export class PlayerCamera {
         this.playerPos.copy(finished.points[finished.points.length - 1]);
         this.activeWalk = null;
         this.isWalking = false;
+        if (finished.faceTarget && !finished.finalLookTriggered) {
+          this.lookAt(finished.faceTarget, { duration: 0.22 }, resolver);
+        }
         if (finished._resolve) finished._resolve();
       }
     } else {
@@ -7168,7 +7837,10 @@ export class PlayerCamera {
     }
 
     // Look tracking / whip-pan
-    if (this.trackingRef && this._resolveTargetPosition(this.trackingRef, resolver, this._tmpTargetPos)) {
+    if (
+      this.trackingRef &&
+      this._resolveTargetPosition(this.trackingRef, resolver, this._tmpTargetPos, { liveTrack: true })
+    ) {
       const { yaw, pitch } = this._computeYawPitchTo(this._tmpTargetPos);
       if (this.lookElapsed < this.lookDuration) {
         this.lookTargetYaw = this.lookStartYaw + wrapAngleDiff(yaw, this.lookStartYaw);
@@ -7752,7 +8424,9 @@ export class SfxEngine {
 ================================================================
 ===== FILE: src/studioUI.js =====
 ================================================================
+import * as THREE from "three";
 import { CONFIG, EPISODE_PRESETS, SET_MAP, SFX_MANIFEST } from "./config.js";
+import { resolveSemanticTagAtPoint } from "./assetLoader.js";
 
 /**
  * Interactive Studio UI controller:
@@ -7760,6 +8434,7 @@ import { CONFIG, EPISODE_PRESETS, SET_MAP, SFX_MANIFEST } from "./config.js";
  * - Character & Player POV test controls (animations, bubbles, held props, gestures)
  * - 25-clip Soundboard
  * - Waypoint Calibrator (click-to-teleport + live coordinate readout)
+ * - Click-to-Tag Spatial Memory Raycaster + brief mesh outline highlight
  * - Live Multi-Skit JSON Editor
  * - Real-time WebM export (MediaRecorder) + Fade-to-black overlay
  */
@@ -7771,6 +8446,7 @@ export class StudioUI {
     cameraDirector,
     characters,
     renderer,
+    scene = null,
     onLoadEpisode,
     onAspectChange,
     onExportStateChange,
@@ -7781,12 +8457,19 @@ export class StudioUI {
     this.cameraDirector = cameraDirector;
     this.characters = characters;
     this.renderer = renderer;
+    this.scene = scene || playerCamera?.scene || null;
     this.onLoadEpisode = onLoadEpisode;
     this.onAspectChange = onAspectChange;
     this.onExportStateChange = onExportStateChange;
 
     this.isRecording = false;
     this.activeTab = "director";
+
+    this.raycaster = new THREE.Raycaster();
+    this._pointerNdc = new THREE.Vector2();
+    this._pointerDownPos = null;
+    this._tagHighlight = null;
+    this.lastSelectedSpatial = null;
 
     this.els = {
       presetSelect: document.getElementById("presetSelect"),
@@ -7807,12 +8490,17 @@ export class StudioUI {
       waypointList: document.getElementById("waypointList"),
       coordReadout: document.getElementById("coordReadout"),
       copyCoordBtn: document.getElementById("copyCoordBtn"),
+      spatialMemoryReadout: document.getElementById("spatialMemoryReadout"),
+      copyTagBtn: document.getElementById("copyTagBtn"),
+      focusTagBtn: document.getElementById("focusTagBtn"),
+      walkTagBtn: document.getElementById("walkTagBtn"),
       statusToast: document.getElementById("statusToast"),
       fadeOverlay: document.getElementById("fadeOverlay"),
       stageContainer: document.getElementById("stageContainer"),
     };
 
     this.bindEvents();
+    this.bindCanvasRaycaster();
     this.populatePresets();
     this.populateSoundboard();
     this.populateWaypoints();
@@ -7970,6 +8658,177 @@ export class StudioUI {
     this.els.exportBtn?.addEventListener("click", () => {
       this.exportWebm();
     });
+
+    this.els.copyTagBtn?.addEventListener("click", async () => {
+      const tag = this.lastSelectedSpatial?.tag;
+      if (!tag) {
+        this.toast("Click a 3D object on the canvas first!", true);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(tag);
+        this.toast(`Copied tag "${tag}"`);
+      } catch {
+        this.toast(`Tag: ${tag}`);
+      }
+    });
+
+    this.els.focusTagBtn?.addEventListener("click", () => {
+      const tag = this.lastSelectedSpatial?.tag;
+      if (!tag) {
+        this.toast("Click a 3D object on the canvas first!", true);
+        return;
+      }
+      if (this.playerCamera.mode === "orbit") {
+        this.playerCamera.setInspectionMode(false);
+        this.syncButtons();
+      }
+      this.playerCamera.lookAt(tag, { duration: 0.3 }, this.runner.resolver);
+      this.toast(`Focusing camera on "${tag}"`);
+    });
+
+    this.els.walkTagBtn?.addEventListener("click", () => {
+      const tag = this.lastSelectedSpatial?.tag;
+      if (!tag) {
+        this.toast("Click a 3D object on the canvas first!", true);
+        return;
+      }
+      if (this.playerCamera.mode === "orbit") {
+        this.playerCamera.setInspectionMode(false);
+        this.syncButtons();
+      }
+      this.playerCamera.startWalk({
+        target: tag,
+        standoff: 0.8,
+        resolver: this.runner.resolver,
+      });
+      this.toast(`Walking 0.8m from "${tag}" edge`);
+    });
+  }
+
+  bindCanvasRaycaster() {
+    const canvas = this.renderer?.domElement;
+    if (!canvas) return;
+
+    canvas.addEventListener("pointerdown", (e) => {
+      this._pointerDownPos = { x: e.clientX, y: e.clientY };
+    });
+
+    canvas.addEventListener("pointerup", (e) => {
+      if (!this._pointerDownPos || !this.scene) return;
+      const moved = Math.hypot(
+        e.clientX - this._pointerDownPos.x,
+        e.clientY - this._pointerDownPos.y
+      );
+      this._pointerDownPos = null;
+      if (moved > 6) return; // Ignore OrbitControls drags
+
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+
+      this._pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      this._pointerNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      this.raycaster.setFromCamera(this._pointerNdc, this.playerCamera.camera);
+      const intersects = this.raycaster.intersectObjects(this.scene.children, true);
+      const hit = intersects.find(
+        (item) =>
+          item.object?.isMesh &&
+          item.object.visible &&
+          !item.object.userData?.isTagHighlightHelper &&
+          !item.object.userData?.isSemanticAnchor
+      );
+      if (!hit) return;
+
+      const resolved = resolveSemanticTagAtPoint(hit.object, hit.point);
+      if (!resolved) return;
+
+      this.lastSelectedSpatial = {
+        ...resolved,
+        hitPoint: hit.point.clone(),
+      };
+      this._showSpatialMemoryReadout(resolved, hit.point);
+      this._highlightClickedMesh(hit.object, resolved);
+      this.toast(`Spatial Memory: "${resolved.tag}" (${resolved.meshName})`);
+    });
+  }
+
+  _showSpatialMemoryReadout(resolved, hitPoint) {
+    if (!this.els.spatialMemoryReadout) return;
+    const center = new THREE.Vector3();
+    if (resolved.box && !resolved.box.isEmpty()) {
+      resolved.box.getCenter(center);
+    } else {
+      center.copy(hitPoint);
+    }
+    this.els.spatialMemoryReadout.innerHTML =
+      `<div><strong>Mesh:</strong> ${resolved.meshName}</div>` +
+      `<div><strong>Tag:</strong> <span style="color:#38bdf8">${resolved.tag}</span>` +
+      (resolved.label && resolved.label !== resolved.tag ? ` (${resolved.label})` : "") +
+      `</div>` +
+      `<div><strong>Hit:</strong> { "x": ${hitPoint.x.toFixed(2)}, "y": ${hitPoint.y.toFixed(2)}, "z": ${hitPoint.z.toFixed(2)} }</div>` +
+      `<div><strong>Center:</strong> { "x": ${center.x.toFixed(2)}, "y": ${center.y.toFixed(2)}, "z": ${center.z.toFixed(2)} }</div>`;
+  }
+
+  _clearTagHighlight() {
+    if (!this._tagHighlight) return;
+    const { helper, mesh, savedEmissives } = this._tagHighlight;
+    if (helper && this.scene) {
+      this.scene.remove(helper);
+      helper.geometry?.dispose?.();
+      helper.material?.dispose?.();
+    }
+    if (mesh && savedEmissives) {
+      for (const entry of savedEmissives) {
+        if (entry.mat?.emissive) {
+          entry.mat.emissive.copy(entry.emissive);
+          entry.mat.emissiveIntensity = entry.emissiveIntensity;
+        }
+      }
+    }
+    this._tagHighlight = null;
+  }
+
+  _highlightClickedMesh(hitMesh, resolved) {
+    this._clearTagHighlight();
+    if (!this.scene) return;
+
+    const box = resolved.box && !resolved.box.isEmpty()
+      ? resolved.box.clone().expandByScalar(0.025)
+      : new THREE.Box3().setFromObject(hitMesh).expandByScalar(0.025);
+
+    const helper = new THREE.Box3Helper(box, 0x38bdf8);
+    helper.userData.isTagHighlightHelper = true;
+    this.scene.add(helper);
+
+    const savedEmissives = [];
+    if (!resolved.isSubRegion && hitMesh.material) {
+      const mats = Array.isArray(hitMesh.material) ? hitMesh.material : [hitMesh.material];
+      for (const mat of mats) {
+        if (mat?.emissive) {
+          savedEmissives.push({
+            mat,
+            emissive: mat.emissive.clone(),
+            emissiveIntensity: mat.emissiveIntensity ?? 1,
+          });
+          mat.emissive.setHex(0x38bdf8);
+          mat.emissiveIntensity = 0.45;
+        }
+      }
+    }
+
+    this._tagHighlight = {
+      helper,
+      mesh: hitMesh,
+      savedEmissives,
+      expiresAt: performance.now() + 1800,
+    };
+  }
+
+  updateTagHighlight(nowMs = performance.now()) {
+    if (this._tagHighlight && nowMs >= this._tagHighlight.expiresAt) {
+      this._clearTagHighlight();
+    }
   }
 
   populatePresets() {
