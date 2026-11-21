@@ -1,4 +1,6 @@
+import * as THREE from "three";
 import { CONFIG, EPISODE_PRESETS, SET_MAP, SFX_MANIFEST } from "./config.js";
+import { resolveSemanticTagAtPoint } from "./assetLoader.js";
 
 /**
  * Interactive Studio UI controller:
@@ -6,6 +8,7 @@ import { CONFIG, EPISODE_PRESETS, SET_MAP, SFX_MANIFEST } from "./config.js";
  * - Character & Player POV test controls (animations, bubbles, held props, gestures)
  * - 25-clip Soundboard
  * - Waypoint Calibrator (click-to-teleport + live coordinate readout)
+ * - Click-to-Tag Spatial Memory Raycaster + brief mesh outline highlight
  * - Live Multi-Skit JSON Editor
  * - Real-time WebM export (MediaRecorder) + Fade-to-black overlay
  */
@@ -17,6 +20,7 @@ export class StudioUI {
     cameraDirector,
     characters,
     renderer,
+    scene = null,
     onLoadEpisode,
     onAspectChange,
     onExportStateChange,
@@ -27,12 +31,19 @@ export class StudioUI {
     this.cameraDirector = cameraDirector;
     this.characters = characters;
     this.renderer = renderer;
+    this.scene = scene || playerCamera?.scene || null;
     this.onLoadEpisode = onLoadEpisode;
     this.onAspectChange = onAspectChange;
     this.onExportStateChange = onExportStateChange;
 
     this.isRecording = false;
     this.activeTab = "director";
+
+    this.raycaster = new THREE.Raycaster();
+    this._pointerNdc = new THREE.Vector2();
+    this._pointerDownPos = null;
+    this._tagHighlight = null;
+    this.lastSelectedSpatial = null;
 
     this.els = {
       presetSelect: document.getElementById("presetSelect"),
@@ -53,12 +64,17 @@ export class StudioUI {
       waypointList: document.getElementById("waypointList"),
       coordReadout: document.getElementById("coordReadout"),
       copyCoordBtn: document.getElementById("copyCoordBtn"),
+      spatialMemoryReadout: document.getElementById("spatialMemoryReadout"),
+      copyTagBtn: document.getElementById("copyTagBtn"),
+      focusTagBtn: document.getElementById("focusTagBtn"),
+      walkTagBtn: document.getElementById("walkTagBtn"),
       statusToast: document.getElementById("statusToast"),
       fadeOverlay: document.getElementById("fadeOverlay"),
       stageContainer: document.getElementById("stageContainer"),
     };
 
     this.bindEvents();
+    this.bindCanvasRaycaster();
     this.populatePresets();
     this.populateSoundboard();
     this.populateWaypoints();
@@ -216,6 +232,177 @@ export class StudioUI {
     this.els.exportBtn?.addEventListener("click", () => {
       this.exportWebm();
     });
+
+    this.els.copyTagBtn?.addEventListener("click", async () => {
+      const tag = this.lastSelectedSpatial?.tag;
+      if (!tag) {
+        this.toast("Click a 3D object on the canvas first!", true);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(tag);
+        this.toast(`Copied tag "${tag}"`);
+      } catch {
+        this.toast(`Tag: ${tag}`);
+      }
+    });
+
+    this.els.focusTagBtn?.addEventListener("click", () => {
+      const tag = this.lastSelectedSpatial?.tag;
+      if (!tag) {
+        this.toast("Click a 3D object on the canvas first!", true);
+        return;
+      }
+      if (this.playerCamera.mode === "orbit") {
+        this.playerCamera.setInspectionMode(false);
+        this.syncButtons();
+      }
+      this.playerCamera.lookAt(tag, { duration: 0.3 }, this.runner.resolver);
+      this.toast(`Focusing camera on "${tag}"`);
+    });
+
+    this.els.walkTagBtn?.addEventListener("click", () => {
+      const tag = this.lastSelectedSpatial?.tag;
+      if (!tag) {
+        this.toast("Click a 3D object on the canvas first!", true);
+        return;
+      }
+      if (this.playerCamera.mode === "orbit") {
+        this.playerCamera.setInspectionMode(false);
+        this.syncButtons();
+      }
+      this.playerCamera.startWalk({
+        target: tag,
+        standoff: 0.8,
+        resolver: this.runner.resolver,
+      });
+      this.toast(`Walking 0.8m from "${tag}" edge`);
+    });
+  }
+
+  bindCanvasRaycaster() {
+    const canvas = this.renderer?.domElement;
+    if (!canvas) return;
+
+    canvas.addEventListener("pointerdown", (e) => {
+      this._pointerDownPos = { x: e.clientX, y: e.clientY };
+    });
+
+    canvas.addEventListener("pointerup", (e) => {
+      if (!this._pointerDownPos || !this.scene) return;
+      const moved = Math.hypot(
+        e.clientX - this._pointerDownPos.x,
+        e.clientY - this._pointerDownPos.y
+      );
+      this._pointerDownPos = null;
+      if (moved > 6) return; // Ignore OrbitControls drags
+
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+
+      this._pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      this._pointerNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      this.raycaster.setFromCamera(this._pointerNdc, this.playerCamera.camera);
+      const intersects = this.raycaster.intersectObjects(this.scene.children, true);
+      const hit = intersects.find(
+        (item) =>
+          item.object?.isMesh &&
+          item.object.visible &&
+          !item.object.userData?.isTagHighlightHelper &&
+          !item.object.userData?.isSemanticAnchor
+      );
+      if (!hit) return;
+
+      const resolved = resolveSemanticTagAtPoint(hit.object, hit.point);
+      if (!resolved) return;
+
+      this.lastSelectedSpatial = {
+        ...resolved,
+        hitPoint: hit.point.clone(),
+      };
+      this._showSpatialMemoryReadout(resolved, hit.point);
+      this._highlightClickedMesh(hit.object, resolved);
+      this.toast(`Spatial Memory: "${resolved.tag}" (${resolved.meshName})`);
+    });
+  }
+
+  _showSpatialMemoryReadout(resolved, hitPoint) {
+    if (!this.els.spatialMemoryReadout) return;
+    const center = new THREE.Vector3();
+    if (resolved.box && !resolved.box.isEmpty()) {
+      resolved.box.getCenter(center);
+    } else {
+      center.copy(hitPoint);
+    }
+    this.els.spatialMemoryReadout.innerHTML =
+      `<div><strong>Mesh:</strong> ${resolved.meshName}</div>` +
+      `<div><strong>Tag:</strong> <span style="color:#38bdf8">${resolved.tag}</span>` +
+      (resolved.label && resolved.label !== resolved.tag ? ` (${resolved.label})` : "") +
+      `</div>` +
+      `<div><strong>Hit:</strong> { "x": ${hitPoint.x.toFixed(2)}, "y": ${hitPoint.y.toFixed(2)}, "z": ${hitPoint.z.toFixed(2)} }</div>` +
+      `<div><strong>Center:</strong> { "x": ${center.x.toFixed(2)}, "y": ${center.y.toFixed(2)}, "z": ${center.z.toFixed(2)} }</div>`;
+  }
+
+  _clearTagHighlight() {
+    if (!this._tagHighlight) return;
+    const { helper, mesh, savedEmissives } = this._tagHighlight;
+    if (helper && this.scene) {
+      this.scene.remove(helper);
+      helper.geometry?.dispose?.();
+      helper.material?.dispose?.();
+    }
+    if (mesh && savedEmissives) {
+      for (const entry of savedEmissives) {
+        if (entry.mat?.emissive) {
+          entry.mat.emissive.copy(entry.emissive);
+          entry.mat.emissiveIntensity = entry.emissiveIntensity;
+        }
+      }
+    }
+    this._tagHighlight = null;
+  }
+
+  _highlightClickedMesh(hitMesh, resolved) {
+    this._clearTagHighlight();
+    if (!this.scene) return;
+
+    const box = resolved.box && !resolved.box.isEmpty()
+      ? resolved.box.clone().expandByScalar(0.025)
+      : new THREE.Box3().setFromObject(hitMesh).expandByScalar(0.025);
+
+    const helper = new THREE.Box3Helper(box, 0x38bdf8);
+    helper.userData.isTagHighlightHelper = true;
+    this.scene.add(helper);
+
+    const savedEmissives = [];
+    if (!resolved.isSubRegion && hitMesh.material) {
+      const mats = Array.isArray(hitMesh.material) ? hitMesh.material : [hitMesh.material];
+      for (const mat of mats) {
+        if (mat?.emissive) {
+          savedEmissives.push({
+            mat,
+            emissive: mat.emissive.clone(),
+            emissiveIntensity: mat.emissiveIntensity ?? 1,
+          });
+          mat.emissive.setHex(0x38bdf8);
+          mat.emissiveIntensity = 0.45;
+        }
+      }
+    }
+
+    this._tagHighlight = {
+      helper,
+      mesh: hitMesh,
+      savedEmissives,
+      expiresAt: performance.now() + 1800,
+    };
+  }
+
+  updateTagHighlight(nowMs = performance.now()) {
+    if (this._tagHighlight && nowMs >= this._tagHighlight.expiresAt) {
+      this._clearTagHighlight();
+    }
   }
 
   populatePresets() {

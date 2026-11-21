@@ -41,6 +41,115 @@ export const CONFIG = {
 };
 
 /**
+ * Semantic Mesh Tagging Rules for GrannyHouse.fbx meshes.
+ * Populated into `mesh.userData.tag` on load for click-to-tag & spatial memory queries.
+ */
+export const SEMANTIC_MESH_TAGS = {
+  ExitDoor: { tag: "front_door", aliases: ["exit_door", "door"], label: "Front Exit Door" },
+  Microwave: { tag: "microwave", aliases: ["kitchen_microwave"], label: "Kitchen Microwave" },
+  ElectricCabinet: { tag: "electric_cabinet", aliases: ["breaker_box"], label: "Electric Cabinet" },
+  HouseFloor: { tag: "house_floor", aliases: ["floor"], label: "House Floor" },
+  HouseWalls: { tag: "house_walls", aliases: ["walls"], label: "House Walls" },
+  Furniture3: {
+    tag: "kitchen_dining_furniture",
+    aliases: ["kitchen_furniture", "dining_furniture"],
+    label: "Kitchen & Dining Furniture",
+  },
+  Furniture2: {
+    tag: "living_room_furniture",
+    aliases: ["living_furniture"],
+    label: "Living Room Furniture",
+  },
+  Furniture1: {
+    tag: "back_hall_furniture",
+    aliases: ["back_furniture"],
+    label: "Back Hall & Bedroom Furniture",
+  },
+  Furniture4: {
+    tag: "upstairs_west_furniture",
+    aliases: [],
+    label: "Upstairs West Furniture",
+  },
+  Furniture5: {
+    tag: "upstairs_east_furniture",
+    aliases: [],
+    label: "Upstairs East Furniture",
+  },
+  Furniture6: {
+    tag: "foyer_furniture",
+    aliases: ["stairs_railing"],
+    label: "Foyer & Staircase Furniture",
+  },
+  Furniture7: {
+    tag: "basement_furniture",
+    aliases: [],
+    label: "Basement Furniture",
+  },
+  Fur: { tag: "basement_shelf_1", aliases: [], label: "Basement Shelf 1" },
+  Fur1: { tag: "basement_shelf_2", aliases: [], label: "Basement Shelf 2" },
+  cup: { tag: "basement_cup", aliases: [], label: "Basement Cup" },
+  blood: { tag: "basement_blood", aliases: [], label: "Basement Stain" },
+};
+
+/**
+ * Sub-object semantic bounding regions inside combined FBX furniture meshes
+ * (calibrated directly from GrannyHouse.fbx vertex clusters).
+ * Exposed as tagged spatial memory anchors (`userData.tag`) so `player_look` and
+ * `player_walk` can target individual tables, counters, sofas, and beds by tag.
+ */
+export const SEMANTIC_OBJECT_REGIONS = {
+  kitchen_table: {
+    parentMesh: "Furniture3",
+    aliases: ["kitchen_counter", "kitchen_counter_top", "kitchen_table_top"],
+    min: [-8.05, 0.08, 0.40],
+    max: [-6.79, 1.28, 3.07],
+    label: "Kitchen Table / Counter",
+  },
+  dining_table: {
+    parentMesh: "Furniture3",
+    aliases: ["dining_table_top", "dining_table_top_west"],
+    min: [-5.80, 0.05, 1.90],
+    max: [-4.45, 1.15, 3.60],
+    label: "Dining Room Table",
+  },
+  living_room_sofa: {
+    parentMesh: "Furniture2",
+    aliases: ["sofa", "living_sofa"],
+    min: [7.19, 0.05, -0.58],
+    max: [8.57, 0.89, 0.90],
+    label: "Living Room Sofa",
+  },
+  back_bed: {
+    parentMesh: "Furniture1",
+    aliases: ["back_bed_top", "downstairs_bed"],
+    min: [-6.05, 0.11, -4.44],
+    max: [-3.83, 1.29, -2.20],
+    label: "Downstairs Back Bed",
+  },
+  up_bed: {
+    parentMesh: "Furniture4",
+    aliases: ["up_bed_top", "up_bed_top_west", "upstairs_bed"],
+    min: [-5.40, 2.85, -2.00],
+    max: [-3.30, 3.85, -0.80],
+    label: "Upstairs High Bed",
+  },
+  upstairs_desk: {
+    parentMesh: "Furniture4",
+    aliases: ["upstairs_west_desk_top"],
+    min: [-7.55, 2.85, -3.20],
+    max: [-6.45, 3.60, -2.00],
+    label: "Upstairs West Desk",
+  },
+  upstairs_east_bed: {
+    parentMesh: "Furniture5",
+    aliases: ["upstairs_east_bed_top"],
+    min: [1.30, 2.85, -4.90],
+    max: [2.70, 3.60, -3.70],
+    label: "Upstairs East Bed",
+  },
+};
+
+/**
  * Real 3D models & Mixamo FBX animation templates discovered in ./Assets.
  */
 export const ASSET_MANIFEST = {
@@ -585,12 +694,13 @@ export const FLOOR_IS_LAVA_4M = {
       beats: [
         { at: 0, type: "bgm", sound: "fluffing_a_duck", volume: 0.24 },
         { at: 0, type: "fade", to: 0, duration: 0.4 },
-        { after: 1.0, type: "player_walk", to: "front_door_pkg", await: true },
+        { after: 1.0, type: "player_walk", target: "package", standoff: 0.85, await: true },
         { after: 0.2, type: "prop_action", prop: "package", action: "open" },
         { after: 0.1, type: "sfx", sound: "tada", volume: 0.75 },
         { after: 0.5, type: "prop_action", prop: "red_button", action: "pop_out", waypoint: "front_door_pkg", yOffset: 0.44 },
+        { after: 0.1, type: "player_look", target: "red_button", duration: 0.25 },
         { after: 0.1, type: "sfx", sound: "ding" },
-        { after: 0.2, type: "player_look", target: "granny", duration: 0.25, track: true }
+        { after: 0.4, type: "player_look", target: "granny", duration: 0.3, track: true }
       ]
     },
     {
@@ -613,8 +723,8 @@ export const FLOOR_IS_LAVA_4M = {
         { after: 0.2, type: "char_bubble", actor: "granny", icon: "exclamation", duration: 1.5 },
         { after: 0.5, type: "char_move", actor: "granny", via: ["stairs_bottom", "dining_corner", "dining_table_side", "kitchen"], to: "kitchen_counter_top", anim: "run2", endAnim: "panic" },
         { after: 0.2, type: "char_move", actor: "grandpa", via: ["living_room_entry", "doorway_living", "back_room_east", "back_hall", "doorway_dining", "dining_center", "dining_table_front"], to: "dining_table_top", anim: "run2", endAnim: "panic" },
-        { after: 0.2, type: "player_walk", via: ["stairs_bottom"], to: "dining_table_front", speed: 3.5, await: true },
-        { after: 0.2, type: "player_look", target: "dining_table_top", duration: 0.3 }
+        { after: 0.2, type: "player_walk", via: ["stairs_bottom"], target: "dining_table", standoff: 0.8, speed: 3.5, await: true },
+        { after: 0.2, type: "player_look", target: "grandpa", duration: 0.3 }
       ]
     },
     {
@@ -624,7 +734,9 @@ export const FLOOR_IS_LAVA_4M = {
         { after: 0.1, type: "char_face", actor: "granny", followPlayer: true, instant: true },
         { after: 0.2, type: "char_bubble", actor: "grandpa", icon: "angry", duration: 2.0 },
         { after: 0.2, type: "prop_action", prop: "lava", action: "rise_to", targetY: 0.85, duration: 4.0 },
-        { after: 0.5, type: "player_gesture", gesture: "shake_panic", duration: 1.5 },
+        { after: 0.6, type: "player_look", target: "granny", duration: 0.35 },
+        { after: 1.2, type: "player_look", target: "grandpa", duration: 0.35 },
+        { after: 0.2, type: "player_gesture", gesture: "shake_panic", duration: 1.5 },
         { after: 1.5, type: "fade", to: 1, duration: 1.5 }
       ]
     }
