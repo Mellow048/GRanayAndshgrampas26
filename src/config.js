@@ -1012,9 +1012,15 @@ export const THE_GREAT_ESCAPE_5M = {
           "type": "player_walk",
           "via": [
             "doorway_dining",
-            "dining_center",
-            "kitchen_lane"
+            "dining_center"
           ],
+          "to": "kitchen_lane",
+          "speed": 1.85,
+          "await": true
+        },
+        {
+          "after": 0.2,
+          "type": "player_walk",
           "target": "kitchen_table",
           "standoff": 0.8,
           "speed": 1.85,
@@ -1158,10 +1164,9 @@ export const THE_GREAT_ESCAPE_5M = {
           "after": 0.1,
           "type": "player_walk",
           "via": [
-            "dining_table_side",
-            "dining_corner"
+            "dining_table_side"
           ],
-          "to": "stairs_bottom",
+          "to": "dining_corner",
           "speed": 3.8,
           "await": true
         },
@@ -1198,7 +1203,14 @@ export const THE_GREAT_ESCAPE_5M = {
           "duration": 1
         },
         {
-          "after": 2.3,
+          "after": 0.4,
+          "type": "player_walk",
+          "to": "stairs_bottom",
+          "speed": 3.8,
+          "await": true
+        },
+        {
+          "after": 1.9,
           "type": "player_look",
           "target": "stairs_middle",
           "duration": 0.6
@@ -1250,12 +1262,18 @@ export const THE_GREAT_ESCAPE_5M = {
             "upstairs_hall_center",
             "up_hall_north_door",
             "up_hall_north",
-            "up_bed_north_side",
-            "up_bed_north"
+            "up_bed_north_side"
           ],
+          "to": "up_bed_north",
+          "speed": 1.95,
+          "await": true
+        },
+        {
+          "after": 0.2,
+          "type": "player_walk",
           "target": "upstairs_desk",
           "standoff": 0.8,
-          "speed": 1.95,
+          "speed": 1.85,
           "await": true
         },
         {
@@ -1285,12 +1303,18 @@ export const THE_GREAT_ESCAPE_5M = {
             "up_hall_north_door",
             "upstairs_hall_center",
             "upstairs_east_hall",
-            "upstairs_east_door",
-            "upstairs_east_north"
+            "upstairs_east_door"
           ],
+          "to": "upstairs_east_north",
+          "speed": 2.1,
+          "await": true
+        },
+        {
+          "after": 0.2,
+          "type": "player_walk",
           "target": "upstairs_east_bed",
           "standoff": 0.8,
-          "speed": 2.1,
+          "speed": 1.9,
           "await": true
         },
         {
@@ -1401,7 +1425,13 @@ export const THE_GREAT_ESCAPE_5M = {
           "volume": 0.9
         },
         {
-          "after": 0.8,
+          "after": 0.4,
+          "type": "player_look",
+          "target": "upstairs_east_door",
+          "duration": 0.5
+        },
+        {
+          "after": 0.4,
           "type": "char_move",
           "actor": "granny",
           "to": "upstairs_balcony",
@@ -1742,10 +1772,9 @@ export const THE_GREAT_ESCAPE_5M = {
           "type": "char_move",
           "actor": "granny",
           "via": [
-            "doorway_living",
-            "back_room_east_right"
+            "living_room_entry"
           ],
-          "to": "living_room_shelf_top",
+          "to": "living_room_right",
           "anim": "run2",
           "endAnim": "panic"
         },
@@ -1779,12 +1808,18 @@ export const THE_GREAT_ESCAPE_5M = {
             "back_room_east",
             "back_hall",
             "back_hall_left",
-            "doorway_dining",
-            "dining_center"
+            "doorway_dining"
           ],
+          "to": "dining_center",
+          "speed": 3.7,
+          "await": true
+        },
+        {
+          "after": 0.2,
+          "type": "player_walk",
           "target": "dining_table",
           "standoff": 0.8,
-          "speed": 3.7,
+          "speed": 3.5,
           "await": true
         },
         {
@@ -1850,12 +1885,18 @@ export const THE_GREAT_ESCAPE_5M = {
           "via": [
             "dining_table_top_west",
             "dining_table_side",
-            "dining_corner",
-            "stairs_bottom"
+            "dining_corner"
           ],
+          "to": "stairs_bottom",
+          "speed": 3.8,
+          "await": true
+        },
+        {
+          "after": 0.2,
+          "type": "player_walk",
           "target": "front_door",
           "standoff": 0.8,
-          "speed": 3.8,
+          "speed": 3.6,
           "await": true
         },
         {

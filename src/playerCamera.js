@@ -259,7 +259,7 @@ export class PlayerCamera {
       ? new THREE.Vector3(fromPos.x, fromPos.y ?? 0, fromPos.z)
       : this.playerPos.clone();
 
-    const floorY = center.y >= 2.1 && Math.abs(origin.y - 2.85) < 0.8 ? 2.85 : 0.0;
+    const floorY = center.y >= 2.1 ? 2.85 : 0.0;
     const rawDx = origin.x - center.x;
     const rawDz = origin.z - center.z;
     const rawLen = Math.hypot(rawDx, rawDz);
@@ -300,7 +300,14 @@ export class PlayerCamera {
       let clearSight = true;
       if (this.house && typeof this.house.hasClearSight === "function") {
         const eyeTest = new THREE.Vector3(cx, floorY + this.baseEyeHeight, cz);
-        const lookTest = new THREE.Vector3(center.x, Math.max(floorY + 0.35, center.y), center.z);
+        // Aim sightline test just outside the mesh's own edge so combined room meshes
+        // (e.g. Furniture3/4/5) do not self-occlude rays aimed inside their own volume.
+        const nearDist = edgeDist + Math.min(0.18, standoff * 0.25);
+        const lookTest = new THREE.Vector3(
+          center.x + dir.x * nearDist,
+          Math.max(floorY + 0.55, Math.min(box.max.y + 0.05, floorY + this.baseEyeHeight)),
+          center.z + dir.z * nearDist
+        );
         clearSight = this.house.hasClearSight(eyeTest, lookTest);
       }
 
@@ -436,7 +443,7 @@ export class PlayerCamera {
     }
 
     let resolvedPoints = points;
-    let resolvedFaceTarget = faceTarget;
+    let resolvedFaceTarget = faceTarget || target || null;
     if ((!resolvedPoints || resolvedPoints.length < 2) && target) {
       const approach = this.resolveApproachPoint(target, {
         standoff,
@@ -444,7 +451,6 @@ export class PlayerCamera {
         resolver,
       });
       if (approach) {
-        resolvedFaceTarget = resolvedFaceTarget || target;
         if (this.house && typeof this.house.findPath === "function") {
           resolvedPoints = this.house.findPath(this.playerPos, approach.standoffPos);
         } else {
@@ -454,6 +460,16 @@ export class PlayerCamera {
     }
 
     if (!resolvedPoints || resolvedPoints.length < 2) return Promise.resolve();
+
+    if (resolvedFaceTarget) {
+      // Cancel any in-flight lookAt or stale trackingRef so update() locks smoothly onto faceTarget
+      if (this._lookResolve) {
+        this._lookResolve();
+        this._lookResolve = null;
+      }
+      this.lookElapsed = this.lookDuration;
+      this.trackingRef = null;
+    }
 
     const walkSpeed = Math.max(0.4, Number(speed) || BASE_WALK_SPEED);
     const cumDist = [0];
@@ -514,12 +530,11 @@ export class PlayerCamera {
       maxVerticalSpeed,
       autoLook,
       faceTarget: resolvedFaceTarget,
-      finalLookTriggered: false,
       _resolve: resolveWalk,
     };
     this.isWalking = true;
 
-    if (autoLook && totalLength > 0.08) {
+    if (!resolvedFaceTarget && autoLook && totalLength > 0.08) {
       const lookAhead = this._sampleAlongWalk(this.activeWalk, Math.min(totalLength, 1.25));
       lookAhead.y = this.playerPos.y + this.baseEyeHeight - 0.05;
       this.lookAtPosition(lookAhead, { duration: 0.35, trackRef: null });
@@ -727,20 +742,9 @@ export class PlayerCamera {
           this.playerPos.y = Math.abs(pB.y - pA.y) < 0.05 ? pA.y : pA.y + (pB.y - pA.y) * alpha;
         }
 
-        const lookDuringApproach =
-          this.activeWalk.faceTarget &&
-          (this.activeWalk.totalLength - targetDist <= 0.75 || rawT >= 0.82);
-
-        if (lookDuringApproach && !this.activeWalk.finalLookTriggered && !this.trackingRef) {
-          this.activeWalk.finalLookTriggered = true;
-          this.lookAt(
-            this.activeWalk.faceTarget,
-            { duration: Math.max(0.22, this.activeWalk.duration - this.activeWalk.elapsed) },
-            resolver
-          );
-        } else if (
+        if (
+          !this.activeWalk.faceTarget &&
           this.activeWalk.autoLook &&
-          !this.activeWalk.finalLookTriggered &&
           !this.trackingRef &&
           this.lookElapsed >= this.lookDuration
         ) {
@@ -760,6 +764,15 @@ export class PlayerCamera {
         }
       }
 
+      if (this.activeWalk.faceTarget) {
+        const lookTarget = new THREE.Vector3();
+        if (this._resolveTargetPosition(this.activeWalk.faceTarget, resolver, lookTarget, { liveTrack: true })) {
+          const { yaw, pitch } = this._computeYawPitchTo(lookTarget);
+          this.yaw += wrapAngleDiff(yaw, this.yaw) * Math.min(1, dt * 8.0);
+          this.pitch += (pitch - this.pitch) * Math.min(1, dt * 8.0);
+        }
+      }
+
       this.bobPhase += dt * 11.2;
       this.bobAmount += (1 - this.bobAmount) * Math.min(1, dt * 10);
 
@@ -768,8 +781,13 @@ export class PlayerCamera {
         this.playerPos.copy(finished.points[finished.points.length - 1]);
         this.activeWalk = null;
         this.isWalking = false;
-        if (finished.faceTarget && !finished.finalLookTriggered) {
-          this.lookAt(finished.faceTarget, { duration: 0.22 }, resolver);
+        if (finished.faceTarget) {
+          const finalTarget = new THREE.Vector3();
+          if (this._resolveTargetPosition(finished.faceTarget, resolver, finalTarget, { liveTrack: true })) {
+            const { yaw, pitch } = this._computeYawPitchTo(finalTarget);
+            this.yaw = yaw;
+            this.pitch = pitch;
+          }
         }
         if (finished._resolve) finished._resolve();
       }
