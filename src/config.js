@@ -589,7 +589,8 @@ export const FLOOR_IS_LAVA_4M = {
         { after: 0.2, type: "prop_action", prop: "package", action: "open" },
         { after: 0.1, type: "sfx", sound: "tada", volume: 0.75 },
         { after: 0.5, type: "prop_action", prop: "red_button", action: "pop_out", waypoint: "front_door_pkg", yOffset: 0.44 },
-        { after: 0.1, type: "sfx", sound: "ding" }
+        { after: 0.1, type: "sfx", sound: "ding" },
+        { after: 0.2, type: "player_look", target: "granny", duration: 0.25, track: true }
       ]
     },
     {
@@ -610,9 +611,9 @@ export const FLOOR_IS_LAVA_4M = {
       name: "Act 3: Escape to High Ground",
       beats: [
         { after: 0.2, type: "char_bubble", actor: "granny", icon: "exclamation", duration: 1.5 },
-        { after: 0.5, type: "char_move", actor: "granny", via: ["stairs_bottom", "dining_corner", "dining_table_side", "kitchen"], to: "kitchen_counter_top", anim: "run2", endAnim: "panic", await: true },
-        { after: 0.2, type: "char_move", actor: "grandpa", via: ["living_room_entry", "doorway_living", "back_room_east", "back_hall", "doorway_dining", "dining_center", "dining_table_front"], to: "dining_table_top", anim: "run2", endAnim: "panic", await: true },
-        { after: 0.2, type: "player_walk", via: ["stairs_bottom"], to: "stairs_middle", speed: 3.5, await: true },
+        { after: 0.5, type: "char_move", actor: "granny", via: ["stairs_bottom", "dining_corner", "dining_table_side", "kitchen"], to: "kitchen_counter_top", anim: "run2", endAnim: "panic" },
+        { after: 0.2, type: "char_move", actor: "grandpa", via: ["living_room_entry", "doorway_living", "back_room_east", "back_hall", "doorway_dining", "dining_center", "dining_table_front"], to: "dining_table_top", anim: "run2", endAnim: "panic" },
+        { after: 0.2, type: "player_walk", via: ["stairs_bottom"], to: "dining_table_front", speed: 3.5, await: true },
         { after: 0.2, type: "player_look", target: "dining_table_top", duration: 0.3 }
       ]
     },
