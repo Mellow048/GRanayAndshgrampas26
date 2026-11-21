@@ -10,6 +10,7 @@ on:
         options:
           - grandpa_key_pov_44s
           - floor_is_lava_4m
+          - the_great_escape_5m
           - jump_run_walk_6s
           - custom_json
       episode_json:
@@ -52,7 +53,7 @@ permissions:
 jobs:
   render-pov:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 240
 
     steps:
       - name: Checkout repository
