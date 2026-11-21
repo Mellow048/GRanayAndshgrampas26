@@ -1,0 +1,144 @@
+name: Export POV Episode (Cloud Render)
+
+on:
+  workflow_dispatch:
+    inputs:
+      preset:
+        description: "Episode preset to render"
+        type: choice
+        default: "grandpa_key_pov_44s"
+        options:
+          - grandpa_key_pov_44s
+          - floor_is_lava_4m
+          - jump_run_walk_6s
+          - custom_json
+      episode_json:
+        description: "Custom Episode JSON (used when preset is custom_json, or overrides preset if provided)"
+        type: string
+        required: false
+        default: ""
+      aspect:
+        description: "Aspect ratio override (auto uses the episode's own aspect)"
+        type: choice
+        default: "auto"
+        options:
+          - auto
+          - "16:9"
+          - "9:16"
+      fps:
+        description: "Output frame rate"
+        type: choice
+        default: "30"
+        options:
+          - "24"
+          - "30"
+          - "60"
+      sfx_pacer:
+        description: "Enable 1-2s Cartoon SFX Pacer"
+        type: boolean
+        default: true
+      format:
+        description: "Output video format"
+        type: choice
+        default: "mp4"
+        options:
+          - mp4
+          - webm
+          - both
+
+permissions:
+  contents: write
+
+jobs:
+  render-pov:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: 191945d7799fca42ca781b7cf4d7c7992610b7e8
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Cache Playwright Chromium
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium
+
+      - name: Install Playwright & Three.js (ephemeral)
+        run: |
+          npm install --no-save playwright three@0.170.0
+          npx playwright install chromium
+          npx playwright install-deps chromium
+
+      - name: Render 3D POV Episode in Cloud (SwiftShader WebGL + FFmpeg)
+        env:
+          EPISODE_JSON: ${{ inputs.episode_json }}
+        run: |
+          ASPECT_ARG=""
+          if [ "${{ inputs.aspect }}" != "auto" ]; then
+            ASPECT_ARG="--aspect ${{ inputs.aspect }}"
+          fi
+          node scripts/export-video.mjs \
+            --preset "${{ inputs.preset }}" \
+            --fps "${{ inputs.fps }}" \
+            --pacer "${{ inputs.sfx_pacer }}" \
+            --format "${{ inputs.format }}" \
+            $ASPECT_ARG \
+            --out-dir output
+
+      - name: Upload Exported Video Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: granny-pov-${{ inputs.preset }}-${{ github.run_number }}
+          path: |
+            output/*.mp4
+            output/*.webm
+            output/export-summary.json
+          retention-days: 30
+
+      - name: Publish Direct Video Download (GitHub Release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          FILES=(output/*.mp4 output/*.webm output/export-summary.json)
+          TAG="latest-export"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${FILES[@]}" --clobber
+          else
+            gh release create "$TAG" "${FILES[@]}" \
+              --title "Latest Rendered Granny POV Exports" \
+              --notes "Auto-published cloud video exports from Granny POV 3D Cartoon Studio."
+          fi
+
+      - name: Write Workflow Summary
+        run: |
+          node -e '
+            const fs = require("fs");
+            const s = JSON.parse(fs.readFileSync("output/export-summary.json", "utf8"));
+            const repo = process.env.GITHUB_REPOSITORY;
+            const lines = [
+              "## Granny POV 3D Cartoon Studio — Cloud Export Complete",
+              "",
+              `- **Episode:** ${s.title}`,
+              `- **Duration:** ${s.duration.toFixed(2)}s @ ${s.fps}fps (${s.totalFrames} frames, ${s.width}x${s.height} [${s.aspectKey}])`,
+              `- **Audio Mixed:** ${s.bgmCount} BGM segments + ${s.sfxCount} SFX events`,
+              ...s.files.map(f => `- **Direct Download:** https://github.com/${repo}/releases/download/latest-export/${f.file} (${f.sizeMb} MB)`),
+              "",
+              "You can also download the zipped archive from **Artifacts** below."
+            ];
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");
+          '
