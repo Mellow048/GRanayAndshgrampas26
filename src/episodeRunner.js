@@ -878,7 +878,7 @@ export class EpisodeRunner {
     this.playerCamera?.update(dt, this.resolver);
     if (this.playerCamera && this.playerCamera.mode === "pov") {
       const pPos = this.playerCamera.playerPos;
-      if (!this.playerCamera.isWalking && !isElevatedSurfacePos(pPos) && !isOnStairs(pPos)) {
+      if (!isElevatedSurfacePos(pPos)) {
         const pushAlpha = Math.min(1, dt * 6);
         for (const actor of visibleActors) {
           if (movingActorSet.has(actor)) continue;
