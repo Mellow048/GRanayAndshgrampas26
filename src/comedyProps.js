@@ -584,7 +584,8 @@ export class ComedyPropManager {
         child.userData.semanticLabel = propLabel;
         child.userData.aliases = mesh.userData.aliases;
       });
-      const wp = this.waypoints[def.spawn];
+      const wpName = def.spawn || def.waypoint;
+      const wp = typeof wpName === "string" ? this.waypoints[wpName] : wpName;
       const basePos = wp
         ? new THREE.Vector3(wp.x, wp.y + (def.yOffset || 0), wp.z)
         : new THREE.Vector3(0, def.yOffset || 0, 0);

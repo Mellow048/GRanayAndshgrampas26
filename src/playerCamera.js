@@ -294,7 +294,7 @@ export class PlayerCamera {
       const walkable =
         !this.house || typeof this.house.isPointInsideWalkable !== "function"
           ? true
-          : this.house.isPointInsideWalkable(candidate);
+          : this.house.isPointInsideWalkable(cx, cz);
       if (!walkable) continue;
 
       let clearSight = true;
@@ -308,7 +308,7 @@ export class PlayerCamera {
           Math.max(floorY + 0.55, Math.min(box.max.y + 0.05, floorY + this.baseEyeHeight)),
           center.z + dir.z * nearDist
         );
-        clearSight = this.house.hasClearSight(eyeTest, lookTest);
+        clearSight = this.house.hasClearSight(cx, cz, lookTest.x, lookTest.z, eyeTest.y);
       }
 
       const travelDist = Math.hypot(cx - origin.x, cz - origin.z);
