@@ -3,12 +3,16 @@
  * and built-in POV & Shorts episode presets.
  */
 
+import { THE_GREAT_ESCAPE_68S } from "./episodes/greatEscape75.js";
+
 export const CONFIG = {
   threeVersion: "0.170.0",
   fixedStepHz: 60,
   fixedDt: 1 / 60,
   maxFrameDt: 0.05,
   defaultFadeDuration: 0.18,
+  // Pacing guardrail: player_look is a whip-pan, never a stare. 0.55s is the hard cap.
+  maxLookDuration: 0.55,
   defaultAspect: "16:9",
   aspectModes: {
     "16:9": { width: 1280, height: 720, aspect: 16 / 9, fov: 68, label: "16:9 YouTube POV" },
@@ -726,7 +730,7 @@ export const FLOOR_IS_LAVA_4M = {
         { after: 0.2, type: "char_bubble", actor: "granny", icon: "exclamation", duration: 1.5 },
         { after: 0.5, type: "char_move", actor: "granny", via: ["stairs_bottom", "dining_corner", "dining_table_side", "kitchen"], to: "kitchen_counter_top", anim: "run2", endAnim: "panic" },
         { after: 0.2, type: "char_move", actor: "grandpa", via: ["living_room_entry", "doorway_living", "back_room_east", "back_hall", "doorway_dining", "dining_center", "dining_table_front"], to: "dining_table_top", anim: "run2", endAnim: "panic" },
-        { after: 0.2, type: "player_walk", via: ["stairs_bottom"], target: "dining_table", standoff: 0.8, speed: 3.5, await: true },
+        { after: 0.2, type: "player_walk", via: ["stairs_bottom"], target: "dining_table_side", standoff: 0.8, speed: 3.5, await: true },
         { after: 0.2, type: "player_look", target: "grandpa", duration: 0.3 }
       ]
     },
@@ -2173,7 +2177,10 @@ export const THE_GREAT_ESCAPE_5M = {
 export const EPISODE_PRESETS = {
   grandpa_key_pov_44s: GRANDPA_KEY_POV_44S,
   floor_is_lava_4m: FLOOR_IS_LAVA_4M,
-  the_great_escape_5m: THE_GREAT_ESCAPE_5M,
+  // The old 262s door-staring cut is replaced by the 68s fast-cut version.
+  // `the_great_escape_5m` stays as a backwards-compatible alias for the workflow.
+  the_great_escape_5m: THE_GREAT_ESCAPE_68S,
+  the_great_escape_68s: THE_GREAT_ESCAPE_68S,
   jump_run_walk_6s: JUMP_RUN_WALK_EPISODE,
 };
 

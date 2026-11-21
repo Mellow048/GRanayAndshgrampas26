@@ -6,11 +6,12 @@ on:
       preset:
         description: "Episode preset to render"
         type: choice
-        default: "grandpa_key_pov_44s"
+        default: "the_great_escape_68s"
         options:
+          - the_great_escape_68s
+          - the_great_escape_5m
           - grandpa_key_pov_44s
           - floor_is_lava_4m
-          - the_great_escape_5m
           - jump_run_walk_6s
           - custom_json
       episode_json:
@@ -81,6 +82,16 @@ jobs:
           npm install --no-save playwright three@0.170.0
           npx playwright install chromium
           npx playwright install-deps chromium
+
+      - name: Audit Episode Pacing
+        env:
+          EPISODE_JSON: ${{ inputs.episode_json }}
+        run: |
+          if [ -n "$EPISODE_JSON" ] || [ "${{ inputs.preset }}" = "custom_json" ]; then
+            echo "Skipping pacing audit for custom episode JSON."
+            exit 0
+          fi
+          node scripts/audit-pacing.mjs "${{ inputs.preset }}" --max-runtime=120
 
       - name: Render 3D POV Episode in Cloud (SwiftShader WebGL + FFmpeg)
         env:

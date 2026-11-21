@@ -26,7 +26,7 @@ const MIME_TYPES = {
 
 function parseArgs(argv) {
   const opts = {
-    preset: "grandpa_key_pov_44s",
+    preset: "the_great_escape_68s",
     episodeFile: "",
     aspect: "",
     fps: 30,

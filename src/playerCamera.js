@@ -245,6 +245,59 @@ export class PlayerCamera {
     this.lookElapsed = 1;
   }
 
+  /**
+   * Hard camera cut / teleport for POV episodes.
+   * Instantly repositions the player and snaps the view to `lookAtPos` (or keeps
+   * the current yaw if omitted), cancelling any in-flight walk, look or gesture.
+   * Returns synchronously so a `cut` beat never blocks the timeline.
+   */
+  teleport(position, lookAtPos = null) {
+    if (this.activeWalk?._resolve) this.activeWalk._resolve();
+    this.activeWalk = null;
+    this.isWalking = false;
+    this.bobAmount = 0;
+
+    if (this._lookResolve) {
+      this._lookResolve();
+      this._lookResolve = null;
+    }
+    if (this._crouchResolve) {
+      this._crouchResolve();
+      this._crouchResolve = null;
+    }
+    if (this._fadeResolve) {
+      this._fadeResolve();
+      this._fadeResolve = null;
+    }
+    if (this._panicResolve) {
+      this._panicResolve();
+      this._panicResolve = null;
+    }
+    if (this.activeGesture?._resolve) this.activeGesture._resolve();
+    this.activeGesture = null;
+    this.trackingRef = null;
+    this.panicTimer = 0;
+
+    this.playerPos.set(position.x, position.y ?? 0, position.z);
+    this.baseEyeHeight = PLAYER_EYE_HEIGHT;
+    this.crouchStartHeight = PLAYER_EYE_HEIGHT;
+    this.crouchTargetHeight = PLAYER_EYE_HEIGHT;
+    this.crouchElapsed = 1;
+
+    if (lookAtPos) {
+      const { yaw, pitch } = this._computeYawPitchTo(lookAtPos);
+      this.yaw = yaw;
+      this.pitch = pitch;
+    }
+    this.prevYaw = this.yaw;
+    this.lookStartYaw = this.yaw;
+    this.lookStartPitch = this.pitch;
+    this.lookTargetYaw = this.yaw;
+    this.lookTargetPitch = this.pitch;
+    this.lookElapsed = 1;
+    this.lookDuration = 1;
+  }
+
   _resolveTaggedObject(ref, resolver) {
     const activeScene = this.scene || resolver?.getScene?.() || null;
     if (!activeScene || typeof ref !== "string") return null;
@@ -570,7 +623,11 @@ export class PlayerCamera {
     this.lookTargetYaw = this.yaw + wrapAngleDiff(yaw, this.yaw);
     this.lookTargetPitch = pitch;
     this.lookElapsed = 0;
-    this.lookDuration = Math.max(0.01, duration);
+    // Pacing guardrail: a look is a whip-pan, not a stare. Anything longer is dead air.
+    this.lookDuration = Math.max(
+      0.01,
+      Math.min(duration, CONFIG.maxLookDuration ?? 0.55)
+    );
     this.trackingRef = trackRef;
     return new Promise((resolve) => {
       this._lookResolve = resolve;

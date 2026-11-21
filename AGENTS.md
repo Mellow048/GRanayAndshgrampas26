@@ -62,14 +62,16 @@ This repository is a zero-build Three.js (`v0.170.0` via importmap) first-person
 ```
 
 ### Supported Beat Types
-- **Player POV**: `player_walk` (`to`, `duration`, `lookAhead`), `player_look` (`target`, `duration`, `track`), `player_gesture` (`gesture`: `nod_yes` | `shake_no` | `shake_panic` | `peek_lean`, `duration`), `player_crouch` (`crouched`, `duration`), `player_hold` (`prop`, `use`), `fade` (`to`, `duration`).
-- **Characters**: `char_move` (`actor`, `to`, `anim`, `duration`, `speed`), `char_anim` (`actor`, `anim`, `speed`, `loop`), `char_face` (`actor`, `target`, `followPlayer`), `char_bubble` (`actor`, `icon`: `key` | `question` | `exclamation` | `zzz` | `angry` | `laugh` | `food` | `heart`, `duration`), `char_prop` (`actor`, `prop`).
+- **Player POV**: `player_walk` (`to`, `duration`, `lookAhead`), `player_look` (`target`, `duration`, `track`), `player_gesture` (`gesture`: `nod_yes` | `shake_no` | `shake_panic` | `peek_lean`, `duration`), `player_crouch` (`crouched`, `duration`), `player_hold` (`prop`, `use`), `fade` (`to`, `duration`), `cut` (`to` / `facing`, optional `sound`) for instant POV cuts.
+- **Characters**: `char_move` (`actor`, `to`, `anim`, `duration`, `speed`), `char_anim` (`actor`, `anim`, `speed`, `loop`), `char_face` (`actor`, `target`, `followPlayer`), `char_bubble` (`actor`, `icon`: `key` | `question` | `exclamation` | `zzz` | `angry` | `laugh` | `food` | `heart`, `duration`), `char_prop` (`actor`, `prop`), `char_cut` (`actor`, `to`, `facing`) for instant actor teleports.
+- **Reactions**: `char_anim`, `char_bubble` and `char_prop` auto-face the camera so the expression is visible; opt out with `facePlayer: false` (or `keepFacing: true`).
+- **Pacing guards**: `player_look` is hard-capped at `CONFIG.maxLookDuration` (0.55s) in both the camera and the runner, and `scripts/audit-pacing.mjs` blocks dead air / dangling references before a cloud render.
 - **Props & Audio**: `prop_action` (`prop`, `action`: `show` | `hide` | `pickup` | `open` | `close` | `pop_out` | `bounce` | `stop`, `waypoint`, `yOffset`), `bgm` (`sound`, `volume`), `stop_bgm`, `sfx` (`sound`, `volume`, `pitch`, `cutBgm`, `cutBgmDuration`).
 
 ## Cloud Video Rendering (GitHub Actions)
 
 Render any preset or custom JSON to `.mp4`/`.webm` in GitHub's cloud runners without using local CPU/GPU:
 ```bash
-gh workflow run export-video.yml --ref main -f preset=grandpa_key_pov_44s -f fps=30 -f sfx_pacer=true -f format=mp4
+gh workflow run export-video.yml --ref main -f preset=the_great_escape_68s -f fps=30 -f sfx_pacer=true -f format=mp4
 ```
 Completed videos are auto-published to the `latest-export` GitHub Release.

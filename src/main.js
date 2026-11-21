@@ -230,7 +230,7 @@ async function bootstrap() {
   });
   window.addEventListener("keyup", (e) => heldKeys.delete(e.code));
 
-  const startPresetKey = urlParams.get("preset") || "grandpa_key_pov_44s";
+  const startPresetKey = urlParams.get("preset") || "the_great_escape_68s";
   const initialEp = EPISODE_PRESETS[startPresetKey] || DEFAULT_EPISODE;
   loadEpisode(initialEp);
 

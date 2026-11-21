@@ -415,7 +415,7 @@ export class StudioUI {
       this.els.presetSelect.appendChild(opt);
     }
     this.els.episodeEditor.value = JSON.stringify(
-      EPISODE_PRESETS.grandpa_key_pov_44s,
+      EPISODE_PRESETS.the_great_escape_68s,
       null,
       2
     );
