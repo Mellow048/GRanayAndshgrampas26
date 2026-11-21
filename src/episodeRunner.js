@@ -259,10 +259,17 @@ export class EpisodeRunner {
       const prevNode = i > 0 ? NAV_GRAPH[nodeIds[i - 1]] : null;
       const prevElevated = prevNode ? Boolean(prevNode.elevated) : isElevatedSurfacePos(prev);
       const curElevated = Boolean(node.elevated);
-      const isJumpArc = prevElevated || curElevated;
-      const arcHeight = isJumpArc
-        ? Math.min(0.62, 0.30 + Math.abs(pt.y - prev.y) * 0.25)
-        : 0;
+      const isBalconyJump =
+        !isOnStairs(prev) &&
+        !isOnStairs(pt) &&
+        Math.abs(pt.y - prev.y) > 1.8 &&
+        ((prevNode?.id === "upstairs_balcony") || id === "upstairs_balcony" || id === "foyer_atrium" || prevNode?.id === "foyer_atrium");
+      const isJumpArc = prevElevated || curElevated || isBalconyJump;
+      const arcHeight = isBalconyJump
+        ? 0.52
+        : isJumpArc
+          ? Math.min(0.62, 0.30 + Math.abs(pt.y - prev.y) * 0.25)
+          : 0;
 
       chain.push({ pt, isJumpArc, arcHeight });
     }
@@ -1004,7 +1011,7 @@ export class EpisodeRunner {
             y: approach.standoffPos.y,
             z: approach.standoffPos.z,
           };
-          if (ev.faceTarget !== false) {
+          if (ev.faceTarget !== false && (ev.standoff ?? 0.8) > 0.25) {
             faceTarget = ev.target;
           }
         } else {

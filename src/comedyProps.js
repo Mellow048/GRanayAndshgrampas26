@@ -4,7 +4,7 @@ const BUBBLE_ICONS = {
   key: { symbol: "KEY", bg: "#fef08a", accent: "#ca8a04", draw: "key" },
   question: { symbol: "?", bg: "#e0f2fe", accent: "#0284c7", draw: "text" },
   exclamation: { symbol: "!", bg: "#fee2e2", accent: "#dc2626", draw: "text" },
-  zzz: { symbol: "ZZZ", bg: "#ede9fe", accent: "#6d28d9", draw: "text" },
+  zzz: { symbol: "Zzz", bg: "#ede9fe", accent: "#6d28d9", draw: "zzz" },
   angry: { symbol: "GRR!", bg: "#fecaca", accent: "#b91c1c", draw: "angry" },
   laugh: { symbol: "HAHA", bg: "#fef9c3", accent: "#ea580c", draw: "laugh" },
   food: { symbol: "COOKIE", bg: "#ffedd5", accent: "#c2410c", draw: "cookie" },
@@ -135,6 +135,25 @@ function drawComicBubbleTexture(iconName) {
       ctx.beginPath();
       ctx.arc(cx, cy, 5, 0, Math.PI * 2);
       ctx.fill();
+    }
+  } else if (spec.draw === "zzz") {
+    ctx.strokeStyle = "#0f172a";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (const [tx, ty, size, rot, col] of [
+      [-34, 14, 40, -0.14, "#7c3aed"],
+      [0, -4, 52, 0.08, "#6d28d9"],
+      [38, -22, 62, -0.1, "#5b21b6"],
+    ]) {
+      ctx.save();
+      ctx.translate(tx, ty);
+      ctx.rotate(rot);
+      ctx.font = `900 ${size}px ui-sans-serif, system-ui, sans-serif`;
+      ctx.lineWidth = 7;
+      ctx.fillStyle = col;
+      ctx.strokeText("Z", 0, 0);
+      ctx.fillText("Z", 0, 0);
+      ctx.restore();
     }
   } else if (spec.draw === "heart") {
     ctx.fillStyle = "#ec4899";

@@ -334,6 +334,7 @@ export const SFX_MANIFEST = {
   bonk: { path: "./SoundEffects/bonk_7zPAD7C.mp3", category: "impact", defaultVolume: 0.88 },
   discord: { path: "./SoundEffects/discord-notification.mp3", category: "alert", defaultVolume: 0.72 },
   glitch: { path: "./SoundEffects/error-glitch.mp3", category: "alert", defaultVolume: 0.68 },
+  "error-glitch": { path: "./SoundEffects/error-glitch.mp3", category: "alert", defaultVolume: 0.68 },
   granny_good_part: { path: "./SoundEffects/granny-ambience-but-its-only-the-good-part.mp3", category: "bgm", defaultVolume: 0.25 },
   granny_ambience: { path: "./SoundEffects/granny-ambience.mp3", category: "bgm", defaultVolume: 0.22 },
   granny_chase: { path: "./SoundEffects/granny-chase-music.mp3", category: "bgm", defaultVolume: 0.28 },
@@ -393,6 +394,7 @@ export const SET_MAP = {
   front_door_left: { x: -0.65, y: 0.0, z: 4.85, label: "Front Door Left" },
   front_door_right: { x: 1.05, y: 0.0, z: 4.85, label: "Front Door Right" },
   front_door_view: { x: 0.25, y: 0.0, z: 3.3, label: "Front Foyer Vantage" },
+  foyer_atrium: { x: 0.25, y: 0.0, z: 2.1, label: "Foyer Atrium Drop Zone" },
   dining_corner: { x: -3.6, y: 0.0, z: 4.2, label: "Dining-Foyer Corner" },
   dining_table_front: { x: -4.0, y: 0.0, z: 2.6, label: "Dining Table Front" },
   dining_table_side: { x: -4.0, y: 0.0, z: 3.5, label: "Dining Table Side" },
@@ -439,8 +441,9 @@ export const NAV_GRAPH_EDGES = {
   front_door_pkg: ["front_door_view", "front_door_left", "front_door_right", "stairs_bottom"],
   front_door_left: ["front_door_pkg", "front_door_view"],
   front_door_right: ["front_door_pkg", "front_door_view"],
-  front_door_view: ["front_door_pkg", "front_door_left", "front_door_right", "stairs_bottom", "foyer"],
-  foyer: ["front_door_view"],
+  front_door_view: ["front_door_pkg", "front_door_left", "front_door_right", "stairs_bottom", "foyer", "foyer_atrium"],
+  foyer_atrium: ["front_door_view", "foyer", "stairs_bottom", "upstairs_balcony"],
+  foyer: ["front_door_view", "foyer_atrium"],
 
   // Ground floor: Dining & Kitchen + elevated surfaces
   stairs_bottom: ["front_door_pkg", "front_door_view", "dining_corner", "stairs_middle"],
@@ -492,7 +495,7 @@ export const NAV_GRAPH_EDGES = {
   upstairs_west_room: ["upstairs_hall_center", "bedroom"],
   bedroom: ["upstairs_west_room"],
   upstairs_east_hall: ["upstairs_hall_center", "upstairs_balcony", "upstairs_east_door"],
-  upstairs_balcony: ["upstairs_east_hall"],
+  upstairs_balcony: ["upstairs_east_hall", "foyer_atrium"],
   upstairs_east_door: ["upstairs_east_hall", "upstairs_east_north"],
   upstairs_east_north: ["upstairs_east_door", "upstairs_east_bed_top"],
   upstairs_east_bed_top: ["upstairs_east_north"],
@@ -744,21 +747,21 @@ export const FLOOR_IS_LAVA_4M = {
 };
 
 export const THE_GREAT_ESCAPE_5M = {
-  "title": "The Great Escape (5-Minute POV Special)",
+  "title": "The Great Escape (5-Minute Stealth POV)",
   "aspect": "16:9",
-  "playerSpawn": "front_door_view",
-  "playerFacing": "front_door",
+  "playerSpawn": "back_hall_left",
+  "playerFacing": "doorway_dining",
   "cast": [
-    {
-      "id": "granny",
-      "asset": "granny",
-      "spawn": "back_hall",
-      "facing": "doorway_dining",
-      "anim": "walk"
-    },
     {
       "id": "grandpa",
       "asset": "grandpa",
+      "spawn": "living_room_sofa",
+      "facing": "living_room_entry",
+      "anim": "sit"
+    },
+    {
+      "id": "granny",
+      "asset": "granny",
       "spawn": "living_room_left",
       "facing": "living_room_view",
       "anim": "idle"
@@ -766,139 +769,119 @@ export const THE_GREAT_ESCAPE_5M = {
   ],
   "props": [
     {
+      "id": "treasure_chest",
+      "type": "treasure_chest",
+      "spawn": "chest_spot",
+      "yOffset": 0,
+      "scale": 1,
+      "rotationY": -2.45
+    },
+    {
       "id": "golden_key",
       "type": "golden_key",
-      "spawn": "kitchen_table_top",
-      "yOffset": 0.04,
-      "scale": 1
+      "spawn": "chest_spot",
+      "yOffset": 0.48,
+      "scale": 1,
+      "spin": true,
+      "float": true
+    },
+    {
+      "id": "kitchen_box",
+      "type": "treasure_chest",
+      "spawn": "kitchen_counter_top",
+      "yOffset": 0,
+      "scale": 0.55,
+      "rotationY": 1.57
     },
     {
       "id": "toy_blaster",
       "type": "toy_blaster",
       "spawn": "upstairs_east_bed_top",
-      "yOffset": 0.06,
-      "scale": 1
-    },
-    {
-      "id": "treasure_chest",
-      "type": "treasure_chest",
-      "spawn": "chest_spot",
-      "yOffset": 0,
+      "yOffset": 0.08,
       "scale": 1
     },
     {
       "id": "red_button",
       "type": "red_button",
-      "spawn": "chest_spot",
-      "yOffset": -2,
+      "spawn": "upstairs_balcony",
+      "yOffset": 0,
       "scale": 1
-    },
-    {
-      "id": "lava",
-      "type": "rising_lava",
-      "spawn": "lava_origin",
-      "yOffset": 0
     }
   ],
   "skits": [
     {
-      "name": "Skit 1: The Great Foyer Escape",
+      "name": "Act 1: The Awakening",
       "beats": [
         {
           "after": 0,
           "type": "bgm",
-          "sound": "granny_ambience",
+          "sound": "granny_good_part",
           "volume": 0.24
         },
         {
-          "after": 0.1,
+          "after": 0,
           "type": "player_look",
-          "target": "front_door",
-          "duration": 3,
+          "target": "doorway_dining",
+          "duration": 0.45,
           "await": true
         },
         {
           "after": 0.1,
-          "type": "player_walk",
-          "target": "front_door",
-          "standoff": 0.8,
-          "speed": 1.15,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "click",
-          "volume": 0.72
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "glitch",
-          "volume": 0.68
+          "type": "char_bubble",
+          "actor": "grandpa",
+          "icon": "zzz",
+          "duration": 15
         },
         {
           "after": 0,
           "type": "player_gesture",
-          "gesture": "shake_no",
-          "duration": 1.6,
+          "gesture": "peek_lean",
+          "duration": 1.8,
           "await": true
         },
         {
           "after": 0.1,
           "type": "player_look",
-          "target": "front_door_left",
-          "duration": 2.8,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "front_door_right",
-          "duration": 2.8,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "stairs_middle",
-          "duration": 3.2,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "granny_laugh",
-          "volume": 0.85
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "discord",
-          "volume": 0.72
-        },
-        {
-          "after": 0,
-          "type": "player_walk",
-          "to": "front_door_view",
-          "speed": 1.25,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "stairs_bottom",
-          "duration": 2.4,
+          "target": "back_bed",
+          "duration": 0.45,
           "await": true
         },
         {
           "after": 0.1,
           "type": "player_walk",
           "via": [
-            "stairs_bottom"
+            "back_hall_left"
           ],
-          "to": "dining_corner",
-          "speed": 1.2,
+          "to": "under_bed",
+          "speed": 1.05,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_crouch",
+          "crouched": true,
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "dining_nook",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_walk",
+          "to": "dining_nook",
+          "speed": 1.05,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "doorway_dining",
+          "duration": 0.45,
           "await": true
         },
         {
@@ -911,205 +894,158 @@ export const THE_GREAT_ESCAPE_5M = {
         {
           "after": 0.1,
           "type": "player_look",
-          "target": "dining_table",
-          "duration": 3.2,
+          "target": "back_bed",
+          "duration": 0.45,
           "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_walk",
-          "via": [
-            "dining_table_side",
-            "dining_table_front"
-          ],
-          "to": "hide_table",
-          "speed": 1.15,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_crouch",
-          "crouched": true,
-          "duration": 0.65,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "doorway_dining",
-          "duration": 2.8,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "char_move",
-          "actor": "granny",
-          "via": [
-            "back_hall_left",
-            "doorway_dining",
-            "dining_center"
-          ],
-          "to": "dining_table_front",
-          "anim": "walk",
-          "speed": 0.95
-        },
-        {
-          "after": 0,
-          "type": "player_look",
-          "target": "doorway_dining",
-          "duration": 4.5,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "squidward_walk",
-          "volume": 0.62
-        },
-        {
-          "after": 0,
-          "type": "player_look",
-          "target": "granny",
-          "duration": 4,
-          "track": true,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "char_bubble",
-          "actor": "granny",
-          "icon": "question",
-          "duration": 2.6
         },
         {
           "after": 0.1,
           "type": "player_gesture",
-          "gesture": "shake_panic",
-          "duration": 1.2
-        },
-        {
-          "after": 0,
-          "type": "player_look",
-          "target": "granny",
-          "duration": 3,
-          "track": true,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "char_move",
-          "actor": "granny",
-          "via": [
-            "dining_center",
-            "doorway_dining",
-            "back_hall_left",
-            "back_hall",
-            "back_room_east",
-            "doorway_living"
-          ],
-          "to": "living_room_left",
-          "anim": "walk",
-          "speed": 1.2
-        },
-        {
-          "after": 0,
-          "type": "player_look",
-          "target": "doorway_dining",
-          "duration": 3.8,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "dining_corner",
-          "duration": 2.6,
+          "gesture": "shake_no",
+          "duration": 1.5,
           "await": true
         },
         {
           "after": 0.1,
           "type": "player_crouch",
           "crouched": false,
-          "duration": 0.6,
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_walk",
+          "via": [
+            "under_bed",
+            "back_hall_left",
+            "back_hall",
+            "back_hall_right",
+            "hallway",
+            "back_room_east"
+          ],
+          "to": "back_room_east_right",
+          "speed": 1.05,
           "await": true
         },
         {
           "after": 0.1,
           "type": "player_look",
-          "target": "kitchen_table",
-          "duration": 2.8,
+          "target": "doorway_living",
+          "duration": 0.45,
           "await": true
         },
         {
           "after": 0.1,
           "type": "player_gesture",
-          "gesture": "nod_yes",
-          "duration": 1.4,
+          "gesture": "peek_lean",
+          "duration": 1.8,
           "await": true
-        }
-      ]
-    },
-    {
-      "name": "Skit 2: The Golden Key Heist",
-      "beats": [
+        },
         {
           "after": 0.1,
           "type": "player_walk",
           "via": [
-            "dining_table_front",
-            "dining_center"
+            "doorway_living",
+            "living_room_entry"
           ],
-          "to": "kitchen_lane",
-          "speed": 1.15,
+          "to": "living_room_view",
+          "speed": 1.05,
           "await": true
         },
         {
           "after": 0.1,
           "type": "player_look",
-          "target": "kitchen_table",
-          "duration": 2.8,
+          "target": "grandpa",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "char_bubble",
+          "actor": "grandpa",
+          "icon": "zzz",
+          "duration": 15
+        },
+        {
+          "after": 0,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.8,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "granny",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "shake_panic",
+          "duration": 1.5,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "treasure_chest",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_crouch",
+          "crouched": true,
+          "duration": 0.45,
           "await": true
         },
         {
           "after": 0.1,
           "type": "player_walk",
-          "target": "kitchen_table",
+          "via": [
+            "living_room_right",
+            "living_room",
+            "grandpa_chest_side"
+          ],
+          "target": "treasure_chest",
           "standoff": 0.8,
-          "speed": 1.1,
+          "speed": 1.05,
           "await": true
         },
         {
           "after": 0.1,
           "type": "player_look",
-          "target": "microwave",
-          "duration": 3.2,
+          "target": "grandpa",
+          "duration": 0.45,
           "await": true
         },
         {
           "after": 0.1,
-          "type": "player_look",
-          "target": "kitchen_counter_top",
-          "duration": 3,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.8,
           "await": true
         },
         {
           "after": 0.1,
           "type": "player_look",
           "target": "golden_key",
-          "duration": 3.2,
+          "duration": 0.4,
           "await": true
         },
         {
           "after": 0.1,
-          "type": "sfx",
-          "sound": "ding",
-          "volume": 0.72
+          "type": "prop_action",
+          "prop": "treasure_chest",
+          "action": "open"
         },
         {
-          "after": 0,
-          "type": "player_gesture",
-          "gesture": "nod_yes",
-          "duration": 1.5,
-          "await": true
+          "after": 0.1,
+          "type": "sfx",
+          "sound": "click",
+          "volume": 0.65
         },
         {
           "after": 0.1,
@@ -1122,70 +1058,41 @@ export const THE_GREAT_ESCAPE_5M = {
           "type": "player_hold",
           "prop": "golden_key",
           "use": true,
-          "duration": 0.9,
+          "duration": 0.85,
           "await": true
         },
         {
           "after": 0.1,
           "type": "sfx",
           "sound": "kaching",
-          "volume": 0.82
+          "volume": 0.78
         },
         {
           "after": 0.1,
-          "type": "player_walk",
-          "to": "kitchen_lane",
-          "speed": 1.2,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_crouch",
-          "crouched": true,
-          "duration": 0.55,
+          "type": "player_gesture",
+          "gesture": "nod_yes",
+          "duration": 1.4,
           "await": true
         },
         {
           "after": 0.1,
           "type": "player_look",
-          "target": "doorway_dining",
-          "duration": 3,
+          "target": "grandpa",
+          "duration": 0.45,
           "await": true
         },
         {
           "after": 0.1,
-          "type": "char_move",
+          "type": "char_bubble",
           "actor": "grandpa",
-          "via": [
-            "living_room_entry",
-            "doorway_living",
-            "back_room_east",
-            "back_hall",
-            "back_hall_left"
-          ],
-          "to": "doorway_dining",
-          "anim": "walk",
-          "speed": 1.35
+          "icon": "zzz",
+          "duration": 10
         },
         {
           "after": 0,
-          "type": "player_look",
-          "target": "doorway_dining",
-          "duration": 4.5,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "dining_center",
-          "duration": 3.2,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_walk",
-          "to": "dining_center",
-          "speed": 1.25,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.6,
           "await": true
         },
         {
@@ -1197,128 +1104,386 @@ export const THE_GREAT_ESCAPE_5M = {
         },
         {
           "after": 0.1,
-          "type": "char_face",
-          "actor": "grandpa",
-          "followPlayer": true,
-          "instant": true
+          "type": "player_walk",
+          "via": [
+            "living_room",
+            "living_room_view",
+            "living_room_entry",
+            "doorway_living",
+            "back_room_east",
+            "hallway"
+          ],
+          "to": "back_hall",
+          "speed": 1.05,
+          "await": true
         },
         {
-          "after": 0,
-          "type": "char_bubble",
-          "actor": "grandpa",
-          "icon": "angry",
-          "duration": 2.5
+          "after": 0.1,
+          "type": "player_look",
+          "target": "doorway_living",
+          "duration": 0.45,
+          "await": true
         },
         {
-          "after": 0,
-          "type": "char_prop",
-          "actor": "grandpa",
-          "prop": "shotgun"
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.8,
+          "await": true
+        }
+      ]
+    },
+    {
+      "name": "Act 2: The Kitchen Trap",
+      "beats": [
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "back_hall_left",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_walk",
+          "via": [
+            "back_hall_left",
+            "doorway_dining",
+            "dining_nook",
+            "dining_center"
+          ],
+          "target": "dining_table",
+          "standoff": 0.8,
+          "speed": 1.05,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "dining_table",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.6,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_walk",
+          "to": "hide_table",
+          "speed": 1.05,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "kitchen_lane",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.6,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_walk",
+          "via": [
+            "dining_center",
+            "kitchen_lane"
+          ],
+          "to": "kitchen",
+          "speed": 1.05,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "microwave",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "shake_no",
+          "duration": 1.5,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "kitchen_box",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_walk",
+          "target": "kitchen_box",
+          "standoff": 0.8,
+          "speed": 1.05,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_hold",
+          "prop": "golden_key",
+          "use": true,
+          "duration": 0.85,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "prop_action",
+          "prop": "kitchen_box",
+          "action": "open"
         },
         {
           "after": 0,
           "type": "sfx",
-          "sound": "vine_boom",
-          "volume": 0.9,
-          "cutBgm": true,
-          "cutBgmDuration": 0.8
+          "sound": "ding",
+          "volume": 0.85
         },
         {
-          "after": 0,
+          "after": 0.1,
           "type": "player_gesture",
           "gesture": "shake_panic",
-          "duration": 1.1
+          "duration": 1.5,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "char_bubble",
+          "actor": "granny",
+          "icon": "exclamation",
+          "duration": 2.5
         },
         {
           "after": 0,
+          "type": "sfx",
+          "sound": "granny_i_see_you",
+          "volume": 0.88
+        },
+        {
+          "after": 0,
+          "type": "bgm",
+          "sound": "granny_chase",
+          "volume": 0.24
+        },
+        {
+          "after": 0,
+          "type": "char_move",
+          "actor": "granny",
+          "via": [
+            "living_room_entry",
+            "doorway_living",
+            "back_room_east",
+            "back_hall",
+            "back_hall_left",
+            "doorway_dining",
+            "dining_center",
+            "kitchen_lane"
+          ],
+          "to": "kitchen",
+          "anim": "run",
+          "speed": 1.8
+        },
+        {
+          "after": 0.1,
+          "type": "player_crouch",
+          "crouched": true,
+          "duration": 0.35,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_walk",
+          "via": [
+            "kitchen"
+          ],
+          "target": "kitchen_table",
+          "standoff": 0.1,
+          "speed": 2.6,
+          "await": true
+        },
+        {
+          "after": 0.1,
           "type": "player_look",
-          "target": "grandpa",
-          "duration": 2.4,
+          "target": "kitchen_lane",
+          "duration": 0.4,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "shake_panic",
+          "duration": 2.2,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 2.2,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "shake_panic",
+          "duration": 2.2,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 2.2,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "granny",
+          "duration": 0.45,
           "track": true,
           "await": true
         },
         {
           "after": 0.1,
-          "type": "bgm",
-          "sound": "granny_chase",
-          "volume": 0.28
+          "type": "sfx",
+          "sound": "squidward_walk",
+          "volume": 0.65
         },
         {
           "after": 0,
+          "type": "player_gesture",
+          "gesture": "shake_panic",
+          "duration": 2.2,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "char_bubble",
+          "actor": "granny",
+          "icon": "question",
+          "duration": 2.8
+        },
+        {
+          "after": 0,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 2.2,
+          "await": true
+        },
+        {
+          "after": 0.1,
           "type": "char_move",
-          "actor": "grandpa",
+          "actor": "granny",
           "via": [
-            "dining_center"
+            "kitchen_lane",
+            "dining_center",
+            "dining_table_front",
+            "dining_center",
+            "doorway_dining",
+            "back_hall_left",
+            "back_hall"
           ],
-          "to": "dining_table_front",
-          "anim": "run2",
-          "speed": 2
+          "to": "back_room_east",
+          "anim": "walk",
+          "speed": 1.05
         },
         {
-          "after": 0,
+          "after": 0.1,
+          "type": "player_look",
+          "target": "kitchen_lane",
+          "duration": 0.4,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 2.2,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "shake_panic",
+          "duration": 2.2,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 2.2,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "dining_center",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 2.2,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_crouch",
+          "crouched": false,
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "nod_yes",
+          "duration": 1.4,
+          "await": true
+        }
+      ]
+    },
+    {
+      "name": "Act 3: The Upstairs Run",
+      "beats": [
+        {
+          "after": 0.1,
           "type": "player_walk",
           "via": [
+            "kitchen_lane",
+            "dining_center",
             "dining_table_front",
-            "dining_table_side"
+            "dining_table_side",
+            "dining_corner"
           ],
-          "to": "dining_corner",
-          "speed": 3.2,
+          "to": "stairs_bottom",
+          "speed": 3.5,
           "await": true
         },
         {
           "after": 0.1,
           "type": "sfx",
           "sound": "swoosh",
-          "volume": 0.72
+          "volume": 0.7
         },
         {
           "after": 0,
-          "type": "player_look",
-          "target": "grandpa",
-          "duration": 2.4,
-          "track": true,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "char_bubble",
-          "actor": "grandpa",
-          "icon": "angry",
-          "duration": 2
-        },
-        {
-          "after": 0,
-          "type": "player_gesture",
-          "gesture": "shake_panic",
-          "duration": 0.9
-        },
-        {
-          "after": 0,
-          "type": "player_walk",
-          "to": "stairs_bottom",
-          "speed": 3.3,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "stairs_middle",
-          "duration": 2.2,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "explode_meme",
-          "volume": 0.68
-        }
-      ]
-    },
-    {
-      "name": "Skit 3: The Upstairs Expedition",
-      "beats": [
-        {
-          "after": 0.1,
           "type": "bgm",
           "sound": "granny_ambience",
           "volume": 0.24
@@ -1331,21 +1496,34 @@ export const THE_GREAT_ESCAPE_5M = {
             "stairs_top"
           ],
           "to": "upstairs_landing",
-          "speed": 1.55,
+          "speed": 3.5,
           "await": true
         },
         {
           "after": 0.1,
-          "type": "player_look",
-          "target": "upstairs_balcony",
-          "duration": 2.8,
-          "await": true
+          "type": "char_anim",
+          "actor": "grandpa",
+          "anim": "idle",
+          "loop": true
         },
         {
-          "after": 0.1,
+          "after": 0,
+          "type": "char_prop",
+          "actor": "grandpa",
+          "prop": "shotgun"
+        },
+        {
+          "after": 0,
+          "type": "char_bubble",
+          "actor": "grandpa",
+          "icon": "angry",
+          "duration": 2.4
+        },
+        {
+          "after": 0,
           "type": "player_look",
-          "target": "up_hall_north_door",
-          "duration": 3,
+          "target": "upstairs_west_room",
+          "duration": 0.45,
           "await": true
         },
         {
@@ -1357,50 +1535,20 @@ export const THE_GREAT_ESCAPE_5M = {
         },
         {
           "after": 0.1,
-          "type": "player_look",
-          "target": "upstairs_east_hall",
-          "duration": 2.8,
-          "await": true
-        },
-        {
-          "after": 0.1,
           "type": "player_walk",
           "via": [
             "upstairs_hall_center",
-            "up_hall_north_door",
-            "up_hall_north",
-            "up_bed_north_side"
+            "upstairs_west_room"
           ],
-          "to": "up_bed_north",
-          "speed": 1.3,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_walk",
-          "target": "upstairs_desk",
-          "standoff": 0.8,
-          "speed": 1.2,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "typing",
-          "volume": 0.55
-        },
-        {
-          "after": 0,
-          "type": "player_look",
-          "target": "upstairs_desk",
-          "duration": 2.8,
+          "to": "bedroom",
+          "speed": 1.05,
           "await": true
         },
         {
           "after": 0.1,
           "type": "player_look",
-          "target": "up_bed",
-          "duration": 3.2,
+          "target": "upstairs_west_room",
+          "duration": 0.45,
           "await": true
         },
         {
@@ -1414,6 +1562,95 @@ export const THE_GREAT_ESCAPE_5M = {
           "after": 0.1,
           "type": "player_walk",
           "via": [
+            "upstairs_west_room",
+            "upstairs_hall_center",
+            "up_hall_north_door",
+            "up_hall_north",
+            "up_bed_north_side"
+          ],
+          "to": "up_bed_north",
+          "speed": 1.05,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_walk",
+          "target": "upstairs_desk",
+          "standoff": 0.8,
+          "speed": 1.05,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "sfx",
+          "sound": "typing",
+          "volume": 0.55
+        },
+        {
+          "after": 0,
+          "type": "player_look",
+          "target": "upstairs_desk",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "shake_no",
+          "duration": 1.6,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_walk",
+          "target": "up_bed",
+          "standoff": 0.8,
+          "speed": 1.05,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "up_bed",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.6,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "char_move",
+          "actor": "grandpa",
+          "via": [
+            "living_room_entry",
+            "doorway_living",
+            "back_room_east",
+            "back_hall",
+            "back_hall_left",
+            "doorway_dining",
+            "dining_center",
+            "dining_table_front",
+            "dining_table_side",
+            "dining_corner",
+            "stairs_bottom",
+            "stairs_middle",
+            "stairs_top",
+            "upstairs_landing",
+            "upstairs_hall_center"
+          ],
+          "to": "upstairs_east_hall",
+          "anim": "walk",
+          "speed": 1.35
+        },
+        {
+          "after": 0,
+          "type": "player_walk",
+          "via": [
             "up_bed_north_side",
             "up_hall_north",
             "up_hall_north_door",
@@ -1422,7 +1659,7 @@ export const THE_GREAT_ESCAPE_5M = {
             "upstairs_east_door"
           ],
           "to": "upstairs_east_north",
-          "speed": 1.35,
+          "speed": 1.05,
           "await": true
         },
         {
@@ -1430,14 +1667,14 @@ export const THE_GREAT_ESCAPE_5M = {
           "type": "player_walk",
           "target": "upstairs_east_bed",
           "standoff": 0.8,
-          "speed": 1.2,
+          "speed": 1.05,
           "await": true
         },
         {
           "after": 0.1,
           "type": "player_look",
           "target": "toy_blaster",
-          "duration": 3,
+          "duration": 0.45,
           "await": true
         },
         {
@@ -1457,7 +1694,7 @@ export const THE_GREAT_ESCAPE_5M = {
           "type": "player_hold",
           "prop": "toy_blaster",
           "use": true,
-          "duration": 0.9,
+          "duration": 0.85,
           "await": true
         },
         {
@@ -1468,15 +1705,159 @@ export const THE_GREAT_ESCAPE_5M = {
         },
         {
           "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "nod_yes",
+          "duration": 1.5,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "upstairs_east_door",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.6,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "char_move",
+          "actor": "grandpa",
+          "via": [
+            "upstairs_east_hall"
+          ],
+          "to": "upstairs_east_door",
+          "anim": "walk",
+          "speed": 1.6,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "grandpa",
+          "duration": 0.4,
+          "track": true,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "sfx",
+          "sound": "vine_boom",
+          "volume": 0.86
+        },
+        {
+          "after": 0,
+          "type": "char_bubble",
+          "actor": "grandpa",
+          "icon": "angry",
+          "duration": 2
+        },
+        {
+          "after": 0,
+          "type": "player_hold",
+          "prop": "toy_blaster",
+          "use": true,
+          "duration": 0.55,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "sfx",
+          "sound": "pop",
+          "volume": 0.9
+        },
+        {
+          "after": 0.1,
+          "type": "char_anim",
+          "actor": "grandpa",
+          "anim": "hit",
+          "loop": false,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "sfx",
+          "sound": "bonk",
+          "volume": 0.88
+        },
+        {
+          "after": 0.1,
+          "type": "player_walk",
+          "via": [
+            "upstairs_east_door",
+            "upstairs_east_hall"
+          ],
+          "to": "upstairs_balcony",
+          "speed": 3.3,
+          "await": true
+        }
+      ]
+    },
+    {
+      "name": "Act 4: The Final Scramble",
+      "beats": [
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "red_button",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_walk",
+          "target": "red_button",
+          "standoff": 0.8,
+          "speed": 1.1,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.6,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "prop_action",
+          "prop": "red_button",
+          "action": "press"
+        },
+        {
+          "after": 0,
+          "type": "sfx",
+          "sound": "error-glitch",
+          "volume": 0.88
+        },
+        {
+          "after": 0.1,
+          "type": "bgm",
+          "sound": "run_amok",
+          "volume": 0.28
+        },
+        {
+          "after": 0,
+          "type": "player_gesture",
+          "gesture": "shake_panic",
+          "duration": 1.8,
+          "await": true
+        },
+        {
+          "after": 0.1,
           "type": "char_move",
           "actor": "granny",
           "via": [
-            "doorway_living",
-            "back_room_east",
             "back_hall",
             "back_hall_left",
             "doorway_dining",
             "dining_center",
+            "dining_table_front",
             "dining_table_side",
             "dining_corner",
             "stairs_bottom",
@@ -1487,172 +1868,112 @@ export const THE_GREAT_ESCAPE_5M = {
             "upstairs_east_hall"
           ],
           "to": "upstairs_east_door",
+          "anim": "run",
+          "speed": 2.3
+        },
+        {
+          "after": 0.1,
+          "type": "char_move",
+          "actor": "grandpa",
+          "via": [
+            "upstairs_east_hall"
+          ],
+          "to": "upstairs_balcony",
           "anim": "run2",
-          "speed": 2.4
+          "speed": 1.9
         },
         {
           "after": 0,
-          "type": "player_crouch",
-          "crouched": true,
-          "duration": 0.55,
-          "await": true
+          "type": "char_bubble",
+          "actor": "granny",
+          "icon": "angry",
+          "duration": 2.8
         },
         {
           "after": 0.1,
+          "type": "char_bubble",
+          "actor": "grandpa",
+          "icon": "angry",
+          "duration": 2.8
+        },
+        {
+          "after": 0,
           "type": "player_look",
-          "target": "upstairs_east_door",
-          "duration": 4.5,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "upstairs_east_bed",
-          "duration": 2.6,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "upstairs_east_door",
-          "duration": 4.5,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_crouch",
-          "crouched": false,
+          "target": "upstairs_east_hall",
           "duration": 0.45,
           "await": true
         },
         {
           "after": 0.1,
-          "type": "sfx",
-          "sound": "granny_i_see_you",
-          "volume": 0.9
-        },
-        {
-          "after": 0,
-          "type": "sfx",
-          "sound": "jumpscare",
-          "volume": 0.85
-        },
-        {
-          "after": 0,
-          "type": "player_look",
-          "target": "granny",
+          "type": "player_gesture",
+          "gesture": "shake_panic",
           "duration": 1.8,
-          "track": true,
           "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "char_bubble",
-          "actor": "granny",
-          "icon": "angry",
-          "duration": 2
-        },
-        {
-          "after": 0,
-          "type": "player_hold",
-          "prop": "toy_blaster",
-          "use": true,
-          "duration": 0.6,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "pop",
-          "volume": 0.88
-        },
-        {
-          "after": 0.1,
-          "type": "char_anim",
-          "actor": "granny",
-          "anim": "hit",
-          "loop": false,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "bonk",
-          "volume": 0.9
         },
         {
           "after": 0.1,
           "type": "player_look",
-          "target": "upstairs_east_door",
-          "duration": 1.4,
+          "target": "foyer_atrium",
+          "duration": 0.4,
           "await": true
         },
         {
           "after": 0.1,
-          "type": "char_move",
-          "actor": "granny",
-          "to": "upstairs_balcony",
-          "anim": "walk",
-          "speed": 2.2,
-          "via": [
-            "upstairs_east_hall"
-          ],
-          "endAnim": "terrified"
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.6,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "upstairs_east_hall",
+          "duration": 0.4,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "shake_panic",
+          "duration": 1.8,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "foyer_atrium",
+          "duration": 0.4,
+          "await": true
         },
         {
           "after": 0.1,
           "type": "player_walk",
           "via": [
-            "upstairs_east_door",
-            "upstairs_east_hall",
-            "upstairs_hall_center",
-            "upstairs_landing",
-            "stairs_top",
-            "stairs_middle"
+            "foyer_atrium"
           ],
-          "to": "stairs_bottom",
-          "speed": 2.55,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "front_door",
-          "duration": 2.8,
+          "to": "front_door_view",
+          "speed": 3.6,
           "await": true
         },
         {
           "after": 0.1,
           "type": "sfx",
           "sound": "whoosh",
-          "volume": 0.65
+          "volume": 0.78
         },
         {
           "after": 0,
-          "type": "player_gesture",
-          "gesture": "nod_yes",
-          "duration": 1.4,
+          "type": "player_look",
+          "target": "upstairs_balcony",
+          "duration": 0.45,
           "await": true
-        }
-      ]
-    },
-    {
-      "name": "Skit 4: The Showdown in the Living Room",
-      "beats": [
+        },
         {
           "after": 0.1,
-          "type": "char_move",
-          "actor": "grandpa",
-          "via": [
-            "dining_table_side",
-            "dining_center",
-            "doorway_dining",
-            "back_hall_left",
-            "back_hall"
-          ],
-          "to": "back_room_east",
-          "anim": "walk",
-          "speed": 1.7
+          "type": "player_gesture",
+          "gesture": "shake_panic",
+          "duration": 1.8,
+          "await": true
         },
         {
           "after": 0.1,
@@ -1664,433 +1985,143 @@ export const THE_GREAT_ESCAPE_5M = {
             "upstairs_landing",
             "stairs_top",
             "stairs_middle",
-            "stairs_bottom",
-            "dining_corner",
-            "dining_table_side",
-            "dining_center",
-            "doorway_dining",
-            "back_hall_left"
+            "stairs_bottom"
           ],
-          "to": "back_hall",
-          "anim": "walk",
-          "speed": 2
+          "to": "front_door_view",
+          "anim": "run",
+          "speed": 1.65
+        },
+        {
+          "after": 0.1,
+          "type": "char_move",
+          "actor": "grandpa",
+          "via": [
+            "upstairs_east_hall",
+            "upstairs_hall_center",
+            "upstairs_landing",
+            "stairs_top",
+            "stairs_middle"
+          ],
+          "to": "stairs_bottom",
+          "anim": "run2",
+          "speed": 1.55
         },
         {
           "after": 0,
           "type": "player_walk",
-          "via": [
-            "dining_corner",
-            "dining_table_side",
-            "dining_center",
-            "doorway_dining",
-            "back_hall_left",
-            "back_hall",
-            "back_room_east",
-            "doorway_living"
-          ],
-          "to": "living_room_entry",
-          "speed": 1.5,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "living_room_sofa",
-          "duration": 3.2,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_walk",
-          "to": "living_room_view",
+          "to": "front_door_left",
           "speed": 1.25,
           "await": true
         },
         {
           "after": 0.1,
+          "type": "player_look",
+          "target": "stairs_bottom",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "shake_panic",
+          "duration": 1.8,
+          "await": true
+        },
+        {
+          "after": 0.1,
           "type": "player_walk",
-          "target": "living_room_sofa",
-          "standoff": 0.8,
+          "to": "front_door_right",
+          "speed": 1.25,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "stairs_bottom",
+          "duration": 0.45,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "shake_panic",
+          "duration": 1.8,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_walk",
+          "to": "foyer_atrium",
+          "speed": 1.25,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_look",
+          "target": "granny",
+          "duration": 0.45,
+          "track": true,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_gesture",
+          "gesture": "shake_panic",
+          "duration": 1.8,
+          "await": true
+        },
+        {
+          "after": 0.1,
+          "type": "player_walk",
+          "to": "foyer",
           "speed": 1.15,
           "await": true
         },
         {
           "after": 0.1,
           "type": "player_look",
-          "target": "treasure_chest",
-          "duration": 3.2,
+          "target": "stairs_bottom",
+          "duration": 0.45,
           "await": true
         },
         {
           "after": 0.1,
-          "type": "player_walk",
-          "target": "treasure_chest",
-          "standoff": 0.8,
-          "speed": 1.2,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "doorway_living",
-          "duration": 2.6,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "treasure_chest",
-          "duration": 2.2,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_hold",
-          "prop": "golden_key",
-          "use": true,
-          "duration": 0.9,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "click",
-          "volume": 0.72
-        },
-        {
-          "after": 0.1,
-          "type": "prop_action",
-          "prop": "treasure_chest",
-          "action": "open"
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "tada",
-          "volume": 0.78
-        },
-        {
-          "after": 0.2,
-          "type": "prop_action",
-          "prop": "red_button",
-          "action": "pop_out",
-          "waypoint": "chest_spot",
-          "yOffset": 0.42
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "red_button",
-          "duration": 2.8,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_gesture",
-          "gesture": "nod_yes",
-          "duration": 1.4,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_hold",
-          "prop": null
-        },
-        {
-          "after": 0.1,
-          "type": "prop_action",
-          "prop": "red_button",
-          "action": "press"
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "ding",
-          "volume": 0.8
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "glitch",
-          "volume": 0.85,
-          "cutBgm": true,
-          "cutBgmDuration": 1
-        },
-        {
-          "after": 0,
-          "type": "player_gesture",
-          "gesture": "shake_earthquake",
-          "duration": 2.4
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "explode",
-          "volume": 0.82
-        },
-        {
-          "after": 0,
-          "type": "char_move",
-          "actor": "grandpa",
-          "to": "doorway_living",
-          "anim": "run2",
-          "speed": 2.6
-        },
-        {
-          "after": 0.1,
-          "type": "char_move",
-          "actor": "granny",
-          "via": [
-            "back_room_east",
-            "doorway_living"
-          ],
-          "to": "living_room_left",
-          "anim": "run2",
-          "speed": 2.8,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "granny",
-          "duration": 2.8,
-          "await": true
-        },
-        {
-          "after": 0,
-          "type": "char_bubble",
-          "actor": "granny",
-          "icon": "angry",
-          "duration": 2.2
-        },
-        {
-          "after": 0.1,
-          "type": "char_bubble",
-          "actor": "grandpa",
-          "icon": "angry",
-          "duration": 2.2
-        },
-        {
-          "after": 0,
-          "type": "player_look",
-          "target": "grandpa",
-          "duration": 2.8,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "vine_boom",
-          "volume": 0.88
-        },
-        {
-          "after": 0,
           "type": "player_gesture",
           "gesture": "shake_panic",
-          "duration": 1.4
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "living_room_sofa",
-          "duration": 2.6,
-          "await": true
-        }
-      ]
-    },
-    {
-      "name": "Skit 5: The Floor is Lava Finale",
-      "beats": [
-        {
-          "after": 0,
-          "type": "bgm",
-          "sound": "run_amok",
-          "volume": 0.28
-        },
-        {
-          "after": 0.1,
-          "type": "prop_action",
-          "prop": "lava",
-          "action": "rise_to",
-          "targetY": 0.16,
-          "duration": 6
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "explode_meme",
-          "volume": 0.8
-        },
-        {
-          "after": 0,
-          "type": "char_bubble",
-          "actor": "granny",
-          "icon": "exclamation",
-          "duration": 2.2
-        },
-        {
-          "after": 0.1,
-          "type": "char_bubble",
-          "actor": "grandpa",
-          "icon": "exclamation",
-          "duration": 2.2
-        },
-        {
-          "after": 0,
-          "type": "char_move",
-          "actor": "grandpa",
-          "via": [
-            "living_room_entry",
-            "living_room_right"
-          ],
-          "to": "living_room_sofa",
-          "anim": "run2",
-          "endAnim": "panic"
-        },
-        {
-          "after": 0.1,
-          "type": "char_move",
-          "actor": "granny",
-          "via": [
-            "living_room_entry"
-          ],
-          "to": "living_room_right",
-          "anim": "run2",
-          "endAnim": "panic"
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "grandpa",
-          "duration": 3.2,
-          "track": true,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "granny",
-          "duration": 3.2,
-          "track": true,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "aww",
-          "volume": 0.72
-        },
-        {
-          "after": 0,
-          "type": "player_walk",
-          "via": [
-            "living_room_view",
-            "living_room_entry",
-            "doorway_living",
-            "back_room_east",
-            "back_hall",
-            "back_hall_left",
-            "doorway_dining"
-          ],
-          "to": "dining_center",
-          "speed": 2.7,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_walk",
-          "target": "dining_table",
-          "standoff": 0.8,
-          "speed": 2.4,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "dining_table",
-          "duration": 2.4,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_walk",
-          "to": "dining_table_top",
-          "speed": 2.1,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "prop_action",
-          "prop": "lava",
-          "action": "rise_to",
-          "targetY": 0.92,
-          "duration": 6.5
-        },
-        {
-          "after": 0,
-          "type": "player_look",
-          "target": "stairs_bottom",
-          "duration": 3.2,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "sfx",
-          "sound": "glitch",
-          "volume": 0.72
-        },
-        {
-          "after": 0,
-          "type": "player_gesture",
-          "gesture": "shake_no",
           "duration": 1.8,
           "await": true
         },
         {
           "after": 0.1,
-          "type": "player_look",
-          "target": "kitchen_table",
-          "duration": 3.2,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_look",
-          "target": "dining_center",
-          "duration": 2.8,
+          "type": "player_walk",
+          "to": "front_door_view",
+          "speed": 1.25,
           "await": true
         },
         {
           "after": 0.1,
           "type": "player_look",
           "target": "front_door",
-          "duration": 3.2,
+          "duration": 0.45,
           "await": true
         },
         {
           "after": 0.1,
-          "type": "sfx",
-          "sound": "swoosh",
-          "volume": 0.75
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.8,
+          "await": true
         },
         {
-          "after": 0,
+          "after": 0.1,
           "type": "player_walk",
           "via": [
-            "dining_table_top_west",
-            "dining_table_side",
-            "dining_corner"
+            "foyer_atrium",
+            "front_door_view"
           ],
-          "to": "stairs_bottom",
-          "speed": 2.9,
-          "await": true
-        },
-        {
-          "after": 0.1,
-          "type": "player_walk",
           "target": "front_door",
           "standoff": 0.8,
-          "speed": 2.5,
+          "speed": 3.5,
           "await": true
         },
         {
@@ -2111,7 +2142,7 @@ export const THE_GREAT_ESCAPE_5M = {
           "after": 0.1,
           "type": "sfx",
           "sound": "tada",
-          "volume": 0.85
+          "volume": 0.88
         },
         {
           "after": 0,
@@ -2124,14 +2155,14 @@ export const THE_GREAT_ESCAPE_5M = {
           "after": 0.1,
           "type": "player_look",
           "target": "front_door",
-          "duration": 2.4,
+          "duration": 0.45,
           "await": true
         },
         {
           "after": 0.1,
           "type": "fade",
           "to": 1,
-          "duration": 1.8,
+          "duration": 2.5,
           "await": true
         }
       ]

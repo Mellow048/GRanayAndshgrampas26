@@ -108,12 +108,17 @@ export class PlayerCamera {
     this.isWalking = false;
     this.bobPhase = 0;
     this.bobAmount = 0;
+    this.turnRoll = 0;
+    this.prevYaw = 0;
+    this.idleBreathPhase = 0;
 
     // Gestures (nod_yes, shake_no, shake_panic, shake_earthquake, peek_lean)
     this.activeGesture = null;
     this.shakeIntensity = 0;
     this.shakePhase = 0;
     this.quakeTimer = 0;
+    this.panicTimer = 0;
+    this._panicResolve = null;
 
     // Fade-to-black state
     this.fadeAlpha = 0;
@@ -189,14 +194,21 @@ export class PlayerCamera {
       this._fadeResolve = null;
     }
     if (this.activeGesture?._resolve) this.activeGesture._resolve();
+    if (this._panicResolve) {
+      this._panicResolve();
+      this._panicResolve = null;
+    }
 
     this.activeWalk = null;
     this.isWalking = false;
     this.bobPhase = 0;
     this.bobAmount = 0;
+    this.turnRoll = 0;
+    this.idleBreathPhase = 0;
     this.activeGesture = null;
     this.shakeIntensity = 0;
     this.quakeTimer = 0;
+    this.panicTimer = 0;
     this.trackingRef = null;
 
     this.baseEyeHeight = PLAYER_EYE_HEIGHT;
@@ -225,6 +237,7 @@ export class PlayerCamera {
       this.yaw = 0;
       this.pitch = -0.04;
     }
+    this.prevYaw = this.yaw;
     this.lookStartYaw = this.yaw;
     this.lookTargetYaw = this.yaw;
     this.lookStartPitch = this.pitch;
@@ -299,13 +312,16 @@ export class PlayerCamera {
 
       let clearSight = true;
       if (this.house && typeof this.house.hasClearSight === "function") {
-        const eyeTest = new THREE.Vector3(cx, floorY + this.baseEyeHeight, cz);
+        const sightY = standoff <= 0.25 && this.baseEyeHeight < 1.0
+          ? floorY + Math.max(0.42, this.baseEyeHeight)
+          : floorY + this.baseEyeHeight;
+        const eyeTest = new THREE.Vector3(cx, sightY, cz);
         // Aim sightline test just outside the mesh's own edge so combined room meshes
         // (e.g. Furniture3/4/5) do not self-occlude rays aimed inside their own volume.
         const nearDist = edgeDist + Math.min(0.18, standoff * 0.25);
         const lookTest = new THREE.Vector3(
           center.x + dir.x * nearDist,
-          Math.max(floorY + 0.55, Math.min(box.max.y + 0.05, floorY + this.baseEyeHeight)),
+          Math.max(floorY + 0.42, Math.min(box.max.y + 0.05, sightY)),
           center.z + dir.z * nearDist
         );
         clearSight = this.house.hasClearSight(cx, cz, lookTest.x, lookTest.z, eyeTest.y);
@@ -527,6 +543,7 @@ export class PlayerCamera {
       totalLength,
       elapsed: 0,
       duration: effectiveDuration,
+      walkSpeed,
       maxVerticalSpeed,
       autoLook,
       faceTarget: resolvedFaceTarget,
@@ -588,8 +605,16 @@ export class PlayerCamera {
 
   triggerGesture(type = "nod_yes", duration = 0.7) {
     if (type === "shake_panic") {
-      this.shakeIntensity = Math.max(this.shakeIntensity, 0.4);
-      return Promise.resolve();
+      if (this._panicResolve) {
+        this._panicResolve();
+        this._panicResolve = null;
+      }
+      const dur = Math.max(0.25, duration);
+      this.panicTimer = Math.max(this.panicTimer, dur);
+      this.shakeIntensity = Math.max(this.shakeIntensity, 0.42);
+      return new Promise((resolve) => {
+        this._panicResolve = resolve;
+      });
     }
     if (type === "shake_earthquake") {
       this.quakeTimer = Math.max(this.quakeTimer, Math.max(0.5, duration));
@@ -773,7 +798,9 @@ export class PlayerCamera {
         }
       }
 
-      this.bobPhase += dt * 11.2;
+      const curWalkSpeed = this.activeWalk.walkSpeed || BASE_WALK_SPEED;
+      const bobRate = clamp(curWalkSpeed * 4.2, 5.4, 13.8);
+      this.bobPhase += dt * bobRate;
       this.bobAmount += (1 - this.bobAmount) * Math.min(1, dt * 10);
 
       if (rawT >= 1) {
@@ -846,13 +873,35 @@ export class PlayerCamera {
       }
     }
 
-    // Subtle footsteps head-bob + damped handheld shake
-    const bobY = Math.sin(this.bobPhase) * 0.028 * this.bobAmount;
-    const bobX = Math.cos(this.bobPhase * 0.5) * 0.014 * this.bobAmount;
+    // Speed-scaled footsteps head-bob + organic idle breathing + turn roll + handheld shake
+    this.idleBreathPhase += dt;
+    const speedAmp = this.activeWalk
+      ? clamp((this.activeWalk.walkSpeed || BASE_WALK_SPEED) / BASE_WALK_SPEED, 0.45, 1.35)
+      : 1.0;
+    const crouchAmp = this.baseEyeHeight < 1.0 ? 0.55 : 1.0;
+    const bobScale = this.bobAmount * speedAmp * crouchAmp;
+    const idleBreathY = Math.sin(this.idleBreathPhase * 1.9) * 0.008 * (1 - this.bobAmount * 0.7);
+    const idleBreathPitch = Math.sin(this.idleBreathPhase * 1.35) * 0.004 * (1 - this.bobAmount * 0.7);
+    const bobY = Math.sin(this.bobPhase) * 0.026 * bobScale + idleBreathY;
+    const bobX = Math.cos(this.bobPhase * 0.5) * 0.013 * bobScale;
+
+    const yawDelta = dt > 1e-4 ? wrapAngleDiff(this.yaw, this.prevYaw) / dt : 0;
+    this.prevYaw = this.yaw;
+    const targetTurnRoll = this.isWalking ? clamp(-yawDelta * 0.014, -0.032, 0.032) : 0;
+    this.turnRoll += (targetTurnRoll - this.turnRoll) * Math.min(1, dt * 8.0);
 
     let shakeX = 0;
     let shakeY = 0;
     let shakeRoll = 0;
+    if (this.panicTimer > 0) {
+      this.panicTimer = Math.max(0, this.panicTimer - dt);
+      this.shakeIntensity = Math.max(this.shakeIntensity, 0.42);
+      if (this.panicTimer <= 0 && this._panicResolve) {
+        const res = this._panicResolve;
+        this._panicResolve = null;
+        res();
+      }
+    }
     if (this.quakeTimer > 0) {
       this.quakeTimer = Math.max(0, this.quakeTimer - dt);
       this.shakeIntensity = Math.max(this.shakeIntensity, 0.72);
@@ -862,7 +911,7 @@ export class PlayerCamera {
       shakeX = Math.sin(this.shakePhase * 1.1) * this.shakeIntensity * 0.028;
       shakeY = Math.cos(this.shakePhase * 1.45) * this.shakeIntensity * 0.028;
       shakeRoll = Math.sin(this.shakePhase * 0.9) * this.shakeIntensity * 0.022;
-      if (this.quakeTimer <= 0) {
+      if (this.quakeTimer <= 0 && this.panicTimer <= 0) {
         this.shakeIntensity *= Math.exp(-7.5 * dt);
       }
     } else {
@@ -870,7 +919,7 @@ export class PlayerCamera {
     }
 
     const finalYaw = this.yaw + gestureYaw;
-    const finalPitch = clamp(this.pitch + gesturePitch, MIN_CAMERA_PITCH, MAX_CAMERA_PITCH);
+    const finalPitch = clamp(this.pitch + gesturePitch + idleBreathPitch, MIN_CAMERA_PITCH, MAX_CAMERA_PITCH);
     const rightX = Math.cos(finalYaw);
     const rightZ = -Math.sin(finalYaw);
 
@@ -893,7 +942,7 @@ export class PlayerCamera {
       this.camera.position.copy(this._tmpFinalPos);
     }
 
-    this.camera.rotation.set(finalPitch, finalYaw, gestureRoll + shakeRoll, "YXZ");
+    this.camera.rotation.set(finalPitch, finalYaw, gestureRoll + shakeRoll + this.turnRoll, "YXZ");
 
     // Animate bottom-right FPS held prop (deterministic viewmodel pass)
     if (this.heldPropMesh) {
