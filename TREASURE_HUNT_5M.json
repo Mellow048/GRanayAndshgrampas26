@@ -1,0 +1,966 @@
+{
+  "title": "TREASURE_HUNT_5M",
+  "aspect": "16:9",
+  "playerSpawn": "upstairs_landing",
+  "playerFacing": "up_hall_north_door",
+  "cast": [
+    {
+      "id": "granny",
+      "asset": "granny",
+      "spawn": "kitchen_lane",
+      "facing": "dining_center"
+    },
+    {
+      "id": "grandpa",
+      "asset": "grandpa",
+      "spawn": "living_room_sofa",
+      "facing": "chest_spot"
+    }
+  ],
+  "props": [
+    {
+      "id": "package",
+      "type": "delivery_box",
+      "spawn": "up_bed_top",
+      "yOffset": 0,
+      "float": false,
+      "visible": true
+    },
+    {
+      "id": "golden_key",
+      "type": "golden_key",
+      "spawn": "key_spot",
+      "yOffset": 0.03,
+      "float": false,
+      "visible": true
+    },
+    {
+      "id": "chest",
+      "type": "treasure_chest",
+      "spawn": "chest_spot",
+      "yOffset": 0,
+      "float": false,
+      "visible": true
+    },
+    {
+      "id": "padlock",
+      "type": "padlock",
+      "spawn": "chest_padlock",
+      "yOffset": 0.32,
+      "float": false,
+      "visible": true
+    },
+    {
+      "id": "emoji_ball",
+      "type": "emoji_ball",
+      "spawn": "chest_spot",
+      "yOffset": 0.3,
+      "float": false,
+      "visible": false
+    },
+    {
+      "id": "jar",
+      "type": "cookie_jar",
+      "spawn": "chest_spot",
+      "yOffset": 0.78,
+      "float": false,
+      "visible": true
+    }
+  ],
+  "skits": [
+    {
+      "name": "I · The Upstairs Clue",
+      "startAt": 0,
+      "beats": [
+        {
+          "after": 0,
+          "type": "bgm",
+          "sound": "fluffing_a_duck",
+          "volume": 0.24
+        },
+        {
+          "after": 0,
+          "type": "player_look",
+          "target": "up_hall_north_door",
+          "duration": 1
+        },
+        {
+          "after": 0,
+          "type": "char_anim",
+          "actor": "grandpa",
+          "anim": "sit",
+          "loop": true
+        },
+        {
+          "after": 4,
+          "type": "player_walk",
+          "target": "upstairs_desk",
+          "standoff": 0.8,
+          "via": [
+            "up_hall_north_door",
+            "up_hall_north"
+          ],
+          "duration": 6
+        },
+        {
+          "after": 4,
+          "type": "sfx",
+          "sound": "squidward_walk",
+          "volume": 0.32
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "upstairs_desk",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.1
+        },
+        {
+          "after": 4,
+          "type": "sfx",
+          "sound": "click"
+        },
+        {
+          "after": 4,
+          "type": "player_gesture",
+          "gesture": "shake_no",
+          "duration": 1.1
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "up_bed",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "player_walk",
+          "target": "up_bed",
+          "standoff": 0.75,
+          "duration": 3
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "package",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.1
+        },
+        {
+          "after": 4,
+          "type": "prop_action",
+          "prop": "package",
+          "action": "open"
+        },
+        {
+          "after": 0,
+          "type": "sfx",
+          "sound": "pop"
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "package",
+          "duration": 1.6
+        },
+        {
+          "after": 4,
+          "type": "player_gesture",
+          "gesture": "nod_yes",
+          "duration": 1.1
+        },
+        {
+          "after": 0,
+          "type": "sfx",
+          "sound": "checkmark"
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "up_hall_north_door",
+          "duration": 1
+        }
+      ]
+    },
+    {
+      "name": "II · The Kitchen Key",
+      "startAt": 56,
+      "beats": [
+        {
+          "after": 4,
+          "type": "player_walk",
+          "target": "kitchen_table",
+          "standoff": 0.85,
+          "via": [
+            "up_hall_north_door",
+            "upstairs_landing",
+            "stairs_bottom",
+            "dining_corner",
+            "kitchen_lane"
+          ],
+          "duration": 12
+        },
+        {
+          "after": 4,
+          "type": "sfx",
+          "sound": "squidward_walk",
+          "volume": 0.3
+        },
+        {
+          "after": 0,
+          "type": "char_move",
+          "actor": "granny",
+          "to": "dining_center",
+          "anim": "granny_walk",
+          "duration": 6
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "dining_center",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "granny",
+          "duration": 1
+        },
+        {
+          "after": 0,
+          "type": "player_crouch",
+          "crouched": true,
+          "duration": 0.45
+        },
+        {
+          "after": 1,
+          "type": "char_move",
+          "actor": "granny",
+          "to": "dining_corner",
+          "anim": "granny_walk",
+          "duration": 5
+        },
+        {
+          "after": 3,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.1
+        },
+        {
+          "after": 4,
+          "type": "sfx",
+          "sound": "click",
+          "volume": 0.3
+        },
+        {
+          "after": 0,
+          "type": "char_anim",
+          "actor": "granny",
+          "anim": "look",
+          "loop": false
+        },
+        {
+          "after": 1,
+          "type": "char_bubble",
+          "actor": "granny",
+          "icon": "question",
+          "duration": 2.4
+        },
+        {
+          "after": 3,
+          "type": "player_look",
+          "target": "golden_key",
+          "duration": 1
+        },
+        {
+          "after": 1,
+          "type": "char_move",
+          "actor": "granny",
+          "to": "dining_center",
+          "anim": "granny_walk",
+          "duration": 5
+        },
+        {
+          "after": 3,
+          "type": "player_look",
+          "target": "granny",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.1
+        },
+        {
+          "after": 1,
+          "type": "char_move",
+          "actor": "granny",
+          "to": "kitchen",
+          "anim": "granny_walk",
+          "via": [
+            "kitchen_lane"
+          ],
+          "duration": 5
+        },
+        {
+          "after": 3,
+          "type": "player_look",
+          "target": "kitchen_lane",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "golden_key",
+          "duration": 1
+        },
+        {
+          "after": 0,
+          "type": "player_crouch",
+          "crouched": false,
+          "duration": 0.4
+        },
+        {
+          "after": 4,
+          "type": "player_gesture",
+          "gesture": "nod_yes",
+          "duration": 1.1
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "golden_key",
+          "duration": 0.5
+        },
+        {
+          "after": 0,
+          "type": "prop_action",
+          "prop": "golden_key",
+          "action": "pickup"
+        },
+        {
+          "after": 0,
+          "type": "player_hold",
+          "prop": "golden_key"
+        },
+        {
+          "after": 0,
+          "type": "sfx",
+          "sound": "kaching"
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "doorway_dining",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "player_walk",
+          "target": "doorway_dining",
+          "standoff": 0.45,
+          "via": [
+            "dining_center"
+          ],
+          "speed": 1.65
+        }
+      ]
+    },
+    {
+      "name": "III · The Sleeping Dragon",
+      "startAt": 116,
+      "beats": [
+        {
+          "after": 4,
+          "type": "player_walk",
+          "target": "chest_spot",
+          "standoff": 0.8,
+          "via": [
+            "back_hall",
+            "back_room_east",
+            "doorway_living",
+            "living_room_entry"
+          ],
+          "speed": 1.65
+        },
+        {
+          "after": 4,
+          "type": "sfx",
+          "sound": "squidward_walk",
+          "volume": 0.22
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "living_room_sofa",
+          "duration": 1
+        },
+        {
+          "after": 0,
+          "type": "char_bubble",
+          "actor": "grandpa",
+          "icon": "zzz",
+          "duration": 4
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "grandpa",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.1
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "padlock",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "sfx",
+          "sound": "click"
+        },
+        {
+          "after": 0,
+          "type": "player_hold",
+          "prop": "golden_key",
+          "use": true
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "grandpa",
+          "duration": 1
+        },
+        {
+          "after": 0,
+          "type": "char_bubble",
+          "actor": "grandpa",
+          "icon": "zzz",
+          "duration": 3
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "padlock",
+          "duration": 1
+        },
+        {
+          "after": 0,
+          "type": "player_hold",
+          "prop": "golden_key",
+          "use": true
+        },
+        {
+          "after": 0,
+          "type": "prop_action",
+          "prop": "padlock",
+          "action": "hide"
+        },
+        {
+          "after": 0,
+          "type": "sfx",
+          "sound": "checkmark"
+        },
+        {
+          "after": 1,
+          "type": "player_hold",
+          "prop": null
+        },
+        {
+          "after": 3,
+          "type": "player_look",
+          "target": "chest",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.1
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "jar",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "chest",
+          "duration": 1
+        },
+        {
+          "after": 0,
+          "type": "prop_action",
+          "prop": "chest",
+          "action": "open"
+        },
+        {
+          "after": 0,
+          "type": "sfx",
+          "sound": "pop"
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "emoji_ball",
+          "duration": 1
+        },
+        {
+          "after": 0,
+          "type": "prop_action",
+          "prop": "emoji_ball",
+          "action": "pop_out",
+          "waypoint": "chest_spot",
+          "yOffset": 0.62
+        },
+        {
+          "after": 1.3,
+          "type": "prop_action",
+          "prop": "emoji_ball",
+          "action": "pickup"
+        },
+        {
+          "after": 0.0,
+          "type": "player_hold",
+          "prop": "emoji_ball"
+        },
+        {
+          "after": 0.0,
+          "type": "sfx",
+          "sound": "tada"
+        },
+        {
+          "after": 2.7,
+          "type": "player_look",
+          "target": "jar",
+          "duration": 1
+        },
+        {
+          "after": 1,
+          "type": "prop_action",
+          "prop": "jar",
+          "action": "pop_out",
+          "waypoint": "chest_spot",
+          "to": "living_room_ball_bounce",
+          "travelDuration": 3,
+          "yOffset": 0.78
+        }
+      ]
+    },
+    {
+      "name": "IV · The Alarm",
+      "startAt": 177,
+      "beats": [
+        {
+          "after": 3,
+          "type": "sfx",
+          "sound": "explode_meme",
+          "cutBgm": true,
+          "cutBgmDuration": 1
+        },
+        {
+          "after": 0,
+          "type": "char_face",
+          "actor": "grandpa",
+          "target": "player",
+          "instant": true
+        },
+        {
+          "after": 0,
+          "type": "char_anim",
+          "actor": "grandpa",
+          "anim": "idle",
+          "loop": true
+        },
+        {
+          "after": 0,
+          "type": "char_bubble",
+          "actor": "grandpa",
+          "icon": "angry",
+          "duration": 2.4
+        },
+        {
+          "after": 0,
+          "type": "char_prop",
+          "actor": "grandpa",
+          "prop": "shotgun"
+        },
+        {
+          "after": 0,
+          "type": "player_look",
+          "target": "grandpa",
+          "duration": 0.25
+        },
+        {
+          "after": 1,
+          "type": "bgm",
+          "sound": "granny_chase",
+          "volume": 0.26
+        },
+        {
+          "after": 3,
+          "type": "player_gesture",
+          "gesture": "shake_panic",
+          "duration": 1.1
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "doorway_living",
+          "duration": 0.3
+        },
+        {
+          "after": 4,
+          "type": "player_walk",
+          "target": "doorway_living",
+          "standoff": 0.4,
+          "speed": 3.8,
+          "via": [
+            "living_room_entry"
+          ]
+        },
+        {
+          "after": 1,
+          "type": "char_move",
+          "actor": "grandpa",
+          "to": "living_room_entry",
+          "anim": "run2",
+          "duration": 2
+        },
+        {
+          "after": 3,
+          "type": "sfx",
+          "sound": "whoosh"
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "grandpa",
+          "duration": 1
+        },
+        {
+          "after": 1,
+          "type": "char_move",
+          "actor": "grandpa",
+          "to": "doorway_living",
+          "anim": "run2",
+          "duration": 2
+        },
+        {
+          "after": 3,
+          "type": "player_walk",
+          "target": "back_hall_right",
+          "standoff": 0.5,
+          "via": [
+            "back_room_east"
+          ],
+          "speed": 3.8
+        },
+        {
+          "after": 4,
+          "type": "sfx",
+          "sound": "swoosh"
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "back_room_east",
+          "duration": 1
+        },
+        {
+          "after": 0,
+          "type": "char_move",
+          "actor": "grandpa",
+          "to": "back_room_east",
+          "anim": "run2",
+          "duration": 2
+        },
+        {
+          "after": 4,
+          "type": "player_gesture",
+          "gesture": "peek_lean",
+          "duration": 1.1
+        },
+        {
+          "after": 0,
+          "type": "char_bubble",
+          "actor": "grandpa",
+          "icon": "question",
+          "duration": 2.4
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "doorway_dining",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "player_walk",
+          "target": "doorway_dining",
+          "standoff": 0.5,
+          "via": [
+            "back_hall"
+          ],
+          "speed": 3.8
+        },
+        {
+          "after": 1,
+          "type": "char_move",
+          "actor": "grandpa",
+          "to": "back_hall",
+          "anim": "run2",
+          "duration": 3
+        },
+        {
+          "after": 3,
+          "type": "player_look",
+          "target": "grandpa",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "player_gesture",
+          "gesture": "shake_panic",
+          "duration": 1.1
+        },
+        {
+          "after": 4,
+          "type": "player_walk",
+          "target": "dining_table",
+          "standoff": 0.85,
+          "via": [
+            "dining_center"
+          ],
+          "speed": 3.8
+        },
+        {
+          "after": 1,
+          "type": "char_move",
+          "actor": "grandpa",
+          "to": "doorway_dining",
+          "anim": "run2",
+          "duration": 2
+        }
+      ]
+    },
+    {
+      "name": "V · The Gauntlet Escape",
+      "startAt": 237,
+      "beats": [
+        {
+          "after": 3,
+          "type": "player_look",
+          "target": "kitchen_lane",
+          "duration": 1
+        },
+        {
+          "after": 0,
+          "type": "char_move",
+          "actor": "granny",
+          "to": "dining_table_front",
+          "anim": "run2",
+          "target": "dining_table",
+          "via": [
+            "kitchen_lane"
+          ],
+          "duration": 3
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "granny",
+          "duration": 1
+        },
+        {
+          "after": 0,
+          "type": "char_bubble",
+          "actor": "granny",
+          "icon": "exclamation",
+          "duration": 2.4
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "grandpa",
+          "duration": 1
+        },
+        {
+          "after": 0,
+          "type": "char_move",
+          "actor": "grandpa",
+          "to": "dining_center",
+          "anim": "run2",
+          "duration": 2
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "granny",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "player_gesture",
+          "gesture": "shake_no",
+          "duration": 1.1
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "front_door",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "granny",
+          "duration": 0.35
+        },
+        {
+          "after": 4,
+          "type": "player_gesture",
+          "gesture": "nod_yes",
+          "duration": 1.1
+        },
+        {
+          "after": 4,
+          "type": "sfx",
+          "sound": "swoosh"
+        },
+        {
+          "after": 0,
+          "type": "player_hold",
+          "prop": null
+        },
+        {
+          "after": 0,
+          "type": "prop_action",
+          "prop": "emoji_ball",
+          "action": "show",
+          "waypoint": "hide_table",
+          "yOffset": 1.1
+        },
+        {
+          "after": 0,
+          "type": "prop_action",
+          "prop": "emoji_ball",
+          "action": "pop_out",
+          "waypoint": "hide_table",
+          "to": "dining_table_front",
+          "yOffset": 1.1,
+          "travelDuration": 0.9
+        },
+        {
+          "after": 0.9,
+          "type": "sfx",
+          "sound": "bonk"
+        },
+        {
+          "after": 0.0,
+          "type": "char_anim",
+          "actor": "granny",
+          "anim": "hit",
+          "loop": false
+        },
+        {
+          "after": 0.1,
+          "type": "char_bubble",
+          "actor": "granny",
+          "icon": "question",
+          "duration": 2.4
+        },
+        {
+          "after": 3,
+          "type": "player_look",
+          "target": "dining_corner",
+          "duration": 1
+        },
+        {
+          "after": 4,
+          "type": "player_walk",
+          "target": "front_door",
+          "standoff": 0.65,
+          "via": [
+            "dining_corner",
+            "stairs_bottom",
+            "front_door_view"
+          ],
+          "speed": 3.8
+        },
+        {
+          "after": 4,
+          "type": "sfx",
+          "sound": "whoosh"
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "grandpa",
+          "duration": 1
+        },
+        {
+          "after": 0,
+          "type": "char_move",
+          "actor": "grandpa",
+          "to": "dining_corner",
+          "anim": "run2",
+          "duration": 2
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "granny",
+          "duration": 1
+        },
+        {
+          "after": 0,
+          "type": "char_move",
+          "actor": "granny",
+          "to": "stairs_bottom",
+          "anim": "run2",
+          "via": [
+            "dining_corner"
+          ],
+          "duration": 3
+        },
+        {
+          "after": 4,
+          "type": "player_look",
+          "target": "granny",
+          "duration": 0.5
+        },
+        {
+          "after": 1,
+          "type": "fade",
+          "to": 1,
+          "duration": 3
+        },
+        {
+          "after": 0,
+          "type": "sfx",
+          "sound": "aww"
+        }
+      ]
+    }
+  ]
+}
