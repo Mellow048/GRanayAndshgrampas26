@@ -202,20 +202,20 @@ function buildIndoorNavigation(houseRoot, allHouseMeshes) {
   const toRow = (z) => Math.max(0, Math.min(rows - 1, Math.round((z - zMin) / step)));
 
   function isPointInsideWalkable(x, z) {
-    ray.set(tmpA.set(x, 2.2, z), down);
-    ray.far = 3.2;
+    // Raycast from above the second floor downward
+    ray.set(tmpA.set(x, 4.2, z), down);
+    ray.far = 5.2;
     const downHits = ray.intersectObjects(allHouseMeshes, false);
-    const floor = downHits.find((h) => Math.abs(h.point.y) < 0.08);
+    
+    // CRITICAL FIX: Allow both ground floor (0.0) and second floor (2.85)
+    const floor = downHits.find((h) => Math.abs(h.point.y) < 0.1 || Math.abs(h.point.y - 2.85) < 0.15);
     if (!floor) return false;
+    
     const blocker = downHits.find(
-      (h) => h.point.y >= 0.16 && h.point.y <= 1.72
+      (h) => (h.point.y >= 0.16 && h.point.y <= 1.72) || (h.point.y >= 3.0 && h.point.y <= 4.5)
     );
     if (blocker) return false;
-
-    ray.set(tmpA.set(x, 1.0, z), up);
-    ray.far = 2.6;
-    const upHits = ray.intersectObjects(allHouseMeshes, false);
-    return upHits.some((h) => h.point.y > 2.0 && h.point.y < 3.4);
+    return true;
   }
 
   function hasClearSight(ax, az, bx, bz, y = 0.95) {
@@ -630,23 +630,24 @@ export function instantiateCharacter(id, template, animationClips) {
    * Guarantees Shotgun and Cane can NEVER both be visible at the same time.
    */
   function toggleBuiltInProp(mode = "default") {
-    if (embeddedProps.spareGlasses) {
-      embeddedProps.spareGlasses.visible = false;
-    }
-    if (embeddedProps.redEyes) {
-      embeddedProps.redEyes.visible = false;
-    }
+    if (embeddedProps.spareGlasses) embeddedProps.spareGlasses.visible = false;
+    if (embeddedProps.redEyes) embeddedProps.redEyes.visible = false;
 
-    if (embeddedProps.cane.length > 0 || embeddedProps.shotgun.length > 0) {
-      const wantShotgun = mode === "shotgun";
-      const wantNone = mode === "none";
-      const showCane = !wantNone && !wantShotgun;
-      const showShotgun = !wantNone && wantShotgun;
+    const wantShotgun = mode === "shotgun";
+    const wantNone = mode === "none";
+    const showCane = !wantNone && !wantShotgun;
+    const showShotgun = !wantNone && wantShotgun;
 
-      for (const m of embeddedProps.shotgun) m.visible = showShotgun;
-      for (const m of embeddedProps.cane) m.visible = showCane;
+    // CRITICAL FIX: Aggressively hide all meshes attached to the hand bone first
+    if (handBone) {
+      handBone.children.forEach(c => {
+        if (c.isMesh || c.isSkinnedMesh) c.visible = false;
+      });
     }
 
+    for (const m of embeddedProps.shotgun) m.visible = showShotgun;
+    for (const m of embeddedProps.cane) m.visible = showCane;
+    
     if (embeddedProps.bat.length > 0) {
       const showBat = mode !== "none";
       for (const m of embeddedProps.bat) m.visible = showBat;
