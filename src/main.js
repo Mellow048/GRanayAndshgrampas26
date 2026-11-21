@@ -110,7 +110,7 @@ async function bootstrap() {
   renderer.domElement.className = "studio-canvas";
   stageContainer.appendChild(renderer.domElement);
 
-  const playerCamera = new PlayerCamera(renderer.domElement);
+  const playerCamera = new PlayerCamera(renderer.domElement, null, scene);
   scene.add(playerCamera.camera);
 
   // Dedicated fullscreen fade pass rendered after world + FPS viewmodel
@@ -204,6 +204,7 @@ async function bootstrap() {
       playerCamera,
       characters,
       renderer,
+      scene,
       onLoadEpisode: loadEpisode,
       onAspectChange: (key) => resizeRenderer(key),
     });
@@ -238,6 +239,7 @@ async function bootstrap() {
   }
 
   function renderFrame() {
+    ui?.updateTagHighlight?.(performance.now());
     camFill.position.copy(playerCamera.camera.position);
     camFill.position.y = Math.max(0.8, playerCamera.camera.position.y + 0.1);
 

@@ -568,6 +568,22 @@ export class ComedyPropManager {
     this.clear();
     for (const def of propDefs) {
       const mesh = createPropMesh(def.type);
+      const propTag = def.tag || def.id;
+      const propLabel = def.label || def.id;
+      mesh.name = `Prop_${def.id}`;
+      mesh.userData.tag = propTag;
+      mesh.userData.propId = def.id;
+      mesh.userData.semanticLabel = propLabel;
+      mesh.userData.aliases = [def.id, def.type].filter((v, i, arr) => v && arr.indexOf(v) === i);
+      mesh.traverse((child) => {
+        if (!child.name) {
+          child.name = `${def.id}_Part`;
+        }
+        child.userData.tag = propTag;
+        child.userData.propId = def.id;
+        child.userData.semanticLabel = propLabel;
+        child.userData.aliases = mesh.userData.aliases;
+      });
       const wp = this.waypoints[def.spawn];
       const basePos = wp
         ? new THREE.Vector3(wp.x, wp.y + (def.yOffset || 0), wp.z)

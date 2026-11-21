@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { CONFIG, SET_MAP, NAV_GRAPH } from "./config.js";
+import { findTaggedObject, getObjectBounds } from "./assetLoader.js";
 
 const LOCOMOTION_ANIMS = new Set(["walk", "run", "run2", "sneak", "granny_walk", "jump"]);
 const PLAYER_PERSONAL_SPACE = 1.3;
@@ -86,6 +87,7 @@ export class EpisodeRunner {
       getActor: (id) => this.characters[id] || null,
       getProp: (id) => this.comedyProps?.getProp(id) || null,
       getWaypoint: (id) => (typeof id === "string" ? SET_MAP[id] || null : id),
+      getScene: () => this.playerCamera?.scene || this.comedyProps?.scene || null,
     };
   }
 
@@ -113,6 +115,17 @@ export class EpisodeRunner {
           y: prop.mesh.position.y,
           z: prop.mesh.position.z,
         };
+      }
+      const scene = this.resolver.getScene();
+      if (scene) {
+        const obj = findTaggedObject(scene, target);
+        if (obj) {
+          const box = getObjectBounds(obj, new THREE.Box3());
+          if (!box.isEmpty()) {
+            const center = box.getCenter(new THREE.Vector3());
+            return { x: center.x, y: box.min.y, z: center.z };
+          }
+        }
       }
       console.warn(`[EpisodeRunner] Unknown target "${target}"`);
       return { x: 0, y: 0, z: 0 };
@@ -457,7 +470,27 @@ export class EpisodeRunner {
 
       let effDur = Math.max(0, ev.duration ?? 0);
       if (ev.type === "player_walk") {
-        const stops = [...(ev.via || []), ev.to];
+        let finalStop = ev.to;
+        if (ev.target && this.playerCamera) {
+          const viaTail = ev.via?.length
+            ? this.resolveWaypoint(ev.via[ev.via.length - 1])
+            : playerPos;
+          const approach = this.playerCamera.resolveApproachPoint(ev.target, {
+            standoff: ev.standoff ?? 0.8,
+            fromPos: viaTail,
+            resolver: this.resolver,
+          });
+          if (approach) {
+            finalStop = {
+              x: approach.standoffPos.x,
+              y: approach.standoffPos.y,
+              z: approach.standoffPos.z,
+            };
+          } else {
+            finalStop = finalStop || ev.target;
+          }
+        }
+        const stops = [...(ev.via || []), finalStop].filter(Boolean);
         const { points, segments } = this._buildFullStopChain(playerPos, stops);
         const timing = this._computeMoveTiming(
           points,
@@ -517,9 +550,9 @@ export class EpisodeRunner {
       typeof episodeJson === "string" ? JSON.parse(episodeJson) : episodeJson;
 
     this.episode = episode;
-    this.events = this.compileTimeline(episode);
-    this.duration = this._estimateEpisodeDuration(episode);
     this.reset();
+    this.duration = this._estimateEpisodeDuration(episode);
+    this.emitState();
     return {
       title: episode.title ?? "Untitled Episode",
       duration: this.duration,
@@ -878,7 +911,7 @@ export class EpisodeRunner {
     this.playerCamera?.update(dt, this.resolver);
     if (this.playerCamera && this.playerCamera.mode === "pov") {
       const pPos = this.playerCamera.playerPos;
-      if (!this.playerCamera.isWalking && !isElevatedSurfacePos(pPos) && !isOnStairs(pPos)) {
+      if (!isElevatedSurfacePos(pPos)) {
         const pushAlpha = Math.min(1, dt * 6);
         for (const actor of visibleActors) {
           if (movingActorSet.has(actor)) continue;
@@ -954,7 +987,31 @@ export class EpisodeRunner {
         y: this.playerCamera.playerPos.y,
         z: this.playerCamera.playerPos.z,
       };
-      const stops = [...(ev.via || []), ev.to];
+      let finalStop = ev.to;
+      let faceTarget = ev.faceTarget || null;
+      if (ev.target) {
+        const viaTail = ev.via?.length
+          ? this.resolveWaypoint(ev.via[ev.via.length - 1])
+          : from;
+        const approach = this.playerCamera.resolveApproachPoint(ev.target, {
+          standoff: ev.standoff ?? 0.8,
+          fromPos: viaTail,
+          resolver: this.resolver,
+        });
+        if (approach) {
+          finalStop = {
+            x: approach.standoffPos.x,
+            y: approach.standoffPos.y,
+            z: approach.standoffPos.z,
+          };
+          if (ev.faceTarget !== false) {
+            faceTarget = ev.target;
+          }
+        } else {
+          finalStop = finalStop || ev.target;
+        }
+      }
+      const stops = [...(ev.via || []), finalStop].filter(Boolean);
       const { points, segments } = this._buildFullStopChain(from, stops);
       return this.playerCamera.startWalk({
         points,
@@ -962,6 +1019,8 @@ export class EpisodeRunner {
         duration: ev.duration,
         speed: ev.speed,
         autoLook: ev.lookAhead !== false,
+        faceTarget,
+        resolver: this.resolver,
       });
     }
 

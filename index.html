@@ -223,7 +223,8 @@
         color: var(--muted);
         font-family: monospace;
       }
-      #coordReadout {
+      #coordReadout,
+      .spatial-readout {
         font-family: monospace;
         font-size: 11px;
         background: #020617;
@@ -231,6 +232,34 @@
         border-radius: 5px;
         border: 1px solid var(--border);
         word-break: break-all;
+        line-height: 1.45;
+      }
+      .spatial-memory-bar {
+        margin: 8px 10px 0 10px;
+        padding: 8px 10px;
+        background: var(--panel-alt);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .spatial-memory-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .spatial-memory-head h3 {
+        margin: 0;
+        font-size: 11px;
+        color: #38bdf8;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .spatial-actions {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 5px;
       }
       #episodeEditor {
         width: 100%;
@@ -361,6 +390,21 @@
             <button type="button" data-tab="waypoints">Waypoints</button>
             <button type="button" data-tab="json">JSON Skits</button>
           </div>
+
+          <section id="spatialMemoryPanel" class="spatial-memory-bar">
+            <div class="spatial-memory-head">
+              <h3>Spatial Memory</h3>
+              <span style="font-size: 10px; color: var(--muted);">Click any 3D object</span>
+            </div>
+            <div id="spatialMemoryReadout" class="spatial-readout">
+              Click a table, door, character, or prop on the 3D stage to inspect its Mesh Name, Tag, and World Coordinate.
+            </div>
+            <div class="spatial-actions">
+              <button type="button" id="copyTagBtn" title="Copy selected object tag">Copy Tag</button>
+              <button type="button" id="focusTagBtn" title="Smart Focus camera on tag">Focus</button>
+              <button type="button" id="walkTagBtn" title="Dynamic Proximity Walk (0.8m)">Walk 0.8m</button>
+            </div>
+          </section>
 
           <div class="panel-body">
             <!-- Director Tab -->

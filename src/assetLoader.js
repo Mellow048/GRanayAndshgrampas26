@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
-import { ASSET_MANIFEST, CONFIG } from "./config.js";
+import { ASSET_MANIFEST, CONFIG, SEMANTIC_MESH_TAGS, SEMANTIC_OBJECT_REGIONS } from "./config.js";
 import { createPropMesh, ThoughtBubbleCache } from "./comedyProps.js";
 
 const sharedBubbleCache = new ThoughtBubbleCache();
@@ -499,15 +499,258 @@ export async function loadHouse() {
     }
   });
 
+  const semanticRegistry = assignSemanticTagsToHouse(houseRoot, allHouseMeshes);
   const nav = buildIndoorNavigation(houseRoot, allHouseMeshes);
 
   return {
     root: houseRoot,
     floorMeshes,
     allHouseMeshes,
+    semanticRegistry,
     ...nav,
     dispose: () => disposeObject3D(houseRoot),
   };
+}
+
+export function toSemanticTag(rawName = "") {
+  return String(rawName)
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+/**
+ * Assigns semantic tags (`mesh.userData.tag`, `aliases`, `semanticLabel`) to every
+ * GrannyHouse.fbx mesh and attaches lightweight Spatial Memory anchor volumes for
+ * individual furniture pieces inside combined FBX meshes (e.g. `kitchen_table`, `dining_table`).
+ */
+export function assignSemanticTagsToHouse(houseRoot, allHouseMeshes = []) {
+  const taggedMeshes = [];
+
+  for (const mesh of allHouseMeshes) {
+    const rule = SEMANTIC_MESH_TAGS[mesh.name];
+    const tag = rule ? rule.tag : toSemanticTag(mesh.name || "house_mesh");
+    const aliases = rule?.aliases ? [...rule.aliases] : [];
+    const label = rule?.label || mesh.name || tag;
+
+    mesh.userData.tag = tag;
+    mesh.userData.aliases = aliases;
+    mesh.userData.semanticLabel = label;
+    mesh.userData.rawMeshName = mesh.name;
+    taggedMeshes.push({ meshName: mesh.name, tag, aliases, label });
+  }
+
+  let anchorGroup = houseRoot.getObjectByName("SemanticAnchors");
+  if (!anchorGroup) {
+    anchorGroup = new THREE.Group();
+    anchorGroup.name = "SemanticAnchors";
+    houseRoot.add(anchorGroup);
+  }
+
+  for (const [tag, region] of Object.entries(SEMANTIC_OBJECT_REGIONS)) {
+    const min = region.min;
+    const max = region.max;
+    const sx = Math.max(0.05, max[0] - min[0]);
+    const sy = Math.max(0.05, max[1] - min[1]);
+    const sz = Math.max(0.05, max[2] - min[2]);
+    const cx = (min[0] + max[0]) * 0.5;
+    const cy = (min[1] + max[1]) * 0.5;
+    const cz = (min[2] + max[2]) * 0.5;
+
+    const anchorMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(sx, sy, sz),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    anchorMesh.name = `Anchor_${tag}`;
+    anchorMesh.visible = false;
+    anchorMesh.position.set(cx, cy, cz);
+    anchorMesh.userData.tag = tag;
+    anchorMesh.userData.aliases = region.aliases ? [...region.aliases] : [];
+    anchorMesh.userData.semanticLabel = region.label || tag;
+    anchorMesh.userData.isSemanticAnchor = true;
+    anchorMesh.userData.parentMeshName = region.parentMesh || null;
+    anchorMesh.userData.regionMin = [...min];
+    anchorMesh.userData.regionMax = [...max];
+
+    anchorGroup.add(anchorMesh);
+    taggedMeshes.push({
+      meshName: region.parentMesh || anchorMesh.name,
+      tag,
+      aliases: anchorMesh.userData.aliases,
+      label: anchorMesh.userData.semanticLabel,
+      isAnchor: true,
+    });
+  }
+
+  houseRoot.updateMatrixWorld(true);
+  return taggedMeshes;
+}
+
+/**
+ * Finds the best Object3D in a Three.js scene matching a semantic tag, alias, or mesh name.
+ * Prefers SemanticAnchors, Actor_* roots, and Prop_* roots so bounding boxes wrap the whole entity.
+ */
+export function findTaggedObject(scene, tagOrName) {
+  if (!scene || !tagOrName) return null;
+  const query = String(tagOrName).trim();
+  if (!query) return null;
+  const queryLower = query.toLowerCase();
+
+  let bestMatch = null;
+  let bestScore = -1;
+
+  scene.traverse((node) => {
+    const ud = node.userData || {};
+    const tag = ud.tag ? String(ud.tag) : "";
+    const aliases = Array.isArray(ud.aliases) ? ud.aliases.map(String) : [];
+    const name = node.name ? String(node.name) : "";
+
+    let matchTypeScore = 0;
+    if (tag === query) matchTypeScore = 100;
+    else if (tag.toLowerCase() === queryLower) matchTypeScore = 95;
+    else if (aliases.includes(query) || aliases.some((a) => a.toLowerCase() === queryLower)) matchTypeScore = 85;
+    else if (name === query) matchTypeScore = 75;
+    else if (name.toLowerCase() === queryLower) matchTypeScore = 70;
+    else if (toSemanticTag(name) === queryLower) matchTypeScore = 60;
+
+    if (matchTypeScore === 0) return;
+
+    // Prefer root groups (Actor_*, Prop_*) and SemanticAnchors over individual child sub-meshes
+    let roleBonus = 0;
+    if (ud.isSemanticAnchor) roleBonus += 25;
+    if (name.startsWith("Actor_") || name.startsWith("Prop_")) roleBonus += 20;
+    if (!node.isMesh && (ud.actorId || ud.propId)) roleBonus += 15;
+    if (node.visible || ud.isSemanticAnchor) roleBonus += 5;
+
+    const totalScore = matchTypeScore + roleBonus;
+    if (totalScore > bestScore) {
+      bestScore = totalScore;
+      bestMatch = node;
+    }
+  });
+
+  return bestMatch;
+}
+
+/**
+ * Computes an accurate world-space THREE.Box3 for any tagged object, SemanticAnchor,
+ * prop group, or SkinnedMesh character.
+ */
+export function getObjectBounds(obj, outBox = new THREE.Box3()) {
+  outBox.makeEmpty();
+  if (!obj) return outBox;
+
+  obj.updateMatrixWorld(true);
+  const ud = obj.userData || {};
+
+  if (ud.isSemanticAnchor && Array.isArray(ud.regionMin) && Array.isArray(ud.regionMax)) {
+    outBox.min.set(ud.regionMin[0], ud.regionMin[1], ud.regionMin[2]);
+    outBox.max.set(ud.regionMax[0], ud.regionMax[1], ud.regionMax[2]);
+    return outBox;
+  }
+
+  // SkinnedMesh rigs compute dynamic pose bounds via Box3.setFromObject in Three r170,
+  // but if a character mesh hasn't updated its bone matrices yet or is empty, fall back
+  // safely to a standing torso/body volume anchored at world position.
+  outBox.setFromObject(obj);
+
+  if (ud.actorId) {
+    const wp = new THREE.Vector3();
+    obj.getWorldPosition(wp);
+    const size = new THREE.Vector3();
+    outBox.getSize(size);
+    if (outBox.isEmpty() || size.y < 0.4 || size.y > 4.0) {
+      outBox.min.set(wp.x - 0.34, wp.y, wp.z - 0.34);
+      outBox.max.set(wp.x + 0.34, wp.y + 1.65, wp.z + 0.34);
+    }
+  }
+
+  return outBox;
+}
+
+/**
+ * Resolves the most specific semantic tag + world bounds at a Raycaster hit point
+ * (e.g. clicking the dining table inside combined mesh Furniture3 resolves to `dining_table`).
+ */
+export function resolveSemanticTagAtPoint(hitObject, hitPoint) {
+  if (!hitObject) return null;
+
+  const meshName = hitObject.name || "";
+  if (hitPoint && meshName) {
+    let bestRegion = null;
+    let bestVolume = Infinity;
+
+    for (const [tag, region] of Object.entries(SEMANTIC_OBJECT_REGIONS)) {
+      if (region.parentMesh && region.parentMesh !== meshName) continue;
+      const [minX, minY, minZ] = region.min;
+      const [maxX, maxY, maxZ] = region.max;
+      const pad = 0.22;
+      if (
+        hitPoint.x >= minX - pad && hitPoint.x <= maxX + pad &&
+        hitPoint.y >= minY - pad && hitPoint.y <= maxY + pad &&
+        hitPoint.z >= minZ - pad && hitPoint.z <= maxZ + pad
+      ) {
+        const vol = (maxX - minX) * (maxY - minY) * (maxZ - minZ);
+        if (vol < bestVolume) {
+          bestVolume = vol;
+          bestRegion = { tag, region };
+        }
+      }
+    }
+
+    if (bestRegion) {
+      const box = new THREE.Box3(
+        new THREE.Vector3(...bestRegion.region.min),
+        new THREE.Vector3(...bestRegion.region.max)
+      );
+      return {
+        tag: bestRegion.tag,
+        label: bestRegion.region.label || bestRegion.tag,
+        meshName,
+        isSubRegion: true,
+        box,
+      };
+    }
+  }
+
+  let cursor = hitObject;
+  while (cursor) {
+    if (cursor.userData?.tag) {
+      return {
+        tag: cursor.userData.tag,
+        label: cursor.userData.semanticLabel || cursor.userData.tag,
+        meshName: meshName || cursor.name || "UnnamedMesh",
+        isSubRegion: false,
+        box: getObjectBounds(
+          cursor.userData.actorId || cursor.userData.propId
+            ? findTopTaggedAncestor(hitObject, cursor.userData.tag) || cursor
+            : hitObject
+        ),
+      };
+    }
+    cursor = cursor.parent;
+  }
+
+  return {
+    tag: toSemanticTag(meshName || "untagged_object"),
+    label: meshName || "Untagged Object",
+    meshName: meshName || "UnnamedMesh",
+    isSubRegion: false,
+    box: getObjectBounds(hitObject),
+  };
+}
+
+function findTopTaggedAncestor(node, tag) {
+  let top = node;
+  let cursor = node;
+  while (cursor) {
+    if (cursor.userData?.tag === tag) {
+      top = cursor;
+    }
+    cursor = cursor.parent;
+  }
+  return top;
 }
 
 /**
@@ -583,9 +826,17 @@ export async function loadCharacterTemplate(charKey) {
 export function instantiateCharacter(id, template, animationClips) {
   const root = new THREE.Group();
   root.name = `Actor_${id}`;
+  root.userData.tag = id;
+  root.userData.actorId = id;
+  root.userData.semanticLabel = template.spec?.name || id;
 
   const rigHolder = SkeletonUtils.clone(template.root);
   rigHolder.name = `${id}_RigHolder`;
+  rigHolder.traverse((node) => {
+    node.userData.tag = id;
+    node.userData.actorId = id;
+    node.userData.semanticLabel = template.spec?.name || id;
+  });
   root.add(rigHolder);
 
   const mixer = new THREE.AnimationMixer(rigHolder);

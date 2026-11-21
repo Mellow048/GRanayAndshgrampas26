@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CONFIG } from "./config.js";
 import { createPropMesh } from "./comedyProps.js";
+import { findTaggedObject, getObjectBounds } from "./assetLoader.js";
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
@@ -37,8 +38,9 @@ function wrapAngleDiff(target, current) {
  * viewmodel, fade-to-black overlay, and 16:9 / 9:16 aspect toggling.
  */
 export class PlayerCamera {
-  constructor(domElement, house = null) {
+  constructor(domElement, house = null, scene = null) {
     this.house = house;
+    this.scene = scene;
     this.aspectKey = CONFIG.defaultAspect || "16:9";
     const aspectSpec = CONFIG.aspectModes[this.aspectKey];
 
@@ -123,10 +125,17 @@ export class PlayerCamera {
     this._tmpTargetPos = new THREE.Vector3();
     this._tmpEyePos = new THREE.Vector3();
     this._tmpFinalPos = new THREE.Vector3();
+    this._tmpBox = new THREE.Box3();
+    this._tmpBoxCenter = new THREE.Vector3();
+    this._tmpBoxSize = new THREE.Vector3();
   }
 
   setHouse(house) {
     this.house = house;
+  }
+
+  setScene(scene) {
+    this.scene = scene;
   }
 
   setAspect(aspectKey) {
@@ -223,12 +232,143 @@ export class PlayerCamera {
     this.lookElapsed = 1;
   }
 
-  _resolveTargetPosition(ref, resolver, out) {
-    if (!ref || !resolver) return false;
+  _resolveTaggedObject(ref, resolver) {
+    const activeScene = this.scene || resolver?.getScene?.() || null;
+    if (!activeScene || typeof ref !== "string") return null;
+    return findTaggedObject(activeScene, ref);
+  }
+
+  /**
+   * Computes a world-space point `standoff` meters (default 0.8m) outside the
+   * bounding box edge of a tagged mesh/object, preferring a walkable spot with
+   * clear line-of-sight facing the object's center.
+   */
+  resolveApproachPoint(tagOrName, { standoff = 0.8, fromPos = null, resolver = null } = {}) {
+    const obj = this._resolveTaggedObject(tagOrName, resolver);
+    if (!obj) return null;
+
+    const box = getObjectBounds(obj, new THREE.Box3());
+    if (box.isEmpty()) return null;
+
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const hx = Math.max(0.12, size.x * 0.5);
+    const hz = Math.max(0.12, size.z * 0.5);
+
+    const origin = fromPos
+      ? new THREE.Vector3(fromPos.x, fromPos.y ?? 0, fromPos.z)
+      : this.playerPos.clone();
+
+    const floorY = center.y >= 2.1 && Math.abs(origin.y - 2.85) < 0.8 ? 2.85 : 0.0;
+    const rawDx = origin.x - center.x;
+    const rawDz = origin.z - center.z;
+    const rawLen = Math.hypot(rawDx, rawDz);
+    const primaryDir = rawLen > 1e-3
+      ? { x: rawDx / rawLen, z: rawDz / rawLen }
+      : { x: 0, z: 1 };
+
+    const candidateDirs = [
+      primaryDir,
+      { x: 1, z: 0 },
+      { x: -1, z: 0 },
+      { x: 0, z: 1 },
+      { x: 0, z: -1 },
+      { x: Math.SQRT1_2, z: Math.SQRT1_2 },
+      { x: -Math.SQRT1_2, z: Math.SQRT1_2 },
+      { x: Math.SQRT1_2, z: -Math.SQRT1_2 },
+      { x: -Math.SQRT1_2, z: -Math.SQRT1_2 },
+    ];
+
+    let bestCandidate = null;
+    let bestScore = Infinity;
+
+    for (let idx = 0; idx < candidateDirs.length; idx += 1) {
+      const dir = candidateDirs[idx];
+      const tx = Math.abs(dir.x) > 1e-4 ? hx / Math.abs(dir.x) : Infinity;
+      const tz = Math.abs(dir.z) > 1e-4 ? hz / Math.abs(dir.z) : Infinity;
+      const edgeDist = Math.min(tx, tz);
+      const cx = center.x + dir.x * (edgeDist + standoff);
+      const cz = center.z + dir.z * (edgeDist + standoff);
+
+      const candidate = new THREE.Vector3(cx, floorY, cz);
+      const walkable =
+        !this.house || typeof this.house.isPointInsideWalkable !== "function"
+          ? true
+          : this.house.isPointInsideWalkable(candidate);
+      if (!walkable) continue;
+
+      let clearSight = true;
+      if (this.house && typeof this.house.hasClearSight === "function") {
+        const eyeTest = new THREE.Vector3(cx, floorY + this.baseEyeHeight, cz);
+        const lookTest = new THREE.Vector3(center.x, Math.max(floorY + 0.35, center.y), center.z);
+        clearSight = this.house.hasClearSight(eyeTest, lookTest);
+      }
+
+      const travelDist = Math.hypot(cx - origin.x, cz - origin.z);
+      const sightPenalty = clearSight ? 0 : 12.0;
+      const primaryBonus = idx === 0 ? -0.35 : 0;
+      const score = travelDist + sightPenalty + primaryBonus;
+
+      if (score < bestScore) {
+        bestScore = score;
+        bestCandidate = candidate;
+      }
+    }
+
+    if (!bestCandidate) {
+      const tx = Math.abs(primaryDir.x) > 1e-4 ? hx / Math.abs(primaryDir.x) : Infinity;
+      const tz = Math.abs(primaryDir.z) > 1e-4 ? hz / Math.abs(primaryDir.z) : Infinity;
+      const edgeDist = Math.min(tx, tz);
+      bestCandidate = new THREE.Vector3(
+        center.x + primaryDir.x * (edgeDist + standoff),
+        floorY,
+        center.z + primaryDir.z * (edgeDist + standoff)
+      );
+    }
+
+    return {
+      object: obj,
+      box,
+      center,
+      standoffPos: bestCandidate,
+    };
+  }
+
+  _resolveTargetPosition(ref, resolver, out, { liveTrack = false } = {}) {
+    if (!ref) return false;
     if (typeof ref === "object" && "x" in ref && "z" in ref) {
       out.set(ref.x, ref.y ?? 1.35, ref.z);
       return true;
     }
+
+    const taggedObj = this._resolveTaggedObject(ref, resolver);
+    if (taggedObj) {
+      if (liveTrack && taggedObj.userData?.actorId) {
+        const actor = resolver?.getActor?.(taggedObj.userData.actorId);
+        if (actor) {
+          actor.getHeadWorldPosition(out);
+          out.y -= 0.08;
+          return true;
+        }
+        taggedObj.getWorldPosition(out);
+        out.y += 1.25;
+        return true;
+      }
+
+      const box = getObjectBounds(taggedObj, this._tmpBox);
+      if (!box.isEmpty()) {
+        box.getCenter(this._tmpBoxCenter);
+        box.getSize(this._tmpBoxSize);
+        out.copy(this._tmpBoxCenter);
+        // For characters, bias framing slightly toward upper torso/face inside the bounding box.
+        if (taggedObj.userData?.actorId) {
+          out.y = box.min.y + this._tmpBoxSize.y * 0.72;
+        }
+        return true;
+      }
+    }
+
+    if (!resolver) return false;
     const actor = resolver.getActor(ref);
     if (actor) {
       actor.getHeadWorldPosition(out);
@@ -280,17 +420,40 @@ export class PlayerCamera {
   }
 
   startWalk({
-    points,
+    points = null,
+    target = null,
+    standoff = 0.8,
     duration = null,
     speed = null,
     autoLook = true,
     segments = null,
     maxVerticalSpeed = 1.55,
+    faceTarget = null,
+    resolver = null,
   }) {
     if (this.activeWalk?._resolve) {
       this.activeWalk._resolve();
     }
-    if (!points || points.length < 2) return Promise.resolve();
+
+    let resolvedPoints = points;
+    let resolvedFaceTarget = faceTarget;
+    if ((!resolvedPoints || resolvedPoints.length < 2) && target) {
+      const approach = this.resolveApproachPoint(target, {
+        standoff,
+        fromPos: this.playerPos,
+        resolver,
+      });
+      if (approach) {
+        resolvedFaceTarget = resolvedFaceTarget || target;
+        if (this.house && typeof this.house.findPath === "function") {
+          resolvedPoints = this.house.findPath(this.playerPos, approach.standoffPos);
+        } else {
+          resolvedPoints = [this.playerPos.clone(), approach.standoffPos];
+        }
+      }
+    }
+
+    if (!resolvedPoints || resolvedPoints.length < 2) return Promise.resolve();
 
     const walkSpeed = Math.max(0.4, Number(speed) || BASE_WALK_SPEED);
     const cumDist = [0];
@@ -298,9 +461,9 @@ export class PlayerCamera {
     let computedDuration = 0;
     const segMeta = [];
 
-    for (let i = 1; i < points.length; i += 1) {
-      const a = points[i - 1];
-      const b = points[i];
+    for (let i = 1; i < resolvedPoints.length; i += 1) {
+      const a = resolvedPoints[i - 1];
+      const b = resolvedPoints[i];
       const segLen = a.distanceTo(b);
       const dy = Math.abs(b.y - a.y);
       const meta = segments?.[i - 1] || {};
@@ -342,7 +505,7 @@ export class PlayerCamera {
     });
 
     this.activeWalk = {
-      points,
+      points: resolvedPoints,
       cumDist,
       segMeta,
       totalLength,
@@ -350,6 +513,8 @@ export class PlayerCamera {
       duration: effectiveDuration,
       maxVerticalSpeed,
       autoLook,
+      faceTarget: resolvedFaceTarget,
+      finalLookTriggered: false,
       _resolve: resolveWalk,
     };
     this.isWalking = true;
@@ -562,7 +727,23 @@ export class PlayerCamera {
           this.playerPos.y = Math.abs(pB.y - pA.y) < 0.05 ? pA.y : pA.y + (pB.y - pA.y) * alpha;
         }
 
-        if (this.activeWalk.autoLook && !this.trackingRef && this.lookElapsed >= this.lookDuration) {
+        const lookDuringApproach =
+          this.activeWalk.faceTarget &&
+          (this.activeWalk.totalLength - targetDist <= 0.75 || rawT >= 0.82);
+
+        if (lookDuringApproach && !this.activeWalk.finalLookTriggered && !this.trackingRef) {
+          this.activeWalk.finalLookTriggered = true;
+          this.lookAt(
+            this.activeWalk.faceTarget,
+            { duration: Math.max(0.22, this.activeWalk.duration - this.activeWalk.elapsed) },
+            resolver
+          );
+        } else if (
+          this.activeWalk.autoLook &&
+          !this.activeWalk.finalLookTriggered &&
+          !this.trackingRef &&
+          this.lookElapsed >= this.lookDuration
+        ) {
           const lookDist = Math.min(this.activeWalk.totalLength, targetDist + 1.15);
           const ahead = this._sampleAlongWalk(this.activeWalk, lookDist);
           const dx = ahead.x - this.playerPos.x;
@@ -587,6 +768,9 @@ export class PlayerCamera {
         this.playerPos.copy(finished.points[finished.points.length - 1]);
         this.activeWalk = null;
         this.isWalking = false;
+        if (finished.faceTarget && !finished.finalLookTriggered) {
+          this.lookAt(finished.faceTarget, { duration: 0.22 }, resolver);
+        }
         if (finished._resolve) finished._resolve();
       }
     } else {
@@ -594,7 +778,10 @@ export class PlayerCamera {
     }
 
     // Look tracking / whip-pan
-    if (this.trackingRef && this._resolveTargetPosition(this.trackingRef, resolver, this._tmpTargetPos)) {
+    if (
+      this.trackingRef &&
+      this._resolveTargetPosition(this.trackingRef, resolver, this._tmpTargetPos, { liveTrack: true })
+    ) {
       const { yaw, pitch } = this._computeYawPitchTo(this._tmpTargetPos);
       if (this.lookElapsed < this.lookDuration) {
         this.lookTargetYaw = this.lookStartYaw + wrapAngleDiff(yaw, this.lookStartYaw);
