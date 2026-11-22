@@ -259,10 +259,17 @@ export class EpisodeRunner {
       const prevNode = i > 0 ? NAV_GRAPH[nodeIds[i - 1]] : null;
       const prevElevated = prevNode ? Boolean(prevNode.elevated) : isElevatedSurfacePos(prev);
       const curElevated = Boolean(node.elevated);
-      const isJumpArc = prevElevated || curElevated;
-      const arcHeight = isJumpArc
-        ? Math.min(0.62, 0.30 + Math.abs(pt.y - prev.y) * 0.25)
-        : 0;
+      const isBalconyJump =
+        !isOnStairs(prev) &&
+        !isOnStairs(pt) &&
+        Math.abs(pt.y - prev.y) > 1.8 &&
+        ((prevNode?.id === "upstairs_balcony") || id === "upstairs_balcony" || id === "foyer_atrium" || prevNode?.id === "foyer_atrium");
+      const isJumpArc = prevElevated || curElevated || isBalconyJump;
+      const arcHeight = isBalconyJump
+        ? 0.52
+        : isJumpArc
+          ? Math.min(0.62, 0.30 + Math.abs(pt.y - prev.y) * 0.25)
+          : 0;
 
       chain.push({ pt, isJumpArc, arcHeight });
     }
@@ -534,6 +541,25 @@ export class EpisodeRunner {
         };
       } else if ((ev.type === "char_anim" || ev.type === "anim") && effDur === 0) {
         effDur = ev.loop ? 0.45 : 1.0;
+      } else if (ev.type === "player_look") {
+        const cap =
+          episode?.maxLookDuration ??
+          (episode?.allowSlowScans ? Infinity : CONFIG.maxLookDuration ?? 0.55);
+        if (Number.isFinite(cap)) effDur = Math.min(effDur, cap);
+      } else if (ev.type === "cut") {
+        const destRef = ev.to || ev.target || ev.spawn;
+        if (destRef) {
+          const dest = this.resolveWaypoint(destRef);
+          playerPos = { x: dest.x, y: dest.y ?? 0, z: dest.z };
+        }
+        effDur = Math.max(0, ev.duration ?? 0);
+      } else if (ev.type === "char_cut") {
+        const destRef = ev.to || ev.target;
+        if (destRef && ev.actor) {
+          const dest = this.resolveWaypoint(destRef);
+          actorPos[ev.actor] = { x: dest.x, y: dest.y ?? 0, z: dest.z };
+        }
+        effDur = 0;
       }
 
       maxEnd = Math.max(maxEnd, fireSim + effDur);
@@ -757,16 +783,20 @@ export class EpisodeRunner {
   }
 
   async stepAsync(dt, { silentSeek = false } = {}) {
-    this.step(dt, { silentSeek });
-    await this._flushMicrotasks();
+    const resolvedAny = this.step(dt, { silentSeek });
+    if (resolvedAny || this.isAwaitingBeat) {
+      await this._flushMicrotasks();
+    }
   }
 
   _resolveReadyWaiters() {
+    let resolvedAny = false;
     for (let i = this._simWaiters.length - 1; i >= 0; i--) {
       const w = this._simWaiters[i];
       if (w.runToken !== this._runToken || this.simTime >= w.targetTime - 1e-6) {
         this._simWaiters.splice(i, 1);
         w.resolve();
+        resolvedAny = true;
       }
     }
     for (let i = this._timelineWaiters.length - 1; i >= 0; i--) {
@@ -774,8 +804,10 @@ export class EpisodeRunner {
       if (w.runToken !== this._runToken || this.timelineTime >= w.targetTime - 1e-6) {
         this._timelineWaiters.splice(i, 1);
         w.resolve();
+        resolvedAny = true;
       }
     }
+    return resolvedAny;
   }
 
   step(dt, { silentSeek = false } = {}) {
@@ -952,11 +984,20 @@ export class EpisodeRunner {
     if (!silentSeek && this.sfxEngine) {
       const anyMoving = playerMoving || anyCharMoving;
       const moveAnim = playerMoving ? "walk" : fastestMoveAnim;
-      this.sfxEngine.tickPacer(dt, this.simTime, { anyMoving, moveAnim });
+      const movingActors = this.activeCharMoves.map((m) => ({
+        id: m.actor.id,
+        anim: m.anim,
+      }));
+      this.sfxEngine.tickPacer(dt, this.simTime, {
+        anyMoving,
+        playerMoving,
+        moveAnim,
+        movingActors,
+      });
     }
 
     // 7. Resolve timeline & simulation-time Promises ready on this tick
-    this._resolveReadyWaiters();
+    const resolvedAny = this._resolveReadyWaiters();
 
     // 8. Check completion (only finish when all events dispatched and no awaited beat active)
     if (
@@ -976,6 +1017,21 @@ export class EpisodeRunner {
     } else {
       this.emitState();
     }
+    return resolvedAny;
+  }
+
+  /**
+   * Reaction coverage guardrail: characters performing a reaction should face
+   * the camera so the audience actually sees the expression/bubble.
+   * Opt out per beat with `facePlayer: false` (or `keepFacing: true`).
+   */
+  _faceActorToCamera(actor, ev = {}) {
+    if (!actor || ev.facePlayer === false || ev.keepFacing) return;
+    const camPos = this.playerCamera?.getEyeWorldPosition
+      ? this.playerCamera.getEyeWorldPosition()
+      : this.playerCamera?.camera?.position;
+    if (!camPos) return;
+    actor.faceTarget(camPos, ev.faceInstant === false ? 10 : 999);
   }
 
   async executeBeat(ev, { silentSeek = false, runToken = this._runToken } = {}) {
@@ -1004,7 +1060,7 @@ export class EpisodeRunner {
             y: approach.standoffPos.y,
             z: approach.standoffPos.z,
           };
-          if (ev.faceTarget !== false) {
+          if (ev.faceTarget !== false && (ev.standoff ?? 0.8) > 0.25) {
             faceTarget = ev.target;
           }
         } else {
@@ -1025,16 +1081,48 @@ export class EpisodeRunner {
     }
 
     if (type === "player_look" && this.playerCamera) {
-      const dur = ev.duration ?? 0.2;
+      const cap =
+        this.episode?.maxLookDuration ??
+        (this.episode?.allowSlowScans ? Infinity : CONFIG.maxLookDuration ?? 0.55);
+      const rawDur = ev.duration ?? 0.2;
+      const dur = Number.isFinite(cap) ? Math.min(rawDur, cap) : rawDur;
       const lookPromise = this.playerCamera.lookAt(
         ev.target,
-        { duration: dur, track: Boolean(ev.track) },
+        { duration: dur, track: Boolean(ev.track), maxDuration: cap },
         this.resolver
       );
       if (!silentSeek) {
         this.sfxEngine?.notifyWhipPan(dur, this.simTime);
       }
       return lookPromise;
+    }
+
+    if (type === "cut" && this.playerCamera) {
+      // Instant POV cut: relocate the player and snap the view without blocking.
+      const destRef = ev.to || ev.target || ev.spawn;
+      const dest = destRef
+        ? this.resolveWaypoint(destRef)
+        : {
+            x: this.playerCamera.playerPos.x,
+            y: this.playerCamera.playerPos.y,
+            z: this.playerCamera.playerPos.z,
+          };
+      let lookPos = null;
+      if (ev.facing || ev.lookAt) {
+        lookPos = this.resolveWaypoint(ev.facing || ev.lookAt);
+      }
+      if (ev.clearHold !== false) {
+        this.playerCamera.holdProp(null);
+      }
+      this.playerCamera.teleport(dest, lookPos);
+      // Audio stays authored: only play a cut sting when the beat asks for one.
+      if (!silentSeek && ev.sound) {
+        this.sfxEngine?.play(ev.sound, {
+          volume: ev.volume ?? 0.6,
+          simTime: this.simTime,
+        });
+      }
+      return Promise.resolve();
     }
 
     if (type === "player_gesture" && this.playerCamera) {
@@ -1071,6 +1159,7 @@ export class EpisodeRunner {
     if (type === "char_anim" || type === "anim") {
       const actor = this.characters[ev.actor];
       if (!actor) return;
+      this._faceActorToCamera(actor, ev);
       actor.playAnim(
         ev.anim,
         ev.fadeDuration ?? 0.16,
@@ -1083,6 +1172,39 @@ export class EpisodeRunner {
       const clipDur = actor.currentAction?.getClip()?.duration || 1.0;
       const waitDur = ev.duration ?? (ev.loop ? 0.45 : clipDur);
       return this._waitSim(waitDur, runToken);
+    }
+
+    if (type === "char_cut") {
+      // Instant actor teleport for scene cuts (no walk through empty rooms).
+      const actor = this.characters[ev.actor];
+      if (!actor) return;
+      actor.lookAtPlayer(false);
+      actor.showBubble(null);
+      actor.setProp(ev.prop ?? "cane");
+      for (let i = this.activeCharMoves.length - 1; i >= 0; i--) {
+        if (this.activeCharMoves[i].actor === actor) {
+          if (this.activeCharMoves[i].resolve) this.activeCharMoves[i].resolve();
+          this.activeCharMoves.splice(i, 1);
+        }
+      }
+      const destRef = ev.to || ev.target;
+      if (destRef) {
+        const pos = this.resolveWaypoint(destRef);
+        actor.root.position.set(pos.x, pos.y ?? 0, pos.z);
+      }
+      const eyePos = this.playerCamera?.getEyeWorldPosition
+        ? this.playerCamera.getEyeWorldPosition()
+        : this.playerCamera?.camera?.position;
+      const faceTarget = ev.facing || ev.faceTarget || null;
+      if (faceTarget === "player") {
+        actor.lookAt(eyePos);
+      } else if (faceTarget) {
+        actor.lookAt(this.resolveWaypoint(faceTarget));
+      } else if (ev.facePlayer !== false) {
+        actor.lookAt(eyePos);
+      }
+      actor.playAnim(ev.anim || "idle", 0.05, null, ev.loop !== false);
+      return Promise.resolve();
     }
 
     if (type === "char_move" || type === "move") {
@@ -1156,11 +1278,17 @@ export class EpisodeRunner {
       if (typeof ev.followPlayer === "boolean") {
         actor.lookAtPlayer(ev.followPlayer);
         if (ev.followPlayer && ev.instant && this.playerCamera) {
-          actor.lookAt(this.playerCamera.camera.position);
+          const eyePos = this.playerCamera.getEyeWorldPosition
+            ? this.playerCamera.getEyeWorldPosition()
+            : this.playerCamera.camera.position;
+          actor.lookAt(eyePos);
         }
       }
       if (ev.target === "player" && this.playerCamera) {
-        actor.faceTarget(this.playerCamera.camera.position, speed);
+        const eyePos = this.playerCamera.getEyeWorldPosition
+          ? this.playerCamera.getEyeWorldPosition()
+          : this.playerCamera.camera.position;
+        actor.faceTarget(eyePos, speed);
       } else if (ev.target) {
         actor.faceTarget(this.resolveWaypoint(ev.target), speed);
       }
@@ -1170,6 +1298,7 @@ export class EpisodeRunner {
     if (type === "char_bubble") {
       const actor = this.characters[ev.actor];
       if (!actor) return;
+      this._faceActorToCamera(actor, ev);
       actor.showBubble(ev.icon || "question", ev.duration ?? 2.0);
       if (!silentSeek) {
         this.sfxEngine?.notifyBubblePop(ev.icon, this.simTime);
@@ -1181,6 +1310,7 @@ export class EpisodeRunner {
       const actor = this.characters[ev.actor];
       if (!actor) return;
       actor.setProp(ev.prop ?? null);
+      this._faceActorToCamera(actor, ev);
       return this._waitSim(ev.duration ?? 0, runToken);
     }
 
@@ -1191,7 +1321,12 @@ export class EpisodeRunner {
         travelDuration: ev.travelDuration,
         targetY: ev.targetY,
         duration: ev.duration,
-        yOffset: ev.yOffset ?? 0.25,
+        yOffset: ev.yOffset ?? (ev.action === "reset" ? 0 : 0.25),
+        rotationY: ev.rotationY,
+        scale: ev.scale,
+        visible: ev.visible,
+        spin: ev.spin,
+        float: ev.float,
       });
       return this._waitSim(ev.duration ?? 0, runToken);
     }

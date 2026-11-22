@@ -1,6 +1,13 @@
-# EPISODE_PRODUCTION_GUIDE.md — Granny POV Comedy Short Playbook
+# EPISODE_PRODUCTION_GUIDE.md — Engine Reference & Pacing Rules
 
-Use this guide whenever you write, generate, or render a new **Granny POV 3D Cartoon Episode** (`16:9` YouTube POV or `9:16` Shorts). Every rule here comes from real rendered output audits and maps directly to `src/config.js`, `src/episodeRunner.js`, `src/playerCamera.js`, `src/comedyProps.js`, `src/sfxEngine.js`, and `scripts/export-video.mjs`.
+> **STOP — Authoring a New Episode?**
+> Use the modular gag framework in **`src/gags/`** + **`src/episodeBuilder.js`** (`buildEpisode()`), NOT giant raw `after`/`await` timelines.
+> Start with **`src/gags/README.md`** (copy-paste 20-line template) and **`AGENTS.md`** (complete catalog of helpers, locations, props, animations, SFX, and verification commands).
+> This guide documents the lower-level engine invariants, `SET_MAP` coordinates, and pacing rules that power `EpisodeRunner` under the hood.
+
+---
+
+Use this guide whenever you extend the engine or inspect low-level beat timing for **Granny POV 3D Cartoon Episodes** (`16:9` YouTube POV or `9:16` Shorts). Every rule here maps directly to `src/config.js`, `src/episodeRunner.js`, `src/playerCamera.js`, `src/comedyProps.js`, `src/sfxEngine.js`, and `scripts/export-video.mjs`.
 
 ---
 
@@ -8,7 +15,9 @@ Use this guide whenever you write, generate, or render a new **Granny POV 3D Car
 
 | What you need | Where to find it | Notes |
 | --- | --- | --- |
-| **Waypoints, Cast, SFX/BGM Manifest & Presets** | `src/config.js` | `SET_MAP`, `SFX_MANIFEST`, `ASSET_MANIFEST`, `GRANDPA_KEY_POV_44S`, `FLOOR_IS_LAVA_4M`, `JUMP_RUN_WALK_EPISODE` |
+| **Waypoints, Cast, SFX/BGM Manifest & Presets** | `src/config.js` | `SET_MAP`, `SFX_MANIFEST`, `ASSET_MANIFEST`, `GRANDPA_KEY_POV_44S`, `FLOOR_IS_LAVA_4M`, `JUMP_RUN_WALK_EPISODE`, `EPISODE_PRESETS` |
+| **Fast-Cut Escape Episode** | `src/episodes/greatEscape75.js` | `THE_GREAT_ESCAPE_68S` — reference implementation for hard cuts, whip-pans, and zero dead air |
+| **Pacing Audit (runs before every cloud render)** | `scripts/audit-pacing.mjs` | Fails on dead air / runaway runtime / dangling refs; warns on oversized looks and awaited beats |
 | **Background Music (Looping Comedy/Chase BGM)** | `SoundEffects/backroundMusics/` + `SoundEffects/*.mp3` | Registered in `SFX_MANIFEST` with `category: "bgm"` — auto-loops in browser & FFmpeg |
 | **22 Sound Effects (Impacts, Voices, UI, Cuts)** | `SoundEffects/*.mp3` | Registered in `SFX_MANIFEST` in `src/config.js` |
 | **3D House & Character Models + Mixamo Clips** | `Assets/` | `GrannyHouse.fbx`, `GrannyTest6.fbx`, `grandpach3.fbx`, `Assets/AnimationTemplates/*.fbx` |
@@ -26,6 +35,8 @@ Kids' attention drops within **3 seconds** if nothing changes visually. Bake the
 ### Rule 1: No Beat Over 2–2.5 Seconds Without Movement ("Zero Dead Air")
 - **Never** leave the camera staring at a bobbing prop or stationary character for 3–5 seconds.
 - **Every `1.5–2.5s`**, change something on screen: a whip-pan (`player_look`), camera walk (`player_walk`), crouch/peek (`player_crouch` / `peek_lean`), prop flying across the room (`pop_out` with `to` + `travelDuration`), pickup (`player_hold`), or a character moving/reacting (`char_move` / `char_anim` + `char_bubble`).
+- A `player_look` is a **whip-pan, not a stare**: keep source durations at or below `CONFIG.maxLookDuration` (`0.55s`). The engine hard-caps anything longer, and the audit warns on it.
+- **Cut, don't commute.** When the next gag is in another room, use `cut` (`to`, `facing`) instead of a 4–8s walk through empty geometry. Move actors with `char_cut` (`actor`, `to`, `facing`) for the same reason. Walks are for tension inside a shot, not for travel between shots.
 - If a prop pops out of a box or chest, **immediately** send it flying across the room (`to` waypoint), bonk a character with it, or grab it into the player's hand within `1.5–2.0s`.
 
 ### Rule 2: Always Show Cause-and-Effect Visually (No Shadowboxing Thin Air)
@@ -90,6 +101,12 @@ Sync SFX directly to visible actions (`1.2s–1.85s` rhythm; avoid overlapping v
 Targets with `elevated: true` in `SET_MAP` automatically route to their ground `approach` waypoint first, then perform a parabolic jump-arc hop (`jump` animation for characters) onto the elevated surface—or hop directly between adjacent surfaces (`< 2.2m` apart on the same floor):
 - **Ground Floor Elevated:** `dining_table_top` (`y=1.11`), `dining_table_top_west` (`y=1.11`), `kitchen_table_top` (`y=1.13`), `kitchen_counter_top` (`y=1.13`), `back_bed_top` (`y=0.98`), `living_room_sofa` (`y=0.47`), `living_room_shelf_top` (`y=0.72`)
 - **Upstairs Elevated:** `up_bed_top` (`y=3.83`), `up_bed_top_west` (`y=3.83`), `upstairs_west_desk_top` (`y=3.54`), `upstairs_east_bed_top` (`y=3.54`)
+
+### Instant Cuts (`cut` / `char_cut`)
+- `{ "at": 12.2, "type": "cut", "to": "kitchen_lane", "facing": "golden_key" }` teleports the POV player and snaps the view in the same frame. `to` is optional (omit it to rotate in place), `facing` is optional, and `sound` optionally plays a sting.
+- `{ "at": 12.3, "type": "char_cut", "actor": "granny", "to": "foyer", "facing": "player" }` teleports an actor, cancels its active move, and faces it at the player (or a waypoint).
+- Cuts are **zero-duration** and never block the timeline, so authored `at` timestamps stay exact. Use them to jump between rooms, reset a chase, or land a jumpscare.
+- Reactions (`char_anim`, `char_bubble`, `char_prop`) auto-face the camera so the expression reads on screen; pass `"facePlayer": false` when a character must deliberately look away.
 
 ### Timeline Synchronization (`await: true` & `sync: "sequential"`)
 - Add `"await": true` (or `"sync": "sequential"`) to any `char_move`, `player_walk`, `char_anim`, `player_look`, or `player_gesture` beat to **halt timeline advancement** until that character/camera movement or one-shot animation finishes before dispatching the next beat.
@@ -177,17 +194,32 @@ Notice how every beat stays under `2.5s`, every reaction shows visual cause-and-
 
 Before rendering a new episode JSON:
 1. **No dead air > 2.5s:** Scan `beats` timestamps — every `2.5s` window should have movement, camera change, prop flight/pickup, or character action.
-2. **Doorway-centered paths:** Every cross-room `player_walk` or `char_move` includes `doorway_living` / `doorway_dining` in `via`.
+2. **Doorway-centered paths:** Every cross-room `player_walk` or `char_move` includes `doorway_living` / `doorway_dining` in `via`. Prefer `cut` / `char_cut` over long commutes.
 3. **Close-range cause-and-effect:** Any `punch` / `hit` happens within `1.4m` of its target or right after a prop impact.
 4. **Motion ending:** Final `2s` before `fade` has active `run2` chase / lunge, never a frozen pose.
-5. **Cloud render command (zero local CPU/GPU encoding):**
+5. **Run the pacing audit** (the workflow runs it automatically and blocks the render on failure):
+   ```bash
+   node scripts/audit-pacing.mjs the_great_escape_68s
+   ```
+   Compare against the reference numbers: `~68s` runtime, `0` awaited beats, `>= 8` hard cuts, look average `< 0.4s`, longest uncovered gap `<= 0.75s`.
+6. **Cloud render command (zero local CPU/GPU encoding):**
    ```bash
    gh workflow run export-video.yml --ref main \
-     -f preset=custom_json \
-     -f custom_json="$(cat path/to/my-episode.json)" \
-     -f aspect=9:16 \
+     -f preset=the_great_escape_68s \
+     -f aspect=auto \
      -f fps=30 \
      -f sfx_pacer=true \
      -f format=mp4
    ```
    Rendered `.mp4` + `export-summary.json` are published automatically to the `latest-export` GitHub Release.
+
+   For a one-off script, pass the whole JSON in the **`episode_json`** input (the workflow uses it as an override, and `preset=custom_json` also works):
+   ```bash
+   gh workflow run export-video.yml --ref main \
+     -f preset=custom_json \
+     -f episode_json="$(cat path/to/my-episode.json)" \
+     -f aspect=9:16 \
+     -f fps=30 \
+     -f sfx_pacer=true \
+     -f format=mp4
+   ```

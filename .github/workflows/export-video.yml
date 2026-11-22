@@ -6,9 +6,17 @@ on:
       preset:
         description: "Episode preset to render"
         type: choice
-        default: "grandpa_key_pov_44s"
+        default: "comedy_variety_1m"
         options:
+          - comedy_variety_1m
+          - cookie_heist_15s
+          - rocket_ball_test
+          - rocket_ball_x3
+          - cookie_caper_30s
+          - the_great_escape_68s
           - grandpa_key_pov_44s
+          - zombie_fort_5m
+          - the_great_escape_5m
           - floor_is_lava_4m
           - jump_run_walk_6s
           - custom_json
@@ -52,7 +60,7 @@ permissions:
 jobs:
   render-pov:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 240
 
     steps:
       - name: Checkout repository
@@ -80,6 +88,16 @@ jobs:
           npm install --no-save playwright three@0.170.0
           npx playwright install chromium
           npx playwright install-deps chromium
+
+      - name: Audit Episode Pacing
+        env:
+          EPISODE_JSON: ${{ inputs.episode_json }}
+        run: |
+          if [ -n "$EPISODE_JSON" ] || [ "${{ inputs.preset }}" = "custom_json" ]; then
+            echo "Skipping pacing audit for custom episode JSON."
+            exit 0
+          fi
+          node scripts/audit-pacing.mjs "${{ inputs.preset }}"
 
       - name: Render 3D POV Episode in Cloud (SwiftShader WebGL + FFmpeg)
         env:
