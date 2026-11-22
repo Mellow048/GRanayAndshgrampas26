@@ -33,7 +33,7 @@ const presetName = value("--preset");
 const showId = value("--show");
 const sceneId = value("--scene");
 
-if (has("--list-shows") || has("--scenes")) {
+if (has("--list-shows") || has("--scenes") || has("--storyboard")) {
   const shows = listShows();
   for (const show of shows) {
     console.log(`\n${show.id} — ${show.title} (${show.duration.toFixed(1)}s, ${show.scenes.length} scenes)`);
