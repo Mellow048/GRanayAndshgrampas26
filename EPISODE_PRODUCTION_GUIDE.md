@@ -1,6 +1,13 @@
-# EPISODE_PRODUCTION_GUIDE.md — Granny POV Comedy Short Playbook
+# EPISODE_PRODUCTION_GUIDE.md — Engine Reference & Pacing Rules
 
-Use this guide whenever you write, generate, or render a new **Granny POV 3D Cartoon Episode** (`16:9` YouTube POV or `9:16` Shorts). Every rule here comes from real rendered output audits and maps directly to `src/config.js`, `src/episodeRunner.js`, `src/playerCamera.js`, `src/comedyProps.js`, `src/sfxEngine.js`, and `scripts/export-video.mjs`.
+> **STOP — Authoring a New Episode?**
+> Use the modular gag framework in **`src/gags/`** + **`src/episodeBuilder.js`** (`buildEpisode()`), NOT giant raw `after`/`await` timelines.
+> Start with **`src/gags/README.md`** (copy-paste 20-line template) and **`AGENTS.md`** (complete catalog of helpers, locations, props, animations, SFX, and verification commands).
+> This guide documents the lower-level engine invariants, `SET_MAP` coordinates, and pacing rules that power `EpisodeRunner` under the hood.
+
+---
+
+Use this guide whenever you extend the engine or inspect low-level beat timing for **Granny POV 3D Cartoon Episodes** (`16:9` YouTube POV or `9:16` Shorts). Every rule here maps directly to `src/config.js`, `src/episodeRunner.js`, `src/playerCamera.js`, `src/comedyProps.js`, `src/sfxEngine.js`, and `scripts/export-video.mjs`.
 
 ---
 

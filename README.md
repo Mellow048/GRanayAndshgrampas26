@@ -1,43 +1,78 @@
 # Granny POV 3D Cartoon Studio
 
-A zero-build Three.js (`v0.170.0`) first-person **Granny POV Kids-Comedy 3D Cartoon Studio** set inside the Granny 1 House (`./Assets/granny-1-house/source/GrannyHouse.fbx`), featuring Mixamo-retargeted Granny & Grandpa rigs, procedural 3D comedy props & 2D thought bubbles, a Web Audio BGM/SFX mixer (`./SoundEffects`), and a deterministic GitHub Actions cloud MP4 exporter (`16:9` widescreen & `9:16` vertical Shorts).
+A zero-build Three.js (`v0.170.0`) first-person **Granny POV Kids-Comedy 3D Cartoon Studio** set inside the Granny 1 House (`./Assets/granny-1-house/source/GrannyHouse.fbx`), powered by a **modular gag-builder framework**, Mixamo-retargeted Granny & Grandpa rigs, procedural 3D props & thought bubbles, a Web Audio SFX/BGM mixer, automated 3D verification, and parallel GitHub Actions cloud rendering.
 
-## Built-In POV Episodes
-- **The Great Escape (68s, `16:9` POV, `the_great_escape_68s`)** — fast-cut kids-comedy horror escape: locked front door → Granny demands the key → kitchen key heist → stair chase → Grandpa's toy blaster → chest & lava button → lava flood → front-door showdown → jumpscare. 220 beats, 14 hard cuts, zero awaited beats, zero dead air over 0.75s.
-- **Granny & Grandpa: Cookie Caper (30s, `9:16` Short, `cookie_caper_30s`)** — kid-safe slapstick: Grandpa sneaks the cookie jar, Granny catches him, a table-top chase turns into cookie-sharing and a silly send-off.
-- **Grandpa Loses His Key & Granny's Mystery Box (44s, `16:9` POV)** — 3-skit first-person adventure: meet Grandpa in the living room, sneak past Granny and crouch-hide beside the bed, grab the glowing Golden Key from the kitchen, unlock the Mystery Chest, and survive Granny's rage chase!
-- **The Floor Is Lava! (4-minute narrative, `16:9` POV)** — longer story-mode cut of the lava gag.
-- **Granny & Grandpa: Jump, Run, Walk (6s, `9:16` Short)** — quick jump, sprint, and stroll showcase.
+---
 
-> `the_great_escape_5m` is kept as a backwards-compatible alias and now renders the same 68s fast-cut episode.
+## Why This Framework Is Fast & Reusable
 
-### Pacing Audit
-Every cloud render runs `scripts/audit-pacing.mjs` before encoding. Run it locally too:
-```bash
-node scripts/audit-pacing.mjs the_great_escape_68s
-```
-It fails the build on dead air, runaway runtimes, or dangling waypoint/actor/prop references, and warns on oversized looks, awaited beats, and source looks the engine will cap.
+Instead of hand-coding massive fragile scripts, you write **one short gag function (`10–25s`)** in `src/gags/` and chain any number of gags together with `buildEpisode()` (`src/episodeBuilder.js`):
 
-## Studio Features
-- **First-Person POV Camera (`src/playerCamera.js`)**: Eye-level A* indoor walking with head-bob, whip-pan double-takes (`player_look`), camera-head gestures (`nod_yes`, `shake_no`, `shake_panic`, `peek_lean`), crouch-hiding (`0.42m`), bottom-right FPS held-item viewmodel, fade-to-black, and `16:9` / `9:16` toggle.
-- **Comedy Props & Thought Bubbles (`src/comedyProps.js`)**: `golden_key`, `padlock`, opening `treasure_chest`, `emoji_ball`, `toy_blaster`, `cookie_jar`, plus 8 comic thought bubbles (`key`, `question`, `exclamation`, `zzz`, `angry`, `laugh`, `food`, `heart`).
-- **Web Audio BGM + 28-Clip Mixer (`src/sfxEngine.js`)**: Looping comedy & chase BGM (`SoundEffects/backroundMusics/`: `fluffing_a_duck`, `monkeys_spinning_monkeys`, `run_amok`, plus Granny ambience/chase tracks), `cutBgm` comedy silence cuts, movement-synced footsteps, whip-pan whooshes, bubble pops, and a toggleable 1–2s kids-comedy pacer.
-- **Episode Production Guide (`EPISODE_PRODUCTION_GUIDE.md`)**: Complete playbook for generating high-retention Shorts & POV episodes (3-second pacing rules, doorway routing, BGM/SFX table, and copy-paste JSON template).
-- **Waypoints & Live Skit Editor (`src/studioUI.js`)**: Click any indoor `SET_MAP` waypoint to teleport, scout new coordinates with `WASD + Q/E`, test animations/bubbles/SFX, or edit & play multi-skit JSON scripts live.
+- **Zero-leak `CUT` transitions:** Every `0.4s` black cut between gags hides unused props, resets shared props, clears held FPS items, and resets Granny/Grandpa poses & hand props.
+- **Multi-room staging (`src/gags/locations.js`):** One gag automatically works across Kitchen, Living Room, Foyer, and Upstairs Hall (`GAG_LOCATIONS`).
+- **Dead-air-proof helpers (`src/gags/helpers.js`):** `react`, `launchProp`, `chase`, `sneakUp`, `walkTo`, `propAction`, `holdProp`, `lookAt`, `panic`.
+- **Instant single-gag preview:** Open `?gag=cookieHeist` or pick any gag from **Gag Lab** in the Studio dropdown.
+- **40+ minute ready:** `scripts/chunk-episode.mjs` + `.github/workflows/export-long-episode.yml` splits long gag shows cleanly on gag boundaries, renders chunks in parallel across up to 16 GitHub runners, and stitches them losslessly with FFmpeg.
 
-## Cloud Video Rendering (No Local Encoding Required)
-Trigger **Actions → Export POV Episode (Cloud Render)** (`.github/workflows/export-video.yml`) or run:
-```bash
-gh workflow run export-video.yml --ref main -f preset=the_great_escape_68s -f fps=30 -f sfx_pacer=true -f format=mp4
-```
-For the 30s vertical Short:
-```bash
-gh workflow run export-video.yml --ref main -f preset=cookie_caper_30s -f aspect=auto -f fps=30 -f sfx_pacer=true -f format=mp4
-```
-The rendered `.mp4` is automatically published to the `latest-export` GitHub Release.
+> **New to authoring?** Read [`src/gags/README.md`](src/gags/README.md) (60-second cheat sheet) and [`AGENTS.md`](AGENTS.md) (full agent playbook).
 
-## Run Locally
-Start a static server from the repository root and open `http://localhost:8000`:
+---
+
+## Built-In Gag Modules & Presets
+
+### Modular Gag Library (`src/gags/`)
+- **`cookieHeist`** — Grandpa sneaks cookies from the jar, Granny catches him red-handed, frantic chase.
+- **`couchHog`** — Granny & Grandpa sprint for the living room sofa; winner claims the seat smugly.
+- **`chestFakeout`** — Opening the chest expecting treasure, only to get bonked by a surprise pop-out.
+- **`sneakPhotobomb`** — Grandpa tiptoes behind Granny while she searches the room and photobombs the camera.
+- **`ballRace`** — Rocket emoji ball zips across the room, bonks the victim, and triggers a room-to-room chase.
+
+### Episode Presets (`src/config.js` / `src/episodes.js`)
+- **`comedy_variety_1m`** *(Default, `69.6s`, `16:9`)* — Chains all 5 gags back-to-back across 5 rooms with zero leaks.
+- **`cookie_heist_15s`** *(`15.0s`, `16:9`)* — Standalone 15-second slapstick gag showcase (`cookieHeist`).
+- **`rocket_ball_test`** *(`14.0s`, `16:9`)* — Single `ballRace` gag preview.
+- **`rocket_ball_x3`** *(`42.8s`, `16:9`)* — Same `ballRace` gag chained across 3 different rooms with swapped roles.
+- **`cookie_caper_30s`** *(`30.2s`, `9:16` Vertical Short)* — Kid-safe vertical comedy Short.
+- **`the_great_escape_68s`** *(`67.6s`, `16:9`)* — Fast-cut escape episode.
+- **`grandpa_key_pov_44s`** *(`43.9s`, `16:9`)* — Legacy 3-skit chest adventure.
+
+---
+
+## Run & Preview Locally
+
 ```bash
 python3 -m http.server 8000
 ```
+- Full Studio: `http://localhost:8000`
+- Instant Gag Preview: `http://localhost:8000/?gag=cookieHeist`
+- Choose Room Pack: `http://localhost:8000/?gag=cookieHeist&location=living_to_hall`
+- Specific Preset: `http://localhost:8000/?preset=cookie_heist_15s`
+
+---
+
+## Verify Pacing & 3D Collisions
+
+```bash
+# Audit pacing, dead air, gag schema, and waypoint references across all presets & gags
+node scripts/audit-pacing.mjs --all
+
+# Simulate 3D geometry against GrannyHouse.fbx (catches wall clips & cross-cut prop leaks)
+npm install --no-save three@0.170.0
+node scripts/verify-3d.mjs --gags
+node scripts/verify-3d.mjs comedy_variety_1m
+```
+
+---
+
+## Cloud Video Rendering (GitHub Actions)
+
+### Short / Standard Episodes (`<= 3 min`)
+```bash
+gh workflow run export-video.yml -f preset=cookie_heist_15s -f fps=30 -f sfx_pacer=true -f format=mp4
+```
+
+### Long Multi-Gag Episodes (`5–40+ min`, Parallel Matrix + FFmpeg Concat)
+```bash
+gh workflow run export-long-episode.yml -f preset=comedy_variety_1m -f max_chunk_sec=180 -f fps=30
+```
+Completed videos are uploaded as workflow artifacts (and `export-video.yml` also publishes to the `latest-export` GitHub Release).

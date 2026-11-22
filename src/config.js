@@ -6,9 +6,9 @@
 import { THE_GREAT_ESCAPE_68S } from "./episodes/greatEscape75.js";
 import { ZOMBIE_FORT_5M } from "./episodes/zombieFort5m.js";
 import { COOKIE_CAPER_30S } from "./episodes/cookieCaper30.js";
-import { ROCKET_BALL_TEST, ROCKET_BALL_x3 } from "./episodes.js";
+import { COMEDY_VARIETY_1M, COOKIE_HEIST_15S, ROCKET_BALL_TEST, ROCKET_BALL_x3 } from "./episodes.js";
 
-export { ZOMBIE_FORT_5M, COOKIE_CAPER_30S, ROCKET_BALL_TEST, ROCKET_BALL_x3 };
+export { COMEDY_VARIETY_1M, COOKIE_HEIST_15S, ZOMBIE_FORT_5M, COOKIE_CAPER_30S, ROCKET_BALL_TEST, ROCKET_BALL_x3 };
 
 export const CONFIG = {
   threeVersion: "0.170.0",
@@ -2185,17 +2185,18 @@ export const THE_GREAT_ESCAPE_5M = {
 };
 
 export const EPISODE_PRESETS = {
-  zombie_fort_5m: ZOMBIE_FORT_5M,
+  comedy_variety_1m: COMEDY_VARIETY_1M,
+  cookie_heist_15s: COOKIE_HEIST_15S,
   rocket_ball_test: ROCKET_BALL_TEST,
   rocket_ball_x3: ROCKET_BALL_x3,
-  grandpa_key_pov_44s: GRANDPA_KEY_POV_44S,
-  floor_is_lava_4m: FLOOR_IS_LAVA_4M,
-  // The old 262s door-staring cut is replaced by the 68s fast-cut version.
-  // `the_great_escape_5m` stays as a backwards-compatible alias for the workflow.
-  the_great_escape_5m: THE_GREAT_ESCAPE_68S,
-  the_great_escape_68s: THE_GREAT_ESCAPE_68S,
   cookie_caper_30s: COOKIE_CAPER_30S,
+  the_great_escape_68s: THE_GREAT_ESCAPE_68S,
+  grandpa_key_pov_44s: GRANDPA_KEY_POV_44S,
+  zombie_fort_5m: ZOMBIE_FORT_5M,
+  floor_is_lava_4m: FLOOR_IS_LAVA_4M,
+  // Backwards-compatible alias for the fast-cut escape preset.
+  the_great_escape_5m: THE_GREAT_ESCAPE_68S,
   jump_run_walk_6s: JUMP_RUN_WALK_EPISODE,
 };
 
-export const DEFAULT_EPISODE = ZOMBIE_FORT_5M;
+export const DEFAULT_EPISODE = COMEDY_VARIETY_1M;

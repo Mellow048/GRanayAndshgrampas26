@@ -313,8 +313,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
   if (runGags) {
     for (const [gagKey, factory] of Object.entries(GAG_REGISTRY)) {
-      for (const locKey of Object.keys(GAG_LOCATIONS)) {
-        const g = factory({ location: locKey });
+      const locs = factory.isLocationLocked ? ["default"] : Object.keys(GAG_LOCATIONS);
+      for (const locKey of locs) {
+        const g = factory.isLocationLocked ? factory() : factory({ location: locKey });
         const ok = auditGagSchema(`gag:${gagKey}@${locKey}`, g);
         if (!ok) allOk = false;
       }

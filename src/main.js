@@ -233,7 +233,7 @@ async function bootstrap() {
   window.addEventListener("keyup", (e) => heldKeys.delete(e.code));
 
   const startGagKey = urlParams.get("gag");
-  const startPresetKey = urlParams.get("preset") || "zombie_fort_5m";
+  const startPresetKey = urlParams.get("preset") || "comedy_variety_1m";
   let initialEp = EPISODE_PRESETS[startPresetKey] || DEFAULT_EPISODE;
   if (startGagKey && GAG_REGISTRY[startGagKey]) {
     const gagOpts = {};

@@ -449,7 +449,7 @@ export class StudioUI {
     }
 
     this.els.episodeEditor.value = JSON.stringify(
-      EPISODE_PRESETS.zombie_fort_5m,
+      EPISODE_PRESETS.comedy_variety_1m,
       null,
       2
     );

@@ -166,7 +166,7 @@ async function verifyEpisode3D(name, episode, house) {
   runner.loadEpisode(episode);
   runner.play();
 
-  const dt = 1 / 60;
+  const dt = process.argv.includes("--60hz") ? 1 / 60 : 1 / 30;
   const maxSteps = Math.ceil((runner.duration + 2) / dt);
   const ray = new THREE.Raycaster();
   const dirs = [
@@ -299,8 +299,9 @@ async function main() {
 
   if (runGags) {
     for (const [gagKey, factory] of Object.entries(GAG_REGISTRY)) {
-      for (const locKey of Object.keys(GAG_LOCATIONS)) {
-        const g = factory({ location: locKey });
+      const locs = factory.isLocationLocked ? ["default"] : Object.keys(GAG_LOCATIONS);
+      for (const locKey of locs) {
+        const g = factory.isLocationLocked ? factory() : factory({ location: locKey });
         const ep = buildEpisode({
           title: g.name,
           playerSpawn: g.playerSpawn,

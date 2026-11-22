@@ -88,6 +88,62 @@ export function chase({
   return beats;
 }
 
+/**
+ * Sneak move with optional thought bubble and quiet foley.
+ */
+export function sneakUp({
+  at,
+  actor,
+  to,
+  via = [],
+  duration = 1.8,
+  icon = null,
+  bubbleDur = 1.2,
+  sfx = null,
+} = {}) {
+  const move = { at, type: "char_move", actor, to, anim: "sneak", duration };
+  if (via.length > 0) move.via = [...via];
+  const beats = [move];
+  if (icon) beats.push({ at: +(at + 0.15).toFixed(3), type: "char_bubble", actor, icon, duration: bubbleDur, facePlayer: false });
+  if (sfx) beats.push({ at, type: "sfx", sound: sfx });
+  return beats;
+}
+
+/**
+ * Player POV walk with optional `via` spine and quick look at destination.
+ */
+export function walkTo({ at, to, via = [], duration = 1.8, speed = undefined, lookTarget = null } = {}) {
+  const w = { at, type: "player_walk", to, duration };
+  if (via.length > 0) w.via = [...via];
+  if (speed !== undefined) w.speed = speed;
+  const beats = [w];
+  if (lookTarget) {
+    beats.push({ at: +(at + 0.1).toFixed(3), type: "player_look", target: lookTarget, duration: 0.24 });
+  }
+  return beats;
+}
+
+/**
+ * Prop action shorthand (`show`, `hide`, `open`, `close`, `bounce`, `pickup`, `stop`).
+ */
+export function propAction({ at, prop, action, waypoint = undefined, yOffset = undefined, sfx = null } = {}) {
+  const b = { at, type: "prop_action", prop, action };
+  if (waypoint !== undefined) b.waypoint = waypoint;
+  if (yOffset !== undefined) b.yOffset = yOffset;
+  const beats = [b];
+  if (sfx) beats.push({ at, type: "sfx", sound: sfx });
+  return beats;
+}
+
+/**
+ * Player picks up / uses a held FPS viewmodel prop (automatically cleared at the next CUT).
+ */
+export function holdProp({ at, prop, use = true, duration = 0.8, sfx = "kaching" } = {}) {
+  const beats = [{ at, type: "player_hold", prop, use, duration }];
+  if (sfx) beats.push({ at, type: "sfx", sound: sfx });
+  return beats;
+}
+
 export function lookAt({ at, target, duration = 0.22, track = false } = {}) {
   return [{ at, type: "player_look", target, duration, track }];
 }

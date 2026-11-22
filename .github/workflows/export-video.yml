@@ -6,15 +6,17 @@ on:
       preset:
         description: "Episode preset to render"
         type: choice
-        default: "zombie_fort_5m"
+        default: "comedy_variety_1m"
         options:
-          - zombie_fort_5m
+          - comedy_variety_1m
+          - cookie_heist_15s
           - rocket_ball_test
           - rocket_ball_x3
-          - the_great_escape_68s
-          - the_great_escape_5m
           - cookie_caper_30s
+          - the_great_escape_68s
           - grandpa_key_pov_44s
+          - zombie_fort_5m
+          - the_great_escape_5m
           - floor_is_lava_4m
           - jump_run_walk_6s
           - custom_json

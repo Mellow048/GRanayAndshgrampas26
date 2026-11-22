@@ -6,11 +6,12 @@ on:
       preset:
         description: "Episode preset to split & render in parallel"
         type: choice
-        default: "zombie_fort_5m"
+        default: "comedy_variety_1m"
         options:
-          - zombie_fort_5m
+          - comedy_variety_1m
           - rocket_ball_x3
           - the_great_escape_68s
+          - zombie_fort_5m
           - custom_json
       episode_json:
         description: "Custom Episode JSON (overrides preset if provided)"

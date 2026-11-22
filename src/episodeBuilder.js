@@ -4,6 +4,29 @@
 
 const CUT = 0.4; // black-frame "cut" between gags (hides repositioning)
 
+export function validateGag(gag, index = 0) {
+  if (!gag || typeof gag !== "object") {
+    throw new Error(`[episodeBuilder] Gag #${index} is not an object.`);
+  }
+  if (!gag.name) throw new Error(`[episodeBuilder] Gag #${index} is missing \`name\`.`);
+  if (!(gag.duration > 0)) throw new Error(`[episodeBuilder] Gag "${gag.name}" needs positive \`duration\`.`);
+  if (!gag.cast || Object.keys(gag.cast).length === 0) {
+    throw new Error(`[episodeBuilder] Gag "${gag.name}" needs at least one actor in \`cast\`.`);
+  }
+  for (const [bi, b] of (gag.beats || []).entries()) {
+    if (typeof b.at !== "number" || b.at < 0) {
+      throw new Error(`[episodeBuilder] Gag "${gag.name}" beat #${bi} (${b.type}) must use numeric \`at >= 0\`.`);
+    }
+    if ("after" in b) {
+      throw new Error(`[episodeBuilder] Gag "${gag.name}" beat #${bi} (${b.type}) uses forbidden \`after\` — use local \`at\`.`);
+    }
+    if ("await" in b) {
+      throw new Error(`[episodeBuilder] Gag "${gag.name}" beat #${bi} (${b.type}) uses forbidden \`await\` — use local \`at\`.`);
+    }
+  }
+  return gag;
+}
+
 export function buildEpisode({
   title,
   aspect = "16:9",
@@ -18,10 +41,11 @@ export function buildEpisode({
   const skits = [];
   let t = 0;
 
-  const rootSpawn = playerSpawn || gags[0]?.playerSpawn || "back_hall";
-  const rootFacing = playerFacing || gags[0]?.playerFacing || "kitchen";
+  const resolvedGags = gags.map((g, idx) => validateGag(typeof g === "function" ? g() : g, idx));
+  const rootSpawn = playerSpawn || resolvedGags[0]?.playerSpawn || "back_hall";
+  const rootFacing = playerFacing || resolvedGags[0]?.playerFacing || "kitchen";
 
-  gags.forEach((g, i) => {
+  resolvedGags.forEach((g, i) => {
     const beats = [];
     const propRemap = new Map();
     const activePropIds = new Set();
