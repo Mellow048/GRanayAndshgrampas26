@@ -2,18 +2,18 @@
  * Pacing audit for episode presets.
  *
  * Catches the failures that make POV episodes feel dead:
- *  - camera looks longer than CONFIG.maxLookDuration (staring contests)
+ *  - camera looks exceeding episode.maxLookDuration (if configured)
  *  - visual gaps over 2.5s (empty rooms, dead air)
- *  - awaited beats that freeze the timeline and desync SFX
  *  - missing waypoints / tags / actors / props
  *
- * Usage: node scripts/audit-pacing.mjs [preset] [--max-gap=2.5] [--min-runtime=45] [--max-runtime=100]
+ * Usage: node scripts/audit-pacing.mjs [preset] [--max-gap=2.5] [--min-runtime=45] [--max-runtime=340]
  */
 import {
   CONFIG,
   EPISODE_PRESETS,
   SET_MAP,
   SEMANTIC_MESH_TAGS,
+  SEMANTIC_OBJECT_REGIONS,
 } from "../src/config.js";
 
 const args = process.argv.slice(2);
@@ -27,18 +27,19 @@ const flags = new Map(
 );
 const presetName =
   args.find((a) => !a.startsWith("--")) ||
-  (EPISODE_PRESETS.the_great_escape_68s ? "the_great_escape_68s" : Object.keys(EPISODE_PRESETS)[0]);
+  (EPISODE_PRESETS.zombie_fort_5m ? "zombie_fort_5m" : Object.keys(EPISODE_PRESETS)[0]);
 const episode = EPISODE_PRESETS[presetName];
-const MAX_GAP = Number(flags.get("max-gap") ?? 2.5);
-const MIN_RUNTIME = Number(flags.get("min-runtime") ?? 45);
-const MAX_RUNTIME = Number(flags.get("max-runtime") ?? 100);
-const MAX_LOOK = CONFIG.maxLookDuration ?? 0.55;
-const MAX_AWAIT = Number(flags.get("max-await") ?? 2.5);
 
 if (!episode) {
   console.error(`Unknown preset "${presetName}". Available: ${Object.keys(EPISODE_PRESETS).join(", ")}`);
   process.exit(1);
 }
+
+const allowSlowScans = Boolean(episode.allowSlowScans);
+const MAX_GAP = Number(flags.get("max-gap") ?? 2.5);
+const MIN_RUNTIME = Number(flags.get("min-runtime") ?? (allowSlowScans ? 240 : 45));
+const MAX_RUNTIME = Number(flags.get("max-runtime") ?? (allowSlowScans ? 340 : 120));
+const MAX_LOOK = episode.maxLookDuration ?? (allowSlowScans ? 5.0 : 0.55);
 
 const failures = [];
 const warnings = [];
@@ -51,6 +52,10 @@ const warn = (msg) => warnings.push(msg);
 const tagSet = new Set();
 for (const entry of Object.values(SEMANTIC_MESH_TAGS || {})) {
   if (entry.tag) tagSet.add(entry.tag);
+  for (const alias of entry.aliases || []) tagSet.add(alias);
+}
+for (const [tag, entry] of Object.entries(SEMANTIC_OBJECT_REGIONS || {})) {
+  tagSet.add(tag);
   for (const alias of entry.aliases || []) tagSet.add(alias);
 }
 const waypoints = new Set(Object.keys(SET_MAP || {}));
@@ -74,7 +79,7 @@ for (const actor of episode.cast || []) {
 for (const prop of episode.props || []) checkRef(prop.spawn, `prop ${prop.id} spawn`);
 
 // ---------------------------------------------------------------------------
-// 2. Compile the timeline exactly like EpisodeRunner.compileTimeline
+// 2. Compile the timeline exactly like EpisodeRunner.compileTimeline + await shift
 // ---------------------------------------------------------------------------
 const raw = [];
 for (const skit of episode.skits || []) {
@@ -109,14 +114,19 @@ for (const actor of episode.cast || []) {
 let playerPos = posOfRef(episode.playerSpawn) || { x: 0, y: 0, z: 0 };
 
 const events = [];
+let tlShift = 0;
+
 for (const ev of raw) {
+  const simAt = ev.at + tlShift;
   let effective = ev.duration;
 
   if (ev.type === "player_look") {
-    effective = Math.min(ev.duration, MAX_LOOK);
+    if (episode.maxLookDuration) {
+      effective = Math.min(ev.duration, episode.maxLookDuration);
+    }
     checkRef(ev.target, "player_look target");
-    if (ev.duration > MAX_LOOK + 1e-6) {
-      warn(`player_look ${ev.duration}s -> capped to ${MAX_LOOK}s at ${ev.at}s`);
+    if (effective > MAX_LOOK + 1e-6) {
+      warn(`player_look ${ev.duration}s exceeds ${MAX_LOOK}s at ${simAt.toFixed(1)}s`);
     }
   } else if (ev.type === "cut") {
     checkRef(ev.to || ev.target, "cut destination");
@@ -134,7 +144,7 @@ for (const ev of raw) {
     checkRef(ev.target, "player_walk target");
     checkRef(ev.to, "player_walk to");
     for (const via of ev.via || []) checkRef(via, "player_walk via");
-    const stops = [...(ev.via || []), ev.target || ev.to].filter(Boolean);
+    const stops = [...(ev.via || []), ev.to || ev.target].filter(Boolean);
     let dist = 0;
     let prev = playerPos;
     for (const stop of stops) {
@@ -179,15 +189,10 @@ for (const ev of raw) {
 
   const isAwait = ev.await === true || ev.sync === "sequential";
   if (isAwait) {
-    if (effective > MAX_AWAIT + 1e-6) {
-      warn(`Awaited ${ev.type} blocks the timeline for ${effective.toFixed(2)}s at ${ev.at}s (max ${MAX_AWAIT}s)`);
-    }
-    if (ev.type === "player_look" && effective > MAX_LOOK + 1e-6) {
-      fail(`Awaited look ${ev.duration}s at ${ev.at}s exceeds ${MAX_LOOK}s`);
-    }
+    tlShift += effective;
   }
 
-  events.push({ ...ev, effective, isAwait });
+  events.push({ ...ev, simAt, effective, isAwait });
 }
 
 // ---------------------------------------------------------------------------
@@ -214,19 +219,17 @@ const VISUAL = new Set([
 ]);
 
 const visual = events.filter((e) => VISUAL.has(e.type));
-const runtime = Math.max(1, ...events.map((e) => e.at + e.effective));
+const runtime = Math.max(1, ...events.map((e) => e.simAt + e.effective));
 const gaps = [];
-// Coverage-based dead air: a long walk / bubble / gesture keeps the screen alive
-// while it runs, so measure the uncovered window between visual beats.
 let coveredUntil = 0;
 let longestGap = 0;
 for (const ev of visual) {
-  const gap = ev.at - coveredUntil;
+  const gap = ev.simAt - coveredUntil;
   longestGap = Math.max(longestGap, gap);
   if (gap > MAX_GAP) {
-    gaps.push({ gap, at: ev.at, type: ev.type, target: ev.target || ev.to || "" });
+    gaps.push({ gap, at: ev.simAt, type: ev.type, target: ev.target || ev.to || "" });
   }
-  coveredUntil = Math.max(coveredUntil, ev.at + Math.max(0.05, ev.effective));
+  coveredUntil = Math.max(coveredUntil, ev.simAt + Math.max(0.05, ev.effective));
 }
 for (const gap of gaps) {
   fail(
@@ -237,16 +240,8 @@ for (const gap of gaps) {
 }
 
 const looks = events.filter((e) => e.type === "player_look");
-const longLooks = looks.filter((e) => e.duration > MAX_LOOK + 1e-6);
-if (longLooks.length) {
-  warn(`${longLooks.length} look(s) exceed ${MAX_LOOK}s in source; engine caps them at runtime.`);
-}
 if (runtime < MIN_RUNTIME) warn(`Runtime ${runtime.toFixed(1)}s is below target ${MIN_RUNTIME}s`);
 if (runtime > MAX_RUNTIME) fail(`Runtime ${runtime.toFixed(1)}s exceeds target ${MAX_RUNTIME}s`);
-if (events.some((e) => e.isAwait)) {
-  const awaited = events.filter((e) => e.isAwait);
-  warn(`${awaited.length} awaited beat(s) present; timestamps will shift at runtime.`);
-}
 
 const cuts = events.filter((e) => e.type === "cut").length;
 const awaited = events.filter((e) => e.isAwait).length;

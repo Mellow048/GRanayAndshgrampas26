@@ -16,6 +16,7 @@
 export const THE_GREAT_ESCAPE_68S = {
   title: "The Great Escape (68s Fast-Cut POV)",
   aspect: "16:9",
+  maxLookDuration: 0.55,
   playerSpawn: "front_door_view",
   playerFacing: "front_door_pkg",
   cast: [

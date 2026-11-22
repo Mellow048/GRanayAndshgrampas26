@@ -26,7 +26,7 @@ const MIME_TYPES = {
 
 function parseArgs(argv) {
   const opts = {
-    preset: "the_great_escape_68s",
+    preset: "zombie_fort_5m",
     episodeFile: "",
     aspect: "",
     fps: 30,

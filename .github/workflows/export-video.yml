@@ -6,8 +6,9 @@ on:
       preset:
         description: "Episode preset to render"
         type: choice
-        default: "the_great_escape_68s"
+        default: "zombie_fort_5m"
         options:
+          - zombie_fort_5m
           - the_great_escape_68s
           - the_great_escape_5m
           - grandpa_key_pov_44s
@@ -91,7 +92,7 @@ jobs:
             echo "Skipping pacing audit for custom episode JSON."
             exit 0
           fi
-          node scripts/audit-pacing.mjs "${{ inputs.preset }}" --max-runtime=120
+          node scripts/audit-pacing.mjs "${{ inputs.preset }}"
 
       - name: Render 3D POV Episode in Cloud (SwiftShader WebGL + FFmpeg)
         env:

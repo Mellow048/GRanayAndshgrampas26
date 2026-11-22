@@ -415,7 +415,7 @@ export class StudioUI {
       this.els.presetSelect.appendChild(opt);
     }
     this.els.episodeEditor.value = JSON.stringify(
-      EPISODE_PRESETS.the_great_escape_68s,
+      EPISODE_PRESETS.zombie_fort_5m,
       null,
       2
     );

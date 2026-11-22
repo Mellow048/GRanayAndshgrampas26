@@ -459,8 +459,10 @@ export class PlayerCamera {
     }
     const wp = resolver.getWaypoint(ref);
     if (wp) {
-      // Surface waypoints (e.g. counter top y=1.13) target just above the surface rather than adding +1.35m eye height.
-      const yOff = (wp.y || 0) > 0.2 ? 0.12 : 1.35;
+      // Surface waypoints (elevated furniture like counter top y=1.13 or bed y=3.83) target just above the surface;
+      // ground floor (y=0) and upstairs floor (y=2.85) waypoints target eye/chest level (+1.35m).
+      const isFloorLevel = Math.abs(wp.y || 0) < 0.15 || Math.abs((wp.y || 0) - 2.85) < 0.15;
+      const yOff = wp.elevated || !isFloorLevel ? 0.12 : 1.35;
       out.set(wp.x, (wp.y || 0) + yOff, wp.z);
       return true;
     }
@@ -612,7 +614,7 @@ export class PlayerCamera {
     return donePromise;
   }
 
-  lookAtPosition(targetPos, { duration = 0.25, trackRef = null } = {}) {
+  lookAtPosition(targetPos, { duration = 0.25, trackRef = null, maxDuration = null } = {}) {
     if (this._lookResolve) {
       this._lookResolve();
       this._lookResolve = null;
@@ -623,22 +625,21 @@ export class PlayerCamera {
     this.lookTargetYaw = this.yaw + wrapAngleDiff(yaw, this.yaw);
     this.lookTargetPitch = pitch;
     this.lookElapsed = 0;
-    // Pacing guardrail: a look is a whip-pan, not a stare. Anything longer is dead air.
-    this.lookDuration = Math.max(
-      0.01,
-      Math.min(duration, CONFIG.maxLookDuration ?? 0.55)
-    );
+    this.lookDuration = maxDuration
+      ? Math.max(0.01, Math.min(duration, maxDuration))
+      : Math.max(0.01, duration);
     this.trackingRef = trackRef;
     return new Promise((resolve) => {
       this._lookResolve = resolve;
     });
   }
 
-  lookAt(ref, { duration = 0.25, track = false } = {}, resolver) {
+  lookAt(ref, { duration = 0.25, track = false, maxDuration = null } = {}, resolver) {
     if (this._resolveTargetPosition(ref, resolver, this._tmpTargetPos)) {
       return this.lookAtPosition(this._tmpTargetPos, {
         duration,
         trackRef: track ? ref : null,
+        maxDuration,
       });
     }
     return Promise.resolve();
@@ -896,7 +897,8 @@ export class PlayerCamera {
 
     if (this.lookElapsed < this.lookDuration) {
       this.lookElapsed = Math.min(this.lookDuration, this.lookElapsed + dt);
-      const lt = easeOutCubic(this.lookElapsed / this.lookDuration);
+      const progress = this.lookElapsed / this.lookDuration;
+      const lt = this.lookDuration > 0.65 ? easeInOutSine(progress) : easeOutCubic(progress);
       this.yaw = this.lookStartYaw + (this.lookTargetYaw - this.lookStartYaw) * lt;
       this.pitch = this.lookStartPitch + (this.lookTargetPitch - this.lookStartPitch) * lt;
       if (this.lookElapsed >= this.lookDuration && this._lookResolve) {

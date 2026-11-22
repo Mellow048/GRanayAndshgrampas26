@@ -4,6 +4,9 @@
  */
 
 import { THE_GREAT_ESCAPE_68S } from "./episodes/greatEscape75.js";
+import { ZOMBIE_FORT_5M } from "./episodes/zombieFort5m.js";
+
+export { ZOMBIE_FORT_5M };
 
 export const CONFIG = {
   threeVersion: "0.170.0",
@@ -11,8 +14,6 @@ export const CONFIG = {
   fixedDt: 1 / 60,
   maxFrameDt: 0.05,
   defaultFadeDuration: 0.18,
-  // Pacing guardrail: player_look is a whip-pan, never a stare. 0.55s is the hard cap.
-  maxLookDuration: 0.55,
   defaultAspect: "16:9",
   aspectModes: {
     "16:9": { width: 1280, height: 720, aspect: 16 / 9, fov: 68, label: "16:9 YouTube POV" },
@@ -427,7 +428,9 @@ export const SET_MAP = {
   up_bed_top: { x: -3.6, y: 3.83, z: -1.5, elevated: true, approach: "up_bed_top_edge", label: "Upstairs High Bed East" },
   up_bed_top_west: { x: -5.0, y: 3.83, z: -1.5, elevated: true, approach: "up_bed_north", label: "Upstairs High Bed West" },
   up_bed_top_edge: { x: -4.0, y: 2.85, z: -2.1, label: "Upstairs Bed Edge (Floor)" },
+  up_bed: { x: -4.3, y: 3.83, z: -1.5, elevated: true, approach: "up_bed_top_edge", label: "Upstairs High Bed" },
   upstairs_west_desk_top: { x: -7.0, y: 3.54, z: -2.6, elevated: true, approach: "up_bed_north", label: "Upstairs West Table Top" },
+  upstairs_desk: { x: -7.0, y: 3.54, z: -2.6, elevated: true, approach: "up_bed_north", label: "Upstairs West Desk Top" },
   upstairs_east_hall: { x: 1.5, y: 2.85, z: 0.2, label: "Upstairs East Hall" },
   upstairs_east_door: { x: 1.5, y: 2.85, z: -0.6, label: "Upstairs East Doorway" },
   upstairs_east_north: { x: 1.5, y: 2.85, z: -1.8, label: "Upstairs East Room" },
@@ -506,11 +509,13 @@ export const NAV_GRAPH_EDGES = {
   up_hall_north_door: ["upstairs_hall_center", "up_hall_north"],
   up_hall_north: ["up_hall_north_door", "up_bed_north_side"],
   up_bed_north_side: ["up_hall_north", "up_bed_north", "up_bed_top_edge"],
-  up_bed_north: ["up_bed_north_side", "up_bed_top_edge", "up_bed_top_west", "upstairs_west_desk_top"],
-  up_bed_top_edge: ["up_bed_north_side", "up_bed_north", "up_bed_top"],
-  up_bed_top: ["up_bed_top_edge", "up_bed_top_west"],
-  up_bed_top_west: ["up_bed_north", "up_bed_top"],
+  up_bed_north: ["up_bed_north_side", "up_bed_top_edge", "up_bed_top_west", "up_bed", "upstairs_west_desk_top", "upstairs_desk"],
+  up_bed_top_edge: ["up_bed_north_side", "up_bed_north", "up_bed_top", "up_bed"],
+  up_bed_top: ["up_bed_top_edge", "up_bed_top_west", "up_bed"],
+  up_bed_top_west: ["up_bed_north", "up_bed_top", "up_bed"],
+  up_bed: ["up_bed_top_edge", "up_bed_north", "up_bed_top", "up_bed_top_west"],
   upstairs_west_desk_top: ["up_bed_north"],
+  upstairs_desk: ["up_bed_north"],
 };
 
 export const NAV_GRAPH = Object.fromEntries(
@@ -2175,6 +2180,7 @@ export const THE_GREAT_ESCAPE_5M = {
 };
 
 export const EPISODE_PRESETS = {
+  zombie_fort_5m: ZOMBIE_FORT_5M,
   grandpa_key_pov_44s: GRANDPA_KEY_POV_44S,
   floor_is_lava_4m: FLOOR_IS_LAVA_4M,
   // The old 262s door-staring cut is replaced by the 68s fast-cut version.
@@ -2184,4 +2190,4 @@ export const EPISODE_PRESETS = {
   jump_run_walk_6s: JUMP_RUN_WALK_EPISODE,
 };
 
-export const DEFAULT_EPISODE = GRANDPA_KEY_POV_44S;
+export const DEFAULT_EPISODE = ZOMBIE_FORT_5M;
