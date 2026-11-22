@@ -9,6 +9,8 @@ on:
         default: "zombie_fort_5m"
         options:
           - zombie_fort_5m
+          - rocket_ball_test
+          - rocket_ball_x3
           - the_great_escape_68s
           - the_great_escape_5m
           - cookie_caper_30s

@@ -1159,6 +1159,8 @@ export class EpisodeRunner {
       // Instant actor teleport for scene cuts (no walk through empty rooms).
       const actor = this.characters[ev.actor];
       if (!actor) return;
+      actor.lookAtPlayer(false);
+      actor.showBubble(null);
       for (let i = this.activeCharMoves.length - 1; i >= 0; i--) {
         if (this.activeCharMoves[i].actor === actor) {
           if (this.activeCharMoves[i].resolve) this.activeCharMoves[i].resolve();
