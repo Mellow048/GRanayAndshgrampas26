@@ -70,7 +70,10 @@ export default defineScene({
       speed: 2.0,
     },
     { at: 17.4, type: "player_look", target: "kitchen_lane", duration: 0.4 },
-    { at: 21.2, type: "player_look", target: "kitchen_fridge", duration: 0.5 },
-    { at: 24.6, type: "sfx", sound: "swoosh", volume: 0.3 },
+    { at: 22.9, type: "player_look", target: "kitchen_fridge", duration: 0.5 },
+    // Arriving at the fridge — no dead air handing over to scene 3.
+    { at: 24.0, type: "player_gesture", gesture: "nod_yes", duration: 1.0 },
+    { at: 24.2, type: "sfx", sound: "aww", volume: 0.35 },
+    { at: 25.2, type: "player_look", target: "kitchen_fridge_front", duration: 0.4 },
   ],
 });

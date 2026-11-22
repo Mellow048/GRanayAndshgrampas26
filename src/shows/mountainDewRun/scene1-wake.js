@@ -20,8 +20,8 @@ export default defineScene({
     { at: 0.0, type: "bgm", sound: "granny_ambience", volume: 0.18 },
     // In bed, looking at the ceiling, then at the clock.
     { at: 0.0, type: "player_pose", pose: "lie", surface: "up_bed_top_west", lift: 0.34, duration: 0.01 },
-    { at: 0.3, type: "player_look", target: "up_bed_north", duration: 0.9 },
-    { at: 1.6, type: "player_look", target: "up_bed_top_west", duration: 0.8 },
+    { at: 0.3, type: "player_look", target: "up_bed_north", duration: 0.5 },
+    { at: 1.6, type: "player_look", target: "up_bed_top_west", duration: 0.55 },
     { at: 2.4, type: "sfx", sound: "aww", volume: 0.35 },
 
     // Up on the feet.

@@ -49,7 +49,7 @@ export default defineScene({
     { at: 15.3, type: "sfx", sound: "checkmark", volume: 0.55 },
 
     // Get back in bed and drift off.
-    { at: 16.4, type: "player_look", target: "up_bed_north", duration: 0.6 },
+    { at: 16.4, type: "player_look", target: "up_bed_north", duration: 0.55 },
     { at: 17.4, type: "player_walk", to: "up_bed_north_side", duration: 1.4, speed: 1.6 },
     { at: 18.8, type: "player_pose", pose: "lie", surface: "up_bed_top_west", lift: 0.34, duration: 1.4 },
     { at: 19.0, type: "sfx", sound: "aww", volume: 0.45 },
