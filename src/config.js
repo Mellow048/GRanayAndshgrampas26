@@ -8,8 +8,9 @@ import { THE_GREAT_ESCAPE_68S } from "./episodes/greatEscape75.js";
 import { ZOMBIE_FORT_5M } from "./episodes/zombieFort5m.js";
 import { COOKIE_CAPER_30S } from "./episodes/cookieCaper30.js";
 import { COMEDY_VARIETY_1M, COOKIE_HEIST_15S, ROCKET_BALL_TEST, ROCKET_BALL_x3 } from "./episodes.js";
+import { SHOWS, buildShow } from "./shows/index.js";
 
-export { COMEDY_VARIETY_1M, COOKIE_HEIST_15S, ZOMBIE_FORT_5M, COOKIE_CAPER_30S, ROCKET_BALL_TEST, ROCKET_BALL_x3 };
+export { COMEDY_VARIETY_1M, COOKIE_HEIST_15S, ZOMBIE_FORT_5M, COOKIE_CAPER_30S, ROCKET_BALL_TEST, ROCKET_BALL_x3, SHOWS };
 
 export const CONFIG = {
   threeVersion: "0.170.0",
@@ -415,6 +416,9 @@ export const SET_MAP = {
   front_door_right: { x: 1.05, y: 0.0, z: 4.85, label: "Front Door Right" },
   front_door_view: { x: 0.25, y: 0.0, z: 3.3, label: "Front Foyer Vantage" },
   foyer_atrium: { x: 0.25, y: 0.0, z: 2.1, label: "Foyer Atrium Drop Zone" },
+  dining_argue_west: { x: -5.2, y: 0.0, z: 1.5, facing: "dining_argue_east", label: "Arguing Spot (Granny)" },
+  dining_argue_east: { x: -4.1, y: 0.0, z: 1.5, facing: "dining_argue_west", label: "Arguing Spot (Grandpa)" },
+  dining_lane: { x: -3.2, y: 0.0, z: 2.4, label: "Dining Lane (east of the table)" },
   dining_corner: { x: -3.6, y: 0.0, z: 4.2, label: "Dining-Foyer Corner" },
   dining_table_front: { x: -4.0, y: 0.0, z: 2.6, label: "Dining Table Front" },
   dining_table_side: { x: -4.0, y: 0.0, z: 3.5, label: "Dining Table Side" },
@@ -422,6 +426,18 @@ export const SET_MAP = {
   dining_table_top: { x: -5.05, y: 1.11, z: 2.8, elevated: true, approach: "dining_table_front", label: "Dining Table Surface" },
   dining_table_top_west: { x: -5.35, y: 1.11, z: 3.4, elevated: true, approach: "dining_table_side", label: "Dining Table West" },
   kitchen_table_top: { x: -7.2, y: 1.13, z: 1.4, elevated: true, approach: "kitchen", label: "Kitchen Counter Top" },
+  // The fridge already in the house model: the tall unit on the kitchen's north
+  // wall (footprint x -6.9..-5.1, z -0.6..-0.1). We never build a second one.
+  kitchen_fridge: { x: -6.0, y: 1.0, z: -0.35, facing: "kitchen_fridge_front", label: "Kitchen Fridge" },
+  kitchen_fridge_front: { x: -6.0, y: 0.0, z: 0.62, facing: "kitchen_fridge", label: "In Front Of The Fridge" },
+  kitchen_fridge_shelf: {
+    x: -6.0,
+    y: 0.985,
+    z: 0.02,
+    elevated: true,
+    approach: "kitchen_fridge_front",
+    label: "Fridge Shelf",
+  },
   kitchen_counter_top: { x: -7.2, y: 1.13, z: 2.2, elevated: true, approach: "kitchen", label: "Kitchen Counter South" },
   back_bed_top: { x: -4.8, y: 0.98, z: -3.2, elevated: true, approach: "under_bed", label: "Downstairs Bed Top" },
   living_room_sofa: { x: 7.45, y: 0.47, z: 0.25, elevated: true, approach: "living_room_right", label: "Living Room Bench/Sofa" },
@@ -438,6 +454,11 @@ export const SET_MAP = {
   upstairs_west_room: { x: -3.8, y: 2.85, z: 0.2, label: "Upstairs West Hall" },
   up_hall_north_door: { x: -1.4, y: 2.85, z: -0.6, label: "Upstairs North Doorway" },
   up_hall_north: { x: -1.4, y: 2.85, z: -2.4, label: "Upstairs North Hall" },
+  // The real bed upstairs (mattress top 3.56, footprint x -8.2..-6.8, z -3.9..-0.9).
+  up_bed_mattress: { x: -7.5, y: 3.56, z: -2.4, elevated: true, approach: "up_bed_side", label: "Bed (mattress)" },
+  up_bed_side: { x: -6.5, y: 2.85, z: -2.4, label: "Beside The Bed" },
+  up_bed_hall: { x: -6.5, y: 2.85, z: -2.0, label: "Bedroom Doorway" },
+  up_bed_hall_corner: { x: -2.8, y: 2.85, z: -1.9, label: "Upstairs Hall Corner" },
   up_bed_north: { x: -4.0, y: 2.85, z: -2.6, label: "Upstairs Bedroom North" },
   up_bed_north_side: { x: -2.6, y: 2.85, z: -2.6, label: "Upstairs Bedroom Side" },
   up_bed_top: { x: -3.6, y: 3.83, z: -1.5, elevated: true, approach: "up_bed_top_edge", label: "Upstairs High Bed East" },
@@ -473,10 +494,20 @@ export const NAV_GRAPH_EDGES = {
   dining_table_side: ["dining_corner", "dining_table_front", "dining_table_top_west"],
   dining_table_front: ["dining_table_side", "dining_table_btn", "dining_center", "hide_table", "dining_table_top"],
   dining_table_btn: ["dining_table_front", "dining_table_top"],
-  dining_center: ["dining_table_front", "hide_table", "kitchen_lane", "doorway_dining"],
+  dining_center: ["dining_table_front", "hide_table", "kitchen_lane", "doorway_dining", "dining_lane"],
+  dining_lane: ["dining_center", "dining_corner", "stairs_bottom", "dining_table_front"],
+  dining_argue_west: ["dining_argue_east", "dining_lane"],
+  dining_argue_east: ["dining_argue_west", "dining_lane"],
   hide_table: ["dining_center", "dining_table_front"],
   kitchen_lane: ["dining_center", "kitchen"],
-  kitchen: ["kitchen_lane", "kitchen_table_top", "kitchen_counter_top"],
+  kitchen: ["kitchen_lane", "kitchen_table_top", "kitchen_counter_top", "kitchen_fridge_front"],
+  kitchen_fridge_front: ["kitchen", "kitchen_fridge", "kitchen_fridge_shelf", "kitchen_lane"],
+  up_bed_mattress: ["up_bed_side"],
+  up_bed_side: ["up_bed_mattress", "up_bed_hall", "up_bed_hall_corner"],
+  up_bed_hall: ["up_bed_side", "up_bed_hall_corner"],
+  up_bed_hall_corner: ["up_bed_hall", "up_bed_side", "upstairs_west_room", "upstairs_hall_center"],
+  kitchen_fridge: ["kitchen_fridge_front"],
+  kitchen_fridge_shelf: ["kitchen_fridge_front"],
   dining_table_top: ["dining_table_front", "dining_table_btn", "dining_table_top_west"],
   dining_table_top_west: ["dining_table_side", "dining_table_top"],
   kitchen_table_top: ["kitchen", "kitchen_counter_top"],
@@ -2196,6 +2227,8 @@ export const THE_GREAT_ESCAPE_5M = {
 
 export const EPISODE_PRESETS = {
   granny_cookie_heist_15s: GRANNY_COOKIE_HEIST_15S,
+  // Long-form, scene-built shows (each scene is its own file under src/shows/).
+  mountain_dew_run: buildShow("mountain_dew_run"),
   comedy_variety_1m: COMEDY_VARIETY_1M,
   cookie_heist_15s: COOKIE_HEIST_15S,
   rocket_ball_test: ROCKET_BALL_TEST,

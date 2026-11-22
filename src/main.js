@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { CONFIG, DEFAULT_EPISODE, EPISODE_PRESETS, SET_MAP } from "./config.js";
+import { buildShow } from "./shows/index.js";
 import {
   loadHouse,
   loadCharacterTemplate,
@@ -244,7 +245,12 @@ async function bootstrap() {
 
   const startGagKey = urlParams.get("gag");
   const startPresetKey = urlParams.get("preset") || "comedy_variety_1m";
-  let initialEp = EPISODE_PRESETS[startPresetKey] || DEFAULT_EPISODE;
+  // Long-form shows: ?show=mountain_dew_run (or ?show=…&scene=bed for one scene).
+  const startShowId = urlParams.get("show");
+  const startSceneId = urlParams.get("scene");
+  let initialEp = startShowId
+    ? buildShow(startShowId, { onlyScene: startSceneId || null })
+    : EPISODE_PRESETS[startPresetKey] || DEFAULT_EPISODE;
   if (startGagKey && GAG_REGISTRY[startGagKey]) {
     const gagOpts = {};
     for (const k of ["location", "victim", "chaser", "prop"]) {

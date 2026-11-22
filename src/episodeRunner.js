@@ -6,10 +6,23 @@ import {
   BODY,
   makeCapsule,
   pushOutOfCapsules,
+  pushOutOfBoxes,
   segmentClear,
   dist3D,
   dist2D,
 } from "./stagingSafety.js";
+
+/** Clips where a performer must keep eye contact with the lens. */
+const HEAD_TRACK_REACTIONS = new Set([
+  "laugh",
+  "punch",
+  "terrified",
+  "panic",
+  "hit",
+  "jump",
+  "look",
+  "idle",
+]);
 
 const LOCOMOTION_ANIMS = new Set(["walk", "run", "run2", "sneak", "granny_walk", "jump"]);
 const PLAYER_PERSONAL_SPACE = 1.3;
@@ -1151,6 +1164,15 @@ export class EpisodeRunner {
       : this.playerCamera?.camera?.position;
     if (!camPos) return;
     actor.faceTarget(camPos, ev.faceInstant === false ? 10 : 999);
+    if (HEAD_TRACK_REACTIONS.has(ev.anim) && ev.headTrack !== false) {
+      actor.setHeadTrack?.(true);
+    }
+  }
+
+  /** Visible prop boxes that performers must not walk through. */
+  _propObstacleBoxes() {
+    const boxes = this.comedyProps?.getObstacleBoxes?.() || [];
+    return boxes.filter((b) => b && b.max && b.min);
   }
 
   async executeBeat(ev, { silentSeek = false, runToken = this._runToken } = {}) {
@@ -1255,6 +1277,33 @@ export class EpisodeRunner {
       });
     }
 
+    if (type === "player_pose" && this.playerCamera) {
+      // Whole-body POV poses: stand back up, or lie on a real surface (bed).
+      let surfaceY = ev.surfaceY ?? null;
+      let surfaceX = null;
+      let surfaceZ = null;
+      const ref = ev.surface || ev.at;
+      if (typeof ref === "string") {
+        const wp = this.resolveWaypoint(ref);
+        if (wp) {
+          if (!Number.isFinite(surfaceY)) surfaceY = wp.y;
+          surfaceX = wp.x;
+          surfaceZ = wp.z;
+        }
+      }
+      return this.playerCamera.setPose({
+        pose: ev.pose || "stand",
+        surfaceY,
+        surfaceX,
+        surfaceZ,
+        lift: ev.lift ?? 0.3,
+        slide: ev.slide ?? 0.6,
+        roll: ev.roll ?? -1.15,
+        pitch: ev.pitch ?? 0.22,
+        duration: ev.duration ?? 0.9,
+      });
+    }
+
     if (type === "player_hold" && this.playerCamera) {
       if (ev.prop !== undefined && ev.prop !== this.playerCamera.heldPropType) {
         this.playerCamera.holdProp(ev.prop ?? null);
@@ -1298,6 +1347,7 @@ export class EpisodeRunner {
       const actor = this.characters[ev.actor];
       if (!actor) return;
       actor.lookAtPlayer(false);
+      actor.setHeadTrack?.(ev.facePlayer !== false ? true : false);
       actor.showBubble(null);
       actor.setProp(ev.prop ?? "cane");
       for (let i = this.activeCharMoves.length - 1; i >= 0; i--) {
@@ -1357,6 +1407,14 @@ export class EpisodeRunner {
           stops[stops.length - 1] = { x: nudged.pos.x, y: nudged.pos.y, z: nudged.pos.z };
         }
       }
+      // Never park a performer inside a prop that is sitting in the room.
+      if (stops.length) {
+        const dest = this.resolveWaypoint(stops[stops.length - 1]);
+        const clearProp = pushOutOfBoxes(dest, this._propObstacleBoxes(), { pad: 0.34 });
+        if (dist2D(clearProp.pos, dest) > 0.02) {
+          stops[stops.length - 1] = { x: clearProp.pos.x, y: dest.y ?? 0, z: clearProp.pos.z };
+        }
+      }
       const { points, segments } = this._buildFullStopChain(from, stops);
 
       const requestedAnim = ev.anim || "walk";
@@ -1407,6 +1465,11 @@ export class EpisodeRunner {
       const speed = ev.instant ? 999 : 14;
       if (typeof ev.followPlayer === "boolean") {
         actor.lookAtPlayer(ev.followPlayer);
+        // Head-tracking: keep the face on the lens through every clip that follows.
+        actor.setHeadTrack?.(ev.followPlayer && ev.headTrack !== false, {
+          maxYaw: ev.maxHeadYaw ?? 0.95,
+          maxPitch: ev.maxHeadPitch ?? 0.42,
+        });
         if (ev.followPlayer && ev.instant && this.playerCamera) {
           const eyePos = this.playerCamera.getEyeWorldPosition
             ? this.playerCamera.getEyeWorldPosition()
@@ -1414,7 +1477,10 @@ export class EpisodeRunner {
           actor.lookAt(eyePos);
         }
       }
-      if (ev.target === "player" && this.playerCamera) {
+      if (ev.targetActor) {
+        const other = this.characters[ev.targetActor];
+        if (other) actor.faceTarget(other.root.position, speed);
+      } else if (ev.target === "player" && this.playerCamera) {
         const eyePos = this.playerCamera.getEyeWorldPosition
           ? this.playerCamera.getEyeWorldPosition()
           : this.playerCamera.camera.position;

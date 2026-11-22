@@ -36,6 +36,7 @@ function parseArgs(argv) {
     outDir: path.join(REPO_ROOT, "output"),
     outName: "",
     concatDir: "",
+    reencode: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -49,6 +50,7 @@ function parseArgs(argv) {
     else if (a === "--out-dir") opts.outDir = path.resolve(argv[++i]);
     else if (a === "--out-name") opts.outName = argv[++i] || "";
     else if (a === "--concat") opts.concatDir = path.resolve(argv[++i]);
+    else if (a === "--reencode") opts.reencode = true;
   }
   return opts;
 }
@@ -272,7 +274,7 @@ function preMixSfxBatches(sfxEvents, duration, framesDir, batchSize = 40) {
   return { batchWavPaths, remainingEvents: [] };
 }
 
-function concatRenderedChunks(concatDir, outDir, outName = "") {
+function concatRenderedChunks(concatDir, outDir, outName = "", { reencode = false } = {}) {
   if (!fs.existsSync(concatDir)) {
     throw new Error(`Concat directory not found: ${concatDir}`);
   }
@@ -307,8 +309,15 @@ function concatRenderedChunks(concatDir, outDir, outName = "") {
     .replace(/^-|-$/g, "");
   const outPath = path.join(outDir, `${slug}.${ext}`);
 
-  const ffArgs = ["-y", "-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy"];
-  if (ext === "mp4") ffArgs.push("-movflags", "+faststart");
+  const ffArgs = ["-y", "-f", "concat", "-safe", "0", "-i", listFile];
+  if (reencode) {
+    // Chunks that do not share identical stream parameters cannot be stream-copied.
+    ffArgs.push("-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p");
+    if (ext === "mp4") ffArgs.push("-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart");
+  } else {
+    ffArgs.push("-c", "copy");
+    if (ext === "mp4") ffArgs.push("-movflags", "+faststart");
+  }
   ffArgs.push(outPath);
 
   runFfmpeg(ffArgs);
@@ -319,7 +328,9 @@ function concatRenderedChunks(concatDir, outDir, outName = "") {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.concatDir) {
-    concatRenderedChunks(opts.concatDir, opts.outDir, opts.outName || opts.preset);
+    concatRenderedChunks(opts.concatDir, opts.outDir, opts.outName || opts.preset, {
+      reencode: Boolean(opts.reencode),
+    });
     return;
   }
 
