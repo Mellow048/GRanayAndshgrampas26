@@ -13,7 +13,7 @@ export default defineScene({
   title: "Wake Up",
   room: "bedroom",
   duration: 13,
-  playerSpawn: "up_bed_north_side",
+  playerSpawn: "up_bed_north",
   playerFacing: "up_bed_north",
   notes: "Starts lying on the bed (player_pose lie) and stands up before walking.",
   beats: [

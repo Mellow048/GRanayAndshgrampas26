@@ -827,6 +827,7 @@ export class PlayerCamera {
     surfaceX = null,
     surfaceZ = null,
     lift = 0.3,
+    slide = 0.6,
     roll = -1.15,
     pitch = 0.22,
     duration = 0.9,
@@ -837,11 +838,21 @@ export class PlayerCamera {
       eyeY: lying && Number.isFinite(surfaceY) ? surfaceY + lift : null,
       roll: lying ? roll : 0,
       pitch: lying ? pitch : 0,
-      // Slide the eye onto the surface (bed) instead of just dropping it, so
-      // getting up does not teleport the camera sideways.
-      x: lying && Number.isFinite(surfaceX) ? surfaceX - this.playerPos.x : 0,
-      z: lying && Number.isFinite(surfaceZ) ? surfaceZ - this.playerPos.z : 0,
+      // Slide the eye toward the surface (bed) instead of just dropping it, so
+      // getting up does not teleport the camera sideways. Capped at `slide` so a
+      // surface across the room cannot fling the lens.
+      x: 0,
+      z: 0,
     };
+    if (lying && Number.isFinite(surfaceX) && Number.isFinite(surfaceZ)) {
+      const dx = surfaceX - this.playerPos.x;
+      const dz = surfaceZ - this.playerPos.z;
+      const dist = Math.hypot(dx, dz);
+      const reach = Math.min(dist, slide);
+      const k = dist > 1e-4 ? reach / dist : 0;
+      this.poseTarget.x = dx * k;
+      this.poseTarget.z = dz * k;
+    }
     this.poseDuration = Math.max(0.05, duration);
     return Promise.resolve();
   }

@@ -31,7 +31,7 @@ export default defineScene({
       at: 0.3,
       type: "player_walk",
       via: ["stairs_middle", "stairs_top", "upstairs_landing", "upstairs_hall_center", "upstairs_west_room"],
-      to: "up_bed_north_side",
+      to: "up_bed_north",
       duration: 13.0,
       speed: 2.2,
     },
@@ -50,7 +50,7 @@ export default defineScene({
 
     // Get back in bed and drift off.
     { at: 16.4, type: "player_look", target: "up_bed_north", duration: 0.55 },
-    { at: 17.4, type: "player_walk", to: "up_bed_north_side", duration: 1.4, speed: 1.6 },
+    { at: 17.4, type: "player_walk", to: "up_bed_north", duration: 1.4, speed: 1.6 },
     { at: 18.8, type: "player_pose", pose: "lie", surface: "up_bed_top_west", lift: 0.34, duration: 1.4 },
     { at: 19.0, type: "sfx", sound: "aww", volume: 0.45 },
     // A last wiggle before the eyes close, so the show ends on motion.

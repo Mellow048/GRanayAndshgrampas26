@@ -1297,6 +1297,7 @@ export class EpisodeRunner {
         surfaceX,
         surfaceZ,
         lift: ev.lift ?? 0.3,
+        slide: ev.slide ?? 0.6,
         roll: ev.roll ?? -1.15,
         pitch: ev.pitch ?? 0.22,
         duration: ev.duration ?? 0.9,
