@@ -5,6 +5,7 @@
 
 import { THE_GREAT_ESCAPE_68S } from "./episodes/greatEscape75.js";
 import { ZOMBIE_FORT_5M } from "./episodes/zombieFort5m.js";
+import { COOKIE_CAPER_30S } from "./episodes/cookieCaper30.js";
 
 export { ZOMBIE_FORT_5M };
 
@@ -2187,6 +2188,7 @@ export const EPISODE_PRESETS = {
   // `the_great_escape_5m` stays as a backwards-compatible alias for the workflow.
   the_great_escape_5m: THE_GREAT_ESCAPE_68S,
   the_great_escape_68s: THE_GREAT_ESCAPE_68S,
+  cookie_caper_30s: COOKIE_CAPER_30S,
   jump_run_walk_6s: JUMP_RUN_WALK_EPISODE,
 };
 

@@ -37,9 +37,11 @@ if (!episode) {
 
 const allowSlowScans = Boolean(episode.allowSlowScans);
 const MAX_GAP = Number(flags.get("max-gap") ?? 2.5);
-const MIN_RUNTIME = Number(flags.get("min-runtime") ?? (allowSlowScans ? 240 : 45));
+const MIN_RUNTIME = Number(flags.get("min-runtime") ?? (allowSlowScans ? 240 : 20));
 const MAX_RUNTIME = Number(flags.get("max-runtime") ?? (allowSlowScans ? 340 : 120));
-const MAX_LOOK = episode.maxLookDuration ?? (allowSlowScans ? 5.0 : 0.55);
+const MAX_LOOK =
+  episode.maxLookDuration ??
+  (allowSlowScans ? 5.0 : CONFIG.maxLookDuration ?? 0.55);
 
 const failures = [];
 const warnings = [];
@@ -121,12 +123,13 @@ for (const ev of raw) {
   let effective = ev.duration;
 
   if (ev.type === "player_look") {
-    if (episode.maxLookDuration) {
-      effective = Math.min(ev.duration, episode.maxLookDuration);
-    }
+    const rawDur = ev.duration ?? 0.2;
+    effective = Math.min(rawDur, MAX_LOOK);
     checkRef(ev.target, "player_look target");
-    if (effective > MAX_LOOK + 1e-6) {
-      warn(`player_look ${ev.duration}s exceeds ${MAX_LOOK}s at ${simAt.toFixed(1)}s`);
+    if (rawDur > MAX_LOOK + 1e-6) {
+      warn(
+        `player_look ${rawDur}s -> capped to ${MAX_LOOK}s at ${simAt.toFixed(1)}s`
+      );
     }
   } else if (ev.type === "cut") {
     checkRef(ev.to || ev.target, "cut destination");

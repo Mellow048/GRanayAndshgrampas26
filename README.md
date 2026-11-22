@@ -4,6 +4,7 @@ A zero-build Three.js (`v0.170.0`) first-person **Granny POV Kids-Comedy 3D Cart
 
 ## Built-In POV Episodes
 - **The Great Escape (68s, `16:9` POV, `the_great_escape_68s`)** — fast-cut kids-comedy horror escape: locked front door → Granny demands the key → kitchen key heist → stair chase → Grandpa's toy blaster → chest & lava button → lava flood → front-door showdown → jumpscare. 220 beats, 14 hard cuts, zero awaited beats, zero dead air over 0.75s.
+- **Granny & Grandpa: Cookie Caper (30s, `9:16` Short, `cookie_caper_30s`)** — kid-safe slapstick: Grandpa sneaks the cookie jar, Granny catches him, a table-top chase turns into cookie-sharing and a silly send-off.
 - **Grandpa Loses His Key & Granny's Mystery Box (44s, `16:9` POV)** — 3-skit first-person adventure: meet Grandpa in the living room, sneak past Granny and crouch-hide beside the bed, grab the glowing Golden Key from the kitchen, unlock the Mystery Chest, and survive Granny's rage chase!
 - **The Floor Is Lava! (4-minute narrative, `16:9` POV)** — longer story-mode cut of the lava gag.
 - **Granny & Grandpa: Jump, Run, Walk (6s, `9:16` Short)** — quick jump, sprint, and stroll showcase.
@@ -28,6 +29,10 @@ It fails the build on dead air, runaway runtimes, or dangling waypoint/actor/pro
 Trigger **Actions → Export POV Episode (Cloud Render)** (`.github/workflows/export-video.yml`) or run:
 ```bash
 gh workflow run export-video.yml --ref main -f preset=the_great_escape_68s -f fps=30 -f sfx_pacer=true -f format=mp4
+```
+For the 30s vertical Short:
+```bash
+gh workflow run export-video.yml --ref main -f preset=cookie_caper_30s -f aspect=auto -f fps=30 -f sfx_pacer=true -f format=mp4
 ```
 The rendered `.mp4` is automatically published to the `latest-export` GitHub Release.
 
