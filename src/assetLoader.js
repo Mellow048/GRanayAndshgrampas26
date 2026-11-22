@@ -3,7 +3,7 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { ASSET_MANIFEST, CONFIG, SEMANTIC_MESH_TAGS, SEMANTIC_OBJECT_REGIONS } from "./config.js";
 import { createPropMesh, ThoughtBubbleCache } from "./comedyProps.js";
-import { headAimAngles } from "./stagingSafety.js";
+import { headAimAngles, headAimWeight, aimStep } from "./stagingSafety.js";
 
 const sharedBubbleCache = new ThoughtBubbleCache();
 
@@ -48,6 +48,8 @@ async function loadFbxWithTextures(fbxPath, textureDir, textureAliases = {}) {
   }
   return fbx;
 }
+const num = (v) => (Number.isFinite(v) ? v : 0);
+
 export function createAssetLoadingManager(textureDir, textureAliases = {}) {
   const manager = new THREE.LoadingManager();
   manager.setURLModifier((url) => {
@@ -924,6 +926,12 @@ export function instantiateCharacter(id, template, animationClips) {
   const headBone = template.spec.headBoneName
     ? rigHolder.getObjectByName(template.spec.headBoneName)
     : null;
+  // The head aim must always be rebuilt from the *bind pose*: most clips do not
+  // animate the head bone, so premultiplying a world delta every frame compounds
+  // and the head visibly spins.
+  const headRestQuat = headBone ? headBone.quaternion.clone() : null;
+  const lastAimQuat = new THREE.Quaternion();
+  let headAimApplied = false;
   const handBoneName =
     template.spec.rigType === "bip01" ? "Bip01_R_Hand" : "hand_R_001";
   const handBone = rigHolder.getObjectByName(handBoneName) || null;
@@ -1113,24 +1121,67 @@ export function instantiateCharacter(id, template, animationClips) {
       enabled: Boolean(enabled),
     };
     if (!headTrack.enabled) {
-      headTrackYaw = 0;
-      headTrackPitch = 0;
+      clearHeadAim();
     }
+  }
+
+  /** Drops any head rotation we applied, leaving the pose exactly as the clip left it. */
+  function clearHeadAim() {
+    headTrackYaw = 0;
+    headTrackPitch = 0;
+    if (headAimApplied && headBone && headRestQuat) {
+      headBone.quaternion.copy(headRestQuat);
+    }
+    headAimApplied = false;
   }
 
   /** Applies the clamped world-space head turn on top of the clip pose. */
   function applyHeadAim(targetPos, dt) {
     if (!headBone || !targetPos) return;
+    const step = Math.max(0, Math.min(dt || 0, 0.1));
+
+    // If nobody touched the head since we aimed it, this clip does not animate
+    // that bone — rebuild from the bind pose so the delta cannot pile up.
+    if (headAimApplied && headBone.quaternion.angleTo(lastAimQuat) < 1e-5) {
+      headBone.quaternion.copy(headRestQuat);
+      headAimApplied = false;
+    }
+
     const headPos = headBone.getWorldPosition(tmpHeadPos);
-    const aim = headAimAngles(headPos, targetPos, root.rotation.y, {
-      maxYaw: headTrack.maxYaw,
-      maxPitch: headTrack.maxPitch,
-    });
-    const weight = Math.max(0, Math.min(1, headTrack.weight ?? 1));
-    const rate = Math.min(1, Math.max(dt, 1 / 120) * 9);
-    headTrackYaw += (aim.yaw * weight - headTrackYaw) * rate;
-    headTrackPitch += (aim.pitch * weight - headTrackPitch) * rate;
-    if (Math.abs(headTrackYaw) < 1e-4 && Math.abs(headTrackPitch) < 1e-4) return;
+    const camDist = Math.hypot(
+      num(targetPos.x) - headPos.x,
+      num(targetPos.y) - headPos.y,
+      num(targetPos.z) - headPos.z
+    );
+
+    // A lens this close to the skull turns tiny movements into huge swings —
+    // ease the aim out instead of chasing it.
+    const weight =
+      Math.max(0, Math.min(1, headTrack.weight ?? 1)) * headAimWeight(camDist);
+
+    let aimYaw = 0;
+    let aimPitch = 0;
+    if (weight > 1e-3) {
+      const aim = headAimAngles(headPos, targetPos, root.rotation.y, {
+        maxYaw: headTrack.maxYaw,
+        maxPitch: headTrack.maxPitch,
+      });
+      aimYaw = aim.yaw * weight;
+      aimPitch = aim.pitch * weight;
+    }
+
+    // Smooth toward the goal but never faster than 4 rad/s, so no target flip
+    // (or a lens pressed against the face) can whip the neck around.
+    headTrackYaw = aimStep(headTrackYaw, aimYaw, step);
+    headTrackPitch = aimStep(headTrackPitch, aimPitch, step);
+
+    if (Math.abs(headTrackYaw) < 1e-4 && Math.abs(headTrackPitch) < 1e-4) {
+      if (headAimApplied) {
+        headBone.quaternion.copy(headRestQuat);
+        headAimApplied = false;
+      }
+      return;
+    }
 
     tmpHeadQuat
       .setFromAxisAngle(WORLD_UP, headTrackYaw)
@@ -1142,6 +1193,8 @@ export function instantiateCharacter(id, template, animationClips) {
       .multiply(tmpHeadQuat)
       .multiply(tmpParentQuat);
     headBone.quaternion.premultiply(tmpLocalQuat);
+    lastAimQuat.copy(headBone.quaternion);
+    headAimApplied = true;
   }
 
   function showBubble(iconName, duration = 2.0) {
@@ -1368,6 +1421,7 @@ export function instantiateCharacter(id, template, animationClips) {
     lookAt,
     lookAtPlayer,
     setHeadTrack,
+    clearHeadAim,
     get headTracking() {
       return { ...headTrack };
     },

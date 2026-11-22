@@ -6,7 +6,13 @@ import { defineScene, describeScene } from "../src/shows/sceneKit.js";
 import { buildEpisode } from "../src/episodeBuilder.js";
 import { validateAndRepair, formatStagingReport } from "../src/episodeSafety.js";
 import { SET_MAP, NAV_GRAPH } from "../src/config.js";
-import { headAimAngles, segmentHitsBox, pushOutOfBoxes } from "../src/stagingSafety.js";
+import {
+  headAimAngles,
+  headAimWeight,
+  aimStep,
+  segmentHitsBox,
+  pushOutOfBoxes,
+} from "../src/stagingSafety.js";
 
 test("sceneKit rejects scenes that break the contract", () => {
   assert.throws(() => defineScene({ id: "Bad-ID", title: "x", duration: 5, playerSpawn: "kitchen" }));
@@ -136,4 +142,25 @@ test("props block bodies: sweep test and push-out", () => {
 
   const clear = pushOutOfBoxes({ x: 3, y: 0, z: 3 }, [box], { pad: 0.1 });
   assert.deepEqual(clear.dodged, []);
+});
+
+test("head aim cannot spin: bounded step, eased out when the lens is in your face", () => {
+  // A 180-degree target flip at 30fps may only move the neck ~4 rad/s worth.
+  const step = aimStep(0, Math.PI, 1 / 30);
+  assert.ok(step <= 4 / 30 + 1e-9, `moved ${step} rad in one frame`);
+
+  // Over a second it converges, without overshoot.
+  let yaw = 0;
+  for (let i = 0; i < 30; i += 1) yaw = aimStep(yaw, Math.PI, 1 / 30);
+  assert.ok(yaw > 1 && yaw < Math.PI);
+
+  // Alternating noise (a camera jammed against the head) cannot accumulate.
+  let noisy = 0;
+  for (let i = 0; i < 120; i += 1) noisy = aimStep(noisy, i % 2 ? 1.5 : -1.5, 1 / 30);
+  assert.ok(Math.abs(noisy) < 0.35, `noise accumulated to ${noisy}`);
+
+  // Proximity: full aim from 0.9m out, nothing inside 0.35m.
+  assert.equal(headAimWeight(1.6), 1);
+  assert.equal(headAimWeight(0.2), 0);
+  assert.ok(headAimWeight(0.6) > 0.3 && headAimWeight(0.6) < 0.7);
 });

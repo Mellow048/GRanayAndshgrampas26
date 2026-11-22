@@ -636,6 +636,32 @@ export function headAimAngles(headPos, targetPos, bodyYaw = 0, { maxYaw = 0.95, 
   };
 }
 
+/**
+ * How much of the head aim to use given the lens distance. A camera inside the
+ * head's personal space makes the facing direction pure noise, so the aim eases
+ * out below ~0.9m and is fully off at 0.35m.
+ */
+export function headAimWeight(distance, { full = 0.9, zero = 0.35 } = {}) {
+  const d = num(distance);
+  if (!Number.isFinite(d)) return 0;
+  if (d >= full) return 1;
+  if (d <= zero) return 0;
+  return (d - zero) / (full - zero);
+}
+
+/**
+ * One smoothing step toward `goal`, hard-limited to `maxOmega` rad/s so a target
+ * flip (or a camera pressed against the face) can never whip the neck.
+ */
+export function aimStep(current, goal, dt, { easeRate = 9, maxOmega = 4, minDt = 1 / 120 } = {}) {
+  const from = num(current);
+  const to = num(goal);
+  const step = Math.max(num(dt), minDt);
+  const next = from + (to - from) * Math.min(1, step * easeRate);
+  const maxStep = maxOmega * step;
+  return from + Math.max(-maxStep, Math.min(maxStep, next - from));
+}
+
 /* ------------------------------------------------------------------ *
  * 8. Prop boxes vs bodies
  * ------------------------------------------------------------------ */
@@ -741,6 +767,8 @@ export const stagingSafety = {
   forwardFromYaw,
   direction2D,
   headAimAngles,
+  headAimWeight,
+  aimStep,
   segmentHitsBox,
   pushOutOfBoxes,
 };
