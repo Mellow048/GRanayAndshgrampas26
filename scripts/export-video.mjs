@@ -34,6 +34,8 @@ function parseArgs(argv) {
     format: "mp4",
     workers: 0,
     outDir: path.join(REPO_ROOT, "output"),
+    outName: "",
+    concatDir: "",
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -45,6 +47,8 @@ function parseArgs(argv) {
     else if (a === "--format") opts.format = argv[++i] || "mp4";
     else if (a === "--workers") opts.workers = Number(argv[++i]) || 0;
     else if (a === "--out-dir") opts.outDir = path.resolve(argv[++i]);
+    else if (a === "--out-name") opts.outName = argv[++i] || "";
+    else if (a === "--concat") opts.concatDir = path.resolve(argv[++i]);
   }
   return opts;
 }
@@ -256,8 +260,57 @@ function preMixSfxBatches(sfxEvents, duration, framesDir, batchSize = 40) {
   return { batchWavPaths, remainingEvents: [] };
 }
 
+function concatRenderedChunks(concatDir, outDir, outName = "") {
+  if (!fs.existsSync(concatDir)) {
+    throw new Error(`Concat directory not found: ${concatDir}`);
+  }
+  const files = fs
+    .readdirSync(concatDir, { withFileTypes: true })
+    .flatMap((d) =>
+      d.isDirectory()
+        ? fs
+            .readdirSync(path.join(concatDir, d.name))
+            .map((f) => path.join(concatDir, d.name, f))
+        : [path.join(concatDir, d.name)]
+    )
+    .filter((f) => /\.(mp4|webm)$/i.test(f))
+    .sort((a, b) => path.basename(a).localeCompare(path.basename(b), undefined, { numeric: true }));
+
+  if (files.length === 0) {
+    throw new Error(`No rendered chunk videos found in ${concatDir}`);
+  }
+  const ext = path.extname(files[0]).slice(1).toLowerCase() || "mp4";
+  const sameExt = files.filter((f) => f.toLowerCase().endsWith(`.${ext}`));
+
+  fs.mkdirSync(outDir, { recursive: true });
+  const listFile = path.join(outDir, "concat-list.txt");
+  fs.writeFileSync(
+    listFile,
+    sameExt.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n") + "\n"
+  );
+
+  const slug = (outName || "long-episode-stitched")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  const outPath = path.join(outDir, `${slug}.${ext}`);
+
+  const ffArgs = ["-y", "-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy"];
+  if (ext === "mp4") ffArgs.push("-movflags", "+faststart");
+  ffArgs.push(outPath);
+
+  runFfmpeg(ffArgs);
+  const sizeMb = (fs.statSync(outPath).size / (1024 * 1024)).toFixed(2);
+  console.log(`[Concat] Stitched ${sameExt.length} chunks -> ${outPath} (${sizeMb} MB)`);
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+  if (opts.concatDir) {
+    concatRenderedChunks(opts.concatDir, opts.outDir, opts.outName || opts.preset);
+    return;
+  }
+
   const { chromium } = await import("playwright");
   const { EPISODE_PRESETS } = await import(path.join(REPO_ROOT, "src/config.js"));
 
@@ -405,7 +458,7 @@ async function main() {
       `[Export] All ${totalFrames} frames rendered in ${((Date.now() - renderStartMs) / 1000).toFixed(1)}s. Captured ${sfxEvents.length} SFX events, ${bgmSegments.length} BGM segments, ${bgmDucks.length} duck cuts.`
     );
 
-    const slug = (meta.title || "granny-pov-episode")
+    const slug = (opts.outName || meta.title || "granny-pov-episode")
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");

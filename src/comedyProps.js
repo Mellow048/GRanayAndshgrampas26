@@ -620,6 +620,14 @@ export class ComedyPropManager {
         type: def.type,
         mesh,
         basePos: basePos.clone(),
+        initial: {
+          basePos: basePos.clone(),
+          rotationY: def.rotationY || 0,
+          scale: def.scale || 1,
+          visible: def.visible !== false,
+          spin: Boolean(def.spin),
+          float: Boolean(def.float),
+        },
         state: {
           spin: Boolean(def.spin),
           float: Boolean(def.float),
@@ -642,12 +650,63 @@ export class ComedyPropManager {
     return this.props.get(id) || null;
   }
 
+  resetProp(propId, params = {}) {
+    const entry = this.props.get(propId);
+    if (!entry) return;
+    const { mesh, state, basePos, initial } = entry;
+
+    const wpRef = params.at || params.waypoint;
+    if (wpRef && this.waypoints[wpRef]) {
+      const wp = this.waypoints[wpRef];
+      basePos.set(wp.x, wp.y + (params.yOffset ?? 0), wp.z);
+    } else {
+      basePos.copy(initial.basePos);
+      if (params.yOffset !== undefined) {
+        basePos.y += params.yOffset;
+      }
+    }
+
+    mesh.position.copy(basePos);
+    mesh.rotation.set(0, params.rotationY ?? initial.rotationY, 0);
+    mesh.scale.setScalar(params.scale ?? initial.scale);
+    mesh.visible = params.visible !== undefined ? Boolean(params.visible) : initial.visible;
+
+    state.spin = params.spin !== undefined ? Boolean(params.spin) : initial.spin;
+    state.float = params.float !== undefined ? Boolean(params.float) : initial.float;
+    state.bounce = false;
+    state.popOut = false;
+    state.popEndPos = null;
+    state.lidOpen = false;
+    state.pressed = false;
+    state.riseActive = false;
+    state.riseStartY = basePos.y;
+    state.riseTargetY = basePos.y;
+    state.riseElapsed = 0;
+    state.phase = 0;
+
+    const glow = mesh.getObjectByName("ChestGlow");
+    if (glow) glow.visible = false;
+    const sparkles = mesh.getObjectByName("ChestSparkles");
+    if (sparkles) sparkles.visible = false;
+    const lid = mesh.getObjectByName("ChestLid");
+    if (lid) lid.rotation.x = 0;
+    const flapL = mesh.getObjectByName("BoxFlapL");
+    if (flapL) flapL.rotation.z = 0;
+    const flapR = mesh.getObjectByName("BoxFlapR");
+    if (flapR) flapR.rotation.z = 0;
+    const btnCap = mesh.getObjectByName("ButtonCap");
+    if (btnCap) btnCap.position.y = 0.155;
+  }
+
   performAction(propId, action, params = {}) {
     const entry = this.props.get(propId);
     if (!entry) return;
     const { mesh, state, basePos } = entry;
 
     switch (action) {
+      case "reset":
+        this.resetProp(propId, params);
+        break;
       case "show":
         mesh.visible = true;
         state.bounce = false;

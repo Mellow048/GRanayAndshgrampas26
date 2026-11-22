@@ -386,7 +386,7 @@ export class SfxEngine {
     }
   }
 
-  tickPacer(simDt, simTime, { anyMoving = false, moveAnim = "walk" } = {}) {
+  tickPacer(simDt, simTime, { anyMoving = false, moveAnim = "walk", movingActors = [], playerMoving = false } = {}) {
     // Restore ducked BGM smoothly after comedy silence cut
     if (!this.exportMode && this.bgmDuckTimer > 0) {
       this.bgmDuckTimer = Math.max(0, this.bgmDuckTimer - simDt);
@@ -406,13 +406,19 @@ export class SfxEngine {
           ? CONFIG.sfxPacer.footstepIntervalSneak
           : CONFIG.sfxPacer.footstepIntervalWalk;
 
+      // Distinct footstep timbre per character so multi-actor chases don't sound identical
+      const primaryActor = movingActors?.[0]?.id || (playerMoving ? "player" : "granny");
+      const actorBasePitch =
+        primaryActor === "grandpa" ? 0.8 : primaryActor === "granny" ? 1.06 : 0.94;
+      const animMul = isRun ? 1.24 : isSneak ? 0.84 : 1.0;
+
       this.stepAccumulator += simDt;
       if (this.stepAccumulator >= stepPeriod) {
         this.stepAccumulator -= stepPeriod;
         this.play("squidward_walk", {
-          volume: isRun ? 0.48 : isSneak ? 0.34 : 0.42,
-          pitch: isRun ? 1.26 : isSneak ? 0.82 : 0.98,
-          pitchJitter: 0.06,
+          volume: isRun ? 0.44 : isSneak ? 0.3 : 0.38,
+          pitch: actorBasePitch * animMul,
+          pitchJitter: 0.07,
           simTime,
           cooldown: 0.2,
           maxDuration: isRun ? 0.22 : 0.34,
@@ -423,23 +429,22 @@ export class SfxEngine {
 
     this.stepAccumulator = 0;
 
-    // Gentle comedic gap pacer only if idle for > 1.7s
+    // Subtle comedic gap pacer only when authored audio has been quiet > 2.4s
     const gap = simTime - this.lastAnySfxTime;
-    if (gap >= this.nextGapThreshold) {
+    if (gap >= Math.max(2.4, this.nextGapThreshold)) {
       const cues = ["pop", "ding", "click"];
       const pick = cues[Math.floor(Math.random() * cues.length)];
       if (
         this.play(pick, {
-          volume: 0.35,
+          volume: 0.32,
           pitchJitter: 0.1,
           simTime,
-          maxDuration: 0.45,
+          maxDuration: 0.42,
         })
       ) {
         this.nextGapThreshold =
-          CONFIG.sfxPacer.minIntervalSec +
-          Math.random() *
-            (CONFIG.sfxPacer.maxIntervalSec - CONFIG.sfxPacer.minIntervalSec);
+          2.4 +
+          Math.random() * 1.1;
       }
     }
   }

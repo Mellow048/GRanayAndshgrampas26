@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { CONFIG, EPISODE_PRESETS, SET_MAP, SFX_MANIFEST } from "./config.js";
 import { resolveSemanticTagAtPoint } from "./assetLoader.js";
+import { buildEpisode } from "./episodeBuilder.js";
+import { GAG_REGISTRY } from "./gags/index.js";
 
 /**
  * Interactive Studio UI controller:
@@ -104,7 +106,20 @@ export class StudioUI {
 
     this.els.presetSelect?.addEventListener("change", (e) => {
       const key = e.target.value;
-      const preset = EPISODE_PRESETS[key];
+      let preset = EPISODE_PRESETS[key];
+      if (!preset && key.startsWith("gag:")) {
+        const gagKey = key.slice(4);
+        const gagFn = GAG_REGISTRY[gagKey];
+        if (gagFn) {
+          const g = gagFn();
+          preset = buildEpisode({
+            title: `Gag Lab: ${g.name}`,
+            playerSpawn: g.playerSpawn,
+            playerFacing: g.playerFacing,
+            gags: [g],
+          });
+        }
+      }
       if (!preset) return;
       this.els.episodeEditor.value = JSON.stringify(preset, null, 2);
       this.onLoadEpisode(preset);
@@ -408,12 +423,31 @@ export class StudioUI {
   populatePresets() {
     if (!this.els.presetSelect) return;
     this.els.presetSelect.innerHTML = "";
+
+    const epGroup = document.createElement("optgroup");
+    epGroup.label = "Episodes";
     for (const [key, ep] of Object.entries(EPISODE_PRESETS)) {
       const opt = document.createElement("option");
       opt.value = key;
       opt.textContent = ep.title;
-      this.els.presetSelect.appendChild(opt);
+      epGroup.appendChild(opt);
     }
+    this.els.presetSelect.appendChild(epGroup);
+
+    const gagKeys = Object.keys(GAG_REGISTRY);
+    if (gagKeys.length > 0) {
+      const gagGroup = document.createElement("optgroup");
+      gagGroup.label = "Gag Lab (Single Gag Preview)";
+      for (const gk of gagKeys) {
+        const g = GAG_REGISTRY[gk]();
+        const opt = document.createElement("option");
+        opt.value = `gag:${gk}`;
+        opt.textContent = `${gk} — ${g.name} (${g.duration}s)`;
+        gagGroup.appendChild(opt);
+      }
+      this.els.presetSelect.appendChild(gagGroup);
+    }
+
     this.els.episodeEditor.value = JSON.stringify(
       EPISODE_PRESETS.zombie_fort_5m,
       null,

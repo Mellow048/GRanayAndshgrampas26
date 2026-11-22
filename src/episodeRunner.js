@@ -783,16 +783,20 @@ export class EpisodeRunner {
   }
 
   async stepAsync(dt, { silentSeek = false } = {}) {
-    this.step(dt, { silentSeek });
-    await this._flushMicrotasks();
+    const resolvedAny = this.step(dt, { silentSeek });
+    if (resolvedAny || this.isAwaitingBeat) {
+      await this._flushMicrotasks();
+    }
   }
 
   _resolveReadyWaiters() {
+    let resolvedAny = false;
     for (let i = this._simWaiters.length - 1; i >= 0; i--) {
       const w = this._simWaiters[i];
       if (w.runToken !== this._runToken || this.simTime >= w.targetTime - 1e-6) {
         this._simWaiters.splice(i, 1);
         w.resolve();
+        resolvedAny = true;
       }
     }
     for (let i = this._timelineWaiters.length - 1; i >= 0; i--) {
@@ -800,8 +804,10 @@ export class EpisodeRunner {
       if (w.runToken !== this._runToken || this.timelineTime >= w.targetTime - 1e-6) {
         this._timelineWaiters.splice(i, 1);
         w.resolve();
+        resolvedAny = true;
       }
     }
+    return resolvedAny;
   }
 
   step(dt, { silentSeek = false } = {}) {
@@ -978,11 +984,20 @@ export class EpisodeRunner {
     if (!silentSeek && this.sfxEngine) {
       const anyMoving = playerMoving || anyCharMoving;
       const moveAnim = playerMoving ? "walk" : fastestMoveAnim;
-      this.sfxEngine.tickPacer(dt, this.simTime, { anyMoving, moveAnim });
+      const movingActors = this.activeCharMoves.map((m) => ({
+        id: m.actor.id,
+        anim: m.anim,
+      }));
+      this.sfxEngine.tickPacer(dt, this.simTime, {
+        anyMoving,
+        playerMoving,
+        moveAnim,
+        movingActors,
+      });
     }
 
     // 7. Resolve timeline & simulation-time Promises ready on this tick
-    this._resolveReadyWaiters();
+    const resolvedAny = this._resolveReadyWaiters();
 
     // 8. Check completion (only finish when all events dispatched and no awaited beat active)
     if (
@@ -1002,6 +1017,7 @@ export class EpisodeRunner {
     } else {
       this.emitState();
     }
+    return resolvedAny;
   }
 
   /**
@@ -1095,6 +1111,9 @@ export class EpisodeRunner {
       if (ev.facing || ev.lookAt) {
         lookPos = this.resolveWaypoint(ev.facing || ev.lookAt);
       }
+      if (ev.clearHold !== false) {
+        this.playerCamera.holdProp(null);
+      }
       this.playerCamera.teleport(dest, lookPos);
       // Audio stays authored: only play a cut sting when the beat asks for one.
       if (!silentSeek && ev.sound) {
@@ -1161,6 +1180,7 @@ export class EpisodeRunner {
       if (!actor) return;
       actor.lookAtPlayer(false);
       actor.showBubble(null);
+      actor.setProp(ev.prop ?? "cane");
       for (let i = this.activeCharMoves.length - 1; i >= 0; i--) {
         if (this.activeCharMoves[i].actor === actor) {
           if (this.activeCharMoves[i].resolve) this.activeCharMoves[i].resolve();
@@ -1301,7 +1321,12 @@ export class EpisodeRunner {
         travelDuration: ev.travelDuration,
         targetY: ev.targetY,
         duration: ev.duration,
-        yOffset: ev.yOffset ?? 0.25,
+        yOffset: ev.yOffset ?? (ev.action === "reset" ? 0 : 0.25),
+        rotationY: ev.rotationY,
+        scale: ev.scale,
+        visible: ev.visible,
+        spin: ev.spin,
+        float: ev.float,
       });
       return this._waitSim(ev.duration ?? 0, runToken);
     }

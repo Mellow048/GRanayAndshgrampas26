@@ -9,10 +9,14 @@ export const ROCKET_BALL_TEST = buildEpisode({
   gags: [ballRace()],
 });
 
-// 3 back-to-back runs with swapped roles = quick test of the cut/transition
+// 3 back-to-back runs across 3 different rooms with swapped roles
 export const ROCKET_BALL_x3 = buildEpisode({
   title: "Rocket Ball x3",
   playerSpawn: "dining_center",
   playerFacing: "kitchen",
-  gags: [ballRace(), ballRace({ victim: "granny", chaser: "grandpa" }), ballRace()],
+  gags: [
+    ballRace({ location: "kitchen_to_hall" }),
+    ballRace({ location: "living_to_hall", victim: "granny", chaser: "grandpa" }),
+    ballRace({ location: "foyer_to_dining" }),
+  ],
 });

@@ -1,0 +1,178 @@
+name: Export Long POV Episode (Chunked Parallel Cloud Render)
+
+on:
+  workflow_dispatch:
+    inputs:
+      preset:
+        description: "Episode preset to split & render in parallel"
+        type: choice
+        default: "zombie_fort_5m"
+        options:
+          - zombie_fort_5m
+          - rocket_ball_x3
+          - the_great_escape_68s
+          - custom_json
+      episode_json:
+        description: "Custom Episode JSON (overrides preset if provided)"
+        type: string
+        required: false
+        default: ""
+      max_chunk_sec:
+        description: "Max seconds per parallel chunk (snaps cleanly to gag boundaries)"
+        type: string
+        default: "180"
+      aspect:
+        description: "Aspect ratio override (auto uses the episode's own aspect)"
+        type: choice
+        default: "auto"
+        options:
+          - auto
+          - "16:9"
+          - "9:16"
+      fps:
+        description: "Output frame rate"
+        type: choice
+        default: "30"
+        options:
+          - "24"
+          - "30"
+          - "60"
+      sfx_pacer:
+        description: "Enable Cartoon SFX Pacer"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.chunk.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Audit Episode & Split into Gag-Aligned Chunks
+        id: chunk
+        env:
+          EPISODE_JSON: ${{ inputs.episode_json }}
+        run: |
+          if [ -n "$EPISODE_JSON" ]; then
+            printf '%s' "$EPISODE_JSON" > /tmp/custom_episode.json
+            node scripts/chunk-episode.mjs --episode-file /tmp/custom_episode.json --max-chunk-sec "${{ inputs.max_chunk_sec }}" --out-dir chunks --github-matrix
+          else
+            node scripts/audit-pacing.mjs "${{ inputs.preset }}"
+            node scripts/chunk-episode.mjs --preset "${{ inputs.preset }}" --max-chunk-sec "${{ inputs.max_chunk_sec }}" --out-dir chunks --github-matrix
+          fi
+
+      - name: Upload Chunk JSONs
+        uses: actions/upload-artifact@v4
+        with:
+          name: chunk-manifests-${{ github.run_id }}
+          path: chunks/
+
+  render-chunk:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Cache Playwright Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium
+
+      - name: Install Playwright & Three.js (ephemeral)
+        run: |
+          npm install --no-save playwright three@0.170.0
+          npx playwright install chromium
+          npx playwright install-deps chromium
+
+      - name: Download Chunk JSONs
+        uses: actions/download-artifact@v4
+        with:
+          name: chunk-manifests-${{ github.run_id }}
+          path: chunks
+
+      - name: Render Chunk ${{ matrix.chunk }}
+        run: |
+          ASPECT_ARG=""
+          if [ "${{ inputs.aspect }}" != "auto" ]; then
+            ASPECT_ARG="--aspect ${{ inputs.aspect }}"
+          fi
+          node scripts/export-video.mjs \
+            --episode-file "chunks/chunk_${{ matrix.chunk }}.json" \
+            --fps "${{ inputs.fps }}" \
+            --pacer "${{ inputs.sfx_pacer }}" \
+            --format mp4 \
+            --out-name "chunk_${{ matrix.chunk }}" \
+            $ASPECT_ARG \
+            --out-dir rendered_chunk
+
+      - name: Upload Rendered Chunk
+        uses: actions/upload-artifact@v4
+        with:
+          name: chunk-video-${{ github.run_id }}-${{ matrix.chunk }}
+          path: rendered_chunk/chunk_${{ matrix.chunk }}.mp4
+
+  stitch:
+    needs: [prepare, render-chunk]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Download All Rendered Chunks
+        uses: actions/download-artifact@v4
+        with:
+          pattern: chunk-video-${{ github.run_id }}-*
+          path: rendered_chunks
+          merge-multiple: true
+
+      - name: Lossless FFmpeg Stitch
+        run: |
+          node scripts/export-video.mjs \
+            --concat rendered_chunks \
+            --out-name "${{ inputs.preset }}-full" \
+            --out-dir output
+
+      - name: Upload Full Stitched Episode
+        uses: actions/upload-artifact@v4
+        with:
+          name: granny-pov-full-${{ inputs.preset }}-${{ github.run_number }}
+          path: output/*.mp4
