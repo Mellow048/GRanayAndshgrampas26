@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Night Ride — a pelican on a bicycle</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        padding: 30px 18px;
+        background: #06090f;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+          Arial, sans-serif;
+        color: #8fa3bf;
+      }
+      .card {
+        width: min(1140px, 100%);
+        border-radius: 22px;
+        overflow: hidden;
+        background: #0d1730;
+        box-shadow:
+          0 40px 90px -30px rgba(0, 0, 0, 0.95),
+          0 0 0 1px rgba(150, 180, 220, 0.12),
+          0 0 120px -50px rgba(120, 200, 255, 0.35);
+      }
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .caption {
+        width: min(1140px, 100%);
+        margin: 15px 2px 0;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        font-size: 12px;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+      }
+      .caption strong {
+        color: #d6e2f2;
+        font-weight: 600;
+      }
+      .caption span {
+        color: #59708c;
+      }
+
+      /* ── ambience: twinkling stars, drifting fireflies, tyre dust ── */
+      @keyframes twinkle {
+        0%,
+        100% {
+          opacity: 0.25;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      .tw {
+        animation: twinkle 3.4s ease-in-out infinite;
+      }
+      .tw:nth-of-type(2n) {
+        animation-duration: 4.6s;
+        animation-delay: 0.7s;
+      }
+      .tw:nth-of-type(3n) {
+        animation-duration: 2.7s;
+        animation-delay: 1.4s;
+      }
+      @keyframes fly {
+        0% {
+          transform: translate(0, 0);
+          opacity: 0.15;
+        }
+        25% {
+          opacity: 0.9;
+        }
+        50% {
+          transform: translate(26px, -20px);
+          opacity: 0.5;
+        }
+        75% {
+          opacity: 0.95;
+        }
+        100% {
+          transform: translate(6px, -38px);
+          opacity: 0.15;
+        }
+      }
+      .fly {
+        animation: fly 6s ease-in-out infinite;
+        transform-box: fill-box;
+        transform-origin: center;
+      }
+      .fly:nth-of-type(2n) {
+        animation-duration: 7.5s;
+        animation-delay: 0.9s;
+      }
+      .fly:nth-of-type(3n) {
+        animation-duration: 5.2s;
+        animation-delay: 1.8s;
+      }
+      @keyframes puff {
+        0% {
+          opacity: 0;
+          transform: translate(0, 0) scale(0.4);
+        }
+        20% {
+          opacity: 0.3;
+        }
+        100% {
+          opacity: 0;
+          transform: translate(-70px, -14px) scale(1.6);
+        }
+      }
+      .puff {
+        animation: puff 2.4s ease-out infinite;
+        transform-box: fill-box;
+        transform-origin: center;
+      }
+      .puff:nth-of-type(2) {
+        animation-delay: 0.6s;
+      }
+      .puff:nth-of-type(3) {
+        animation-delay: 1.2s;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .tw,
+        .fly,
+        .puff {
+          animation: none;
+        }
+        .puff {
+          opacity: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <svg
+        viewBox="0 0 1200 800"
+        xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-labelledby="ttl dsc"
+      >
+        <title id="ttl">A pelican riding a bicycle at night</title>
+        <desc id="dsc">
+          A cream pelican pedals a teal bicycle down a moonlit road, a brass headlamp throwing a
+          warm beam across the tarmac, fireflies drifting over the verge.
+        </desc>
+
+        <defs>
+          <linearGradient id="sky" x1="0" y1="0" x2="0.1" y2="1">
+            <stop offset="0" stop-color="#080f22" />
+            <stop offset="0.42" stop-color="#132241" />
+            <stop offset="0.72" stop-color="#213357" />
+            <stop offset="1" stop-color="#3b4d70" />
+          </linearGradient>
+          <radialGradient id="moonHalo" cx="0.5" cy="0.5" r="0.5">
+            <stop offset="0" stop-color="#dfe9f7" stop-opacity="0.5" />
+            <stop offset="0.45" stop-color="#a9c2e0" stop-opacity="0.16" />
+            <stop offset="1" stop-color="#a9c2e0" stop-opacity="0" />
+          </radialGradient>
+          <radialGradient id="moon" cx="0.38" cy="0.32" r="0.75">
+            <stop offset="0" stop-color="#fdfaf0" />
+            <stop offset="0.7" stop-color="#e6e3d2" />
+            <stop offset="1" stop-color="#c9c8bb" />
+          </radialGradient>
+          <linearGradient id="hillFar" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#233355" />
+            <stop offset="1" stop-color="#1a2743" />
+          </linearGradient>
+          <linearGradient id="hillNear" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#18233a" />
+            <stop offset="1" stop-color="#101827" />
+          </linearGradient>
+          <linearGradient id="roadG" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#2c3444" />
+            <stop offset="0.5" stop-color="#232a37" />
+            <stop offset="1" stop-color="#161b24" />
+          </linearGradient>
+          <linearGradient id="plumage" gradientUnits="userSpaceOnUse" x1="600" y1="150" x2="520" y2="480">
+            <stop offset="0" stop-color="#e2eaf3" />
+            <stop offset="0.45" stop-color="#f6f2e8" />
+            <stop offset="1" stop-color="#ffe7bf" />
+          </linearGradient>
+          <linearGradient id="neckG" x1="0.7" y1="0.1" x2="0.3" y2="1">
+            <stop offset="0" stop-color="#e6edf5" />
+            <stop offset="0.55" stop-color="#f8f4ea" />
+            <stop offset="1" stop-color="#ffe4b8" />
+          </linearGradient>
+          <linearGradient id="billG" x1="0" y1="0" x2="1" y2="0.6">
+            <stop offset="0" stop-color="#ffce66" />
+            <stop offset="0.65" stop-color="#f6a638" />
+            <stop offset="1" stop-color="#e88f22" />
+          </linearGradient>
+          <linearGradient id="pouchG" x1="0.2" y1="0" x2="0.6" y2="1">
+            <stop offset="0" stop-color="#ffd47c" />
+            <stop offset="0.6" stop-color="#f0a63a" />
+            <stop offset="1" stop-color="#d88520" />
+          </linearGradient>
+          <linearGradient id="frameG" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#4cc3b6" />
+            <stop offset="0.55" stop-color="#2c9a92" />
+            <stop offset="1" stop-color="#1a6f6c" />
+          </linearGradient>
+          <radialGradient id="beam" cx="0" cy="0.5" r="1">
+            <stop offset="0" stop-color="#ffdcaa" stop-opacity="0.8" />
+            <stop offset="0.5" stop-color="#ffc078" stop-opacity="0.3" />
+            <stop offset="1" stop-color="#ffb966" stop-opacity="0" />
+          </radialGradient>
+          <radialGradient id="pool" cx="0.5" cy="0.5" r="0.5">
+            <stop offset="0" stop-color="#ffd79a" stop-opacity="0.65" />
+            <stop offset="0.5" stop-color="#ffc37a" stop-opacity="0.28" />
+            <stop offset="1" stop-color="#ffbe72" stop-opacity="0" />
+          </radialGradient>
+          <radialGradient id="lens" cx="0.4" cy="0.4" r="0.6">
+            <stop offset="0" stop-color="#fffdf2" />
+            <stop offset="0.5" stop-color="#ffe3a6" />
+            <stop offset="1" stop-color="#ffb85c" />
+          </radialGradient>
+          <filter id="soft" x="-25%" y="-25%" width="150%" height="160%">
+            <feDropShadow dx="0" dy="10" stdDeviation="11" flood-color="#02040a" flood-opacity="0.55" />
+          </filter>
+          <clipPath id="roadClip">
+            <rect x="0" y="584" width="1200" height="216" />
+          </clipPath>
+          <filter id="beamBlur" x="-20%" y="-30%" width="140%" height="160%">
+            <feGaussianBlur stdDeviation="14" />
+          </filter>
+          <filter id="glow" x="-120%" y="-120%" width="340%" height="340%">
+            <feGaussianBlur stdDeviation="12" />
+          </filter>
+          <filter id="glowTight" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="5" />
+          </filter>
+        </defs>
+
+        <!-- ═════════ sky ═════════ -->
+        <rect width="1200" height="800" fill="url(#sky)" />
+        <circle cx="1004" cy="146" r="210" fill="url(#moonHalo)" />
+        <circle cx="1004" cy="146" r="62" fill="url(#moon)" />
+        <g fill="#c9c8bb" opacity="0.5">
+          <circle cx="986" cy="132" r="9" />
+          <circle cx="1022" cy="162" r="7" />
+          <circle cx="1002" cy="176" r="5" />
+          <circle cx="1028" cy="128" r="4" />
+        </g>
+
+        <!-- ═════════ stars ═════════ -->
+        <g id="stars" fill="#eaf2ff">
+          <circle cx="132" cy="96" r="1.8" opacity="0.9" />
+          <circle cx="228" cy="168" r="1.4" opacity="0.6" />
+          <circle cx="316" cy="74" r="2" opacity="0.8" />
+          <circle cx="402" cy="150" r="1.2" opacity="0.5" />
+          <circle cx="488" cy="88" r="1.7" opacity="0.75" />
+          <circle cx="560" cy="182" r="1.3" opacity="0.55" />
+          <circle cx="642" cy="112" r="1.9" opacity="0.85" />
+          <circle cx="722" cy="60" r="1.4" opacity="0.6" />
+          <circle cx="812" cy="128" r="1.6" opacity="0.7" />
+          <circle cx="890" cy="70" r="1.3" opacity="0.5" />
+          <circle cx="1092" cy="238" r="1.5" opacity="0.65" />
+          <circle cx="1160" cy="92" r="1.8" opacity="0.8" />
+          <circle cx="86" cy="252" r="1.6" opacity="0.7" />
+          <circle cx="176" cy="330" r="1.2" opacity="0.45" />
+          <circle cx="262" cy="242" r="1.5" opacity="0.6" />
+          <circle cx="356" cy="302" r="1.3" opacity="0.5" />
+          <circle cx="442" cy="246" r="1.7" opacity="0.75" />
+          <circle cx="524" cy="316" r="1.2" opacity="0.45" />
+          <circle cx="606" cy="258" r="1.4" opacity="0.6" />
+          <circle cx="690" cy="330" r="1.5" opacity="0.55" />
+          <circle cx="770" cy="268" r="1.2" opacity="0.45" />
+          <circle cx="864" cy="330" r="1.4" opacity="0.5" />
+          <circle cx="946" cy="286" r="1.3" opacity="0.45" />
+          <circle cx="1128" cy="352" r="1.5" opacity="0.55" />
+          <circle cx="60" cy="404" r="1.3" opacity="0.4" />
+          <circle cx="300" cy="400" r="1.2" opacity="0.4" />
+          <circle cx="540" cy="404" r="1.3" opacity="0.4" />
+          <circle cx="700" cy="418" r="1.2" opacity="0.35" />
+          <circle cx="900" cy="410" r="1.3" opacity="0.4" />
+          <circle cx="1040" cy="440" r="1.2" opacity="0.35" />
+        </g>
+        <g stroke="#eaf2ff" stroke-width="1.4" stroke-linecap="round" opacity="0.85">
+          <path d="M 316,60 L 316,88 M 302,74 L 330,74" />
+          <path d="M 642,98 L 642,126 M 628,112 L 656,112" />
+          <path d="M 1160,78 L 1160,106 M 1146,92 L 1174,92" />
+        </g>
+
+        <!-- ═════════ distant land ═════════ -->
+        <g fill="url(#hillFar)">
+          <path d="M -40,566 C 90,478 208,462 320,516 C 400,554 452,560 520,566 Z" />
+          <path d="M 470,566 C 610,486 760,472 900,528 C 990,562 1050,564 1160,566 Z" />
+        </g>
+        <g fill="#16203a" opacity="0.9">
+          <path d="M 252,596 C 236,572 242,540 268,530 C 294,520 318,540 316,566 C 315,582 302,594 286,598 Z" />
+          <rect x="278" y="592" width="7" height="24" />
+        </g>
+        <g fill="url(#hillNear)">
+          <path d="M -40,592 C 120,552 250,556 380,592 L 380,600 L -40,600 Z" />
+          <path d="M 560,596 C 700,542 880,536 1240,584 L 1240,600 L 560,600 Z" />
+        </g>
+        <!-- tree silhouettes -->
+        <g fill="#0e1626">
+          <path d="M 980,560 C 962,536 966,504 992,490 C 1018,478 1046,496 1048,522 C 1050,540 1038,556 1022,562 Z" />
+          <rect x="1006" y="556" width="9" height="34" />
+          <path d="M 1050,556 C 1066,536 1092,532 1110,546 C 1128,560 1122,584 1102,590 C 1082,596 1060,580 1050,556 Z" />
+          <path d="M 150,588 C 136,568 142,542 164,534 C 186,526 208,542 208,562 C 208,576 198,586 184,590 Z" />
+        </g>
+
+        <!-- ═════════ road ═════════ -->
+        <rect x="0" y="590" width="1200" height="210" fill="url(#roadG)" />
+        <rect x="0" y="590" width="1200" height="5" fill="#46536b" opacity="0.8" />
+        <line
+          id="roadLine"
+          x1="-140"
+          y1="722"
+          x2="1340"
+          y2="722"
+          stroke="#6c7a8e"
+          stroke-width="8"
+          stroke-dasharray="98 76"
+          opacity="0.55"
+        />
+        <rect x="0" y="784" width="1200" height="16" fill="#0b0f16" opacity="0.55" />
+
+        <!-- ═════════ headlamp beam ═════════ -->
+        <g id="beamGroup" clip-path="url(#roadClip)" filter="url(#beamBlur)">
+          <path
+            d="M 804,512 L 1192,574 L 1192,744 L 852,706 Z"
+            fill="url(#beam)"
+            opacity="0.9"
+          />
+          <path d="M 806,514 L 1090,608 L 1058,664 L 830,592 Z" fill="#ffe0b0" opacity="0.1" />
+          <ellipse cx="1040" cy="702" rx="245" ry="54" fill="url(#pool)" />
+        </g>
+
+        <!-- contact shadows -->
+        <ellipse cx="600" cy="702" rx="330" ry="15" fill="#04070d" opacity="0.5" />
+        <ellipse cx="392" cy="700" rx="94" ry="10" fill="#04070d" opacity="0.6" />
+        <ellipse cx="792" cy="700" rx="94" ry="10" fill="#04070d" opacity="0.6" />
+
+        <!-- tyre dust -->
+        <g fill="#7d8798">
+          <circle class="puff" cx="312" cy="678" r="13" opacity="0.2" />
+          <circle class="puff" cx="298" cy="690" r="9" opacity="0.16" />
+          <circle class="puff" cx="322" cy="694" r="7" opacity="0.12" />
+        </g>
+
+        <g filter="url(#soft)">
+          <!-- ═════════ rear wheel ═════════ -->
+          <g>
+            <circle cx="392" cy="608" r="96" fill="none" stroke="#0f1319" stroke-width="15" />
+            <circle cx="392" cy="608" r="96" fill="none" stroke="#3c4655" stroke-width="15" stroke-dasharray="4 24" opacity="0.5" />
+            <circle cx="392" cy="608" r="83" fill="none" stroke="#8e9dad" stroke-width="5" />
+            <circle cx="392" cy="608" r="83" fill="none" stroke="#5d6b7c" stroke-width="1.5" />
+            <g id="spokesRear">
+              <g transform="translate(392 608)" stroke="#93a2b3" stroke-width="2.2" stroke-linecap="round" opacity="0.85">
+                <line y1="-81" y2="-9" />
+                <line y1="-81" y2="-9" transform="rotate(30)" />
+                <line y1="-81" y2="-9" transform="rotate(60)" />
+                <line y1="-81" y2="-9" transform="rotate(90)" />
+                <line y1="-81" y2="-9" transform="rotate(120)" />
+                <line y1="-81" y2="-9" transform="rotate(150)" />
+                <line y1="-81" y2="-9" transform="rotate(180)" />
+                <line y1="-81" y2="-9" transform="rotate(210)" />
+                <line y1="-81" y2="-9" transform="rotate(240)" />
+                <line y1="-81" y2="-9" transform="rotate(270)" />
+                <line y1="-81" y2="-9" transform="rotate(300)" />
+                <line y1="-81" y2="-9" transform="rotate(330)" />
+              </g>
+              <line x1="392" y1="608" x2="392" y2="527" stroke="#ffb066" stroke-width="3.6" stroke-linecap="round" opacity="0.9" />
+              <circle cx="392" cy="608" r="8" fill="#b9c4d1" stroke="#4a5666" stroke-width="2.2" />
+            </g>
+            <!-- mudguard -->
+            <path
+              d="M 293,571 A 106 106 0 0 1 491,571"
+              fill="none"
+              stroke="#1a6f6c"
+              stroke-width="11"
+              stroke-linecap="round"
+            />
+            <path
+              d="M 293,571 A 106 106 0 0 1 491,571"
+              fill="none"
+              stroke="#4cc3b6"
+              stroke-width="3.4"
+              stroke-linecap="round"
+              opacity="0.65"
+            />
+            <path d="M 492,570 L 512,586" stroke="#1a6f6c" stroke-width="5" stroke-linecap="round" />
+          </g>
+
+          <!-- ═════════ far leg & far crank (behind the frame) ═════════ -->
+          <g>
+            <line id="farCrank" x1="556" y1="630" x2="512" y2="602" stroke="#123c3a" stroke-width="9" stroke-linecap="round" />
+            <rect
+              id="farPedal"
+              x="-15"
+              y="-5"
+              width="30"
+              height="10"
+              rx="3"
+              fill="#2d3644"
+              stroke="#0f141b"
+              stroke-width="2.6"
+              transform="translate(512,602)"
+            />
+            <path
+              id="farLeg"
+              d="M 568,452 L 566,528 L 512,602"
+              fill="none"
+              stroke="#0b1118"
+              stroke-width="18"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              id="farLegInk"
+              d="M 568,452 L 566,528 L 512,602"
+              fill="none"
+              stroke="#a56c1f"
+              stroke-width="10"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              id="farFoot"
+              d="M -10,-17 C 3,-22 21,-16 27,-6 C 30,-1 26,2 22,0 L 4,-1 L -9,1 C -19,2 -21,-12 -10,-17 Z"
+              fill="#a56c1f"
+              stroke="#0b1118"
+              stroke-width="3.8"
+              stroke-linejoin="round"
+              transform="translate(512,602)"
+            />
+          </g>
+
+          <!-- ═════════ frame & drivetrain ═════════ -->
+          <g>
+            <g fill="none" stroke="#123c3a" stroke-width="5.5" stroke-dasharray="7 4" opacity="0.9">
+              <path d="M 556,607 L 392,598" />
+              <path d="M 556,653 L 392,616" />
+            </g>
+            <circle cx="392" cy="608" r="11" fill="none" stroke="#9fabb9" stroke-width="3.4" />
+            <circle cx="392" cy="608" r="11" fill="none" stroke="#5d6b7c" stroke-width="3.4" stroke-dasharray="2 4" />
+            <g fill="none" stroke="url(#frameG)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M 392,608 L 556,630" />
+              <path d="M 392,608 L 520,478" />
+              <path d="M 520,478 L 556,630" />
+              <path d="M 556,630 L 766,548" />
+              <path d="M 520,478 L 754,482" />
+            </g>
+            <g fill="none" stroke="#7fe3d6" stroke-width="3" stroke-linecap="round" opacity="0.45">
+              <path d="M 400,602 L 550,622" />
+              <path d="M 558,620 L 760,542" />
+              <path d="M 530,478 L 748,482" />
+            </g>
+            <path d="M 752,476 L 770,552" stroke="#1a6f6c" stroke-width="15" stroke-linecap="round" />
+            <path d="M 754,478 L 769,548" stroke="#4cc3b6" stroke-width="6" stroke-linecap="round" />
+            <path
+              d="M 768,544 C 782,568 790,586 794,600"
+              stroke="#1a6f6c"
+              stroke-width="10"
+              fill="none"
+              stroke-linecap="round"
+            />
+            <path d="M 769,547 C 781,567 789,583 792,597" stroke="#4cc3b6" stroke-width="4" fill="none" stroke-linecap="round" />
+            <!-- rear rack -->
+            <g stroke="#2c9a92" stroke-width="5" stroke-linecap="round" fill="none">
+              <path d="M 330,556 L 450,548" />
+              <path d="M 340,556 L 392,608" />
+              <path d="M 440,549 L 392,608" />
+            </g>
+            <g stroke="#7fe3d6" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.5">
+              <path d="M 332,554 L 448,546" />
+            </g>
+            <!-- tail reflector -->
+            <g transform="translate(318 548)">
+              <circle r="11" fill="#ff5a4a" opacity="0.35" filter="url(#glowTight)" />
+              <circle r="6" fill="#ff7566" stroke="#7a1d16" stroke-width="2" />
+            </g>
+          </g>
+
+          <!-- ═════════ front wheel ═════════ -->
+          <g>
+            <circle cx="792" cy="608" r="96" fill="none" stroke="#0f1319" stroke-width="15" />
+            <circle cx="792" cy="608" r="96" fill="none" stroke="#3c4655" stroke-width="15" stroke-dasharray="4 24" opacity="0.5" />
+            <circle cx="792" cy="608" r="83" fill="none" stroke="#8e9dad" stroke-width="5" />
+            <circle cx="792" cy="608" r="83" fill="none" stroke="#5d6b7c" stroke-width="1.5" />
+            <g id="spokesFront">
+              <g transform="translate(792 608)" stroke="#93a2b3" stroke-width="2.2" stroke-linecap="round" opacity="0.85">
+                <line y1="-81" y2="-9" />
+                <line y1="-81" y2="-9" transform="rotate(30)" />
+                <line y1="-81" y2="-9" transform="rotate(60)" />
+                <line y1="-81" y2="-9" transform="rotate(90)" />
+                <line y1="-81" y2="-9" transform="rotate(120)" />
+                <line y1="-81" y2="-9" transform="rotate(150)" />
+                <line y1="-81" y2="-9" transform="rotate(180)" />
+                <line y1="-81" y2="-9" transform="rotate(210)" />
+                <line y1="-81" y2="-9" transform="rotate(240)" />
+                <line y1="-81" y2="-9" transform="rotate(270)" />
+                <line y1="-81" y2="-9" transform="rotate(300)" />
+                <line y1="-81" y2="-9" transform="rotate(330)" />
+              </g>
+              <line x1="792" y1="608" x2="792" y2="527" stroke="#ffb066" stroke-width="3.6" stroke-linecap="round" opacity="0.9" />
+              <circle cx="792" cy="608" r="8" fill="#b9c4d1" stroke="#4a5666" stroke-width="2.2" />
+            </g>
+            <path d="M 692,570 A 108 108 0 0 1 892,570" fill="none" stroke="#1a6f6c" stroke-width="9" stroke-linecap="round" />
+            <path d="M 692,570 A 108 108 0 0 1 892,570" fill="none" stroke="#4cc3b6" stroke-width="3.4" stroke-linecap="round" opacity="0.65" />
+          </g>
+
+          <!-- ═════════ chainring & near crank ═════════ -->
+          <g>
+            <circle cx="556" cy="630" r="24" fill="none" stroke="#b9c4d1" stroke-width="5.5" />
+            <circle cx="556" cy="630" r="24" fill="none" stroke="#5d6b7c" stroke-width="5.5" stroke-dasharray="3 5" />
+            <g stroke="#b9c4d1" stroke-width="2.6" stroke-linecap="round">
+              <line x1="556" y1="612" x2="556" y2="648" />
+              <line x1="538" y1="630" x2="574" y2="630" />
+              <line x1="543" y1="617" x2="569" y2="643" />
+              <line x1="569" y1="617" x2="543" y2="643" />
+            </g>
+            <circle cx="556" cy="630" r="6.5" fill="#b9c4d1" stroke="#4a5666" stroke-width="2.2" />
+            <line id="nearCrank" x1="556" y1="630" x2="597" y2="658" stroke="#20272f" stroke-width="9" stroke-linecap="round" />
+            <rect
+              id="nearPedal"
+              x="-16"
+              y="-5"
+              width="32"
+              height="10"
+              rx="3"
+              fill="#20272f"
+              stroke="#0a0d12"
+              stroke-width="2.6"
+              transform="translate(597,658)"
+            />
+          </g>
+
+          <!-- ═════════ near leg ═════════ -->
+          <path
+            id="nearLeg"
+            d="M 590,452 L 648,540 L 597,658"
+            fill="none"
+            stroke="#0b1118"
+            stroke-width="19"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            id="nearLegInk"
+            d="M 590,452 L 648,540 L 597,658"
+            fill="none"
+            stroke="#e8a343"
+            stroke-width="11"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            id="nearFoot"
+            d="M -10,-17 C 3,-22 21,-16 27,-6 C 30,-1 26,2 22,0 L 4,-1 L -9,1 C -19,2 -21,-12 -10,-17 Z"
+            fill="#e8a343"
+            stroke="#0b1118"
+            stroke-width="3.8"
+            stroke-linejoin="round"
+            transform="translate(597,658)"
+          />
+
+          <!-- ═════════ THE PELICAN ═════════ -->
+          <g id="rig">
+            <!-- tail -->
+            <g fill="url(#plumage)" stroke="#111a2b" stroke-width="5" stroke-linejoin="round">
+              <path d="M 494,414 C 472,400 450,396 432,400 C 442,414 460,424 482,432 Z" />
+              <path d="M 490,438 C 468,430 446,430 428,436 C 440,452 462,460 486,461 Z" />
+              <path d="M 492,462 C 470,466 448,476 432,492 C 456,497 478,490 496,476 Z" />
+            </g>
+            <g stroke="#c9bfae" stroke-width="2.6" fill="none" stroke-linecap="round" opacity="0.8">
+              <path d="M 472,410 C 454,400 438,394 426,392" />
+              <path d="M 468,442 C 450,438 434,438 422,441" />
+              <path d="M 472,472 C 458,474 446,480 436,488" />
+            </g>
+
+            <!-- body -->
+            <ellipse
+              cx="568"
+              cy="388"
+              rx="90"
+              ry="78"
+              transform="rotate(-8 568 388)"
+              fill="url(#plumage)"
+              stroke="#111a2b"
+              stroke-width="6"
+            />
+            <path d="M 508,436 C 544,470 622,466 648,410 C 636,464 548,480 508,436 Z" fill="#cdbfa6" opacity="0.45" />
+            <ellipse cx="546" cy="352" rx="52" ry="33" transform="rotate(-16 546 352)" fill="#ffffff" opacity="0.5" />
+            <path
+              d="M 500,378 C 516,346 540,326 572,318"
+              stroke="#ffe1b0"
+              stroke-width="6"
+              fill="none"
+              stroke-linecap="round"
+              opacity="0.55"
+            />
+            <g stroke="#c9bfae" stroke-width="2.8" fill="none" stroke-linecap="round" opacity="0.75">
+              <path d="M 524,414 C 540,424 560,427 578,423" />
+              <path d="M 512,430 C 528,440 548,444 566,442" />
+            </g>
+
+            <!-- neck + head as ONE silhouette: filled, then an open outline so no
+                 stroke is left crossing the body -->
+            <path
+              d="M 556,326 C 566,288 580,250 602,222 C 612,204 636,184 662,170 C 688,156 712,152 732,166 C 750,180 754,202 744,220 C 738,232 730,238 720,244 C 708,252 700,262 694,276 C 684,298 676,334 668,364 C 662,380 656,386 652,392 Z"
+              fill="url(#neckG)"
+            />
+            <path
+              d="M 556,326 C 566,288 580,250 602,222 C 612,204 636,184 662,170 C 688,156 712,152 732,166 C 750,180 754,202 744,220 C 738,232 730,238 720,244 C 708,252 700,262 694,276 C 684,298 676,334 668,364 C 662,380 656,386 652,392"
+              fill="none"
+              stroke="#111a2b"
+              stroke-width="5.5"
+              stroke-linejoin="round"
+              stroke-linecap="round"
+            />
+            <path
+              d="M 574,316 C 586,276 598,242 618,216 C 630,200 644,188 660,178"
+              stroke="#ffffff"
+              stroke-width="7"
+              fill="none"
+              stroke-linecap="round"
+              opacity="0.24"
+            />
+
+            <!-- eye -->
+            <ellipse cx="708" cy="196" rx="11.5" ry="12" fill="#fbfaf2" stroke="#111a2b" stroke-width="3" />
+            <circle cx="711" cy="197" r="6.6" fill="#141c2b" />
+            <circle cx="708.6" cy="194" r="2.3" fill="#ffffff" />
+            <path
+              d="M 694,181 C 703,176 716,180 723,189"
+              fill="none"
+              stroke="#111a2b"
+              stroke-width="3.8"
+              stroke-linecap="round"
+            />
+            <ellipse cx="688" cy="226" rx="9" ry="5.5" fill="#f2a07a" opacity="0.3" />
+            <g id="eyelid" opacity="0">
+              <ellipse cx="708" cy="196" rx="13.6" ry="13.8" fill="url(#neckG)" />
+              <path d="M 698,197 Q 708,202 718,197" fill="none" stroke="#111a2b" stroke-width="3" stroke-linecap="round" />
+            </g>
+
+            <!-- bill: long, flat-topped, pouch sagging well below the ridge -->
+            <g id="bill">
+              <path
+                d="M 752,222 C 818,226 884,244 940,260 C 950,264 948,278 938,274 C 910,302 860,322 814,316 C 774,310 740,288 728,258 Z"
+                fill="url(#pouchG)"
+                stroke="#8d5209"
+                stroke-width="4.4"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M 752,222 C 818,226 884,244 940,260 C 950,264 948,278 938,274 C 904,268 864,264 822,262 C 790,260 756,256 730,254 C 730,238 736,224 752,222 Z"
+                fill="url(#billG)"
+                stroke="#8d5209"
+                stroke-width="3"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M 730,254 C 790,260 864,264 938,274"
+                stroke="#6d3d05"
+                stroke-width="3.2"
+                fill="none"
+                stroke-linecap="round"
+              />
+              <path d="M 940,260 C 950,265 947,279 937,274" stroke="#6d3d05" stroke-width="3" fill="none" stroke-linecap="round" />
+              <path
+                d="M 744,272 C 760,294 786,306 816,310"
+                stroke="#b96f14"
+                stroke-width="2.6"
+                fill="none"
+                stroke-linecap="round"
+                opacity="0.55"
+              />
+              <path
+                d="M 742,242 C 802,246 862,256 920,268"
+                stroke="#ffe9b0"
+                stroke-width="3.2"
+                fill="none"
+                stroke-linecap="round"
+                opacity="0.4"
+              />
+            </g>
+
+            <!-- near wing on the bar -->
+            <path
+              d="M 622,356 C 672,360 716,378 752,406 C 764,416 760,434 746,428 C 718,416 682,406 656,398 C 630,390 610,372 622,356 Z"
+              fill="#f0e6d2"
+              stroke="#111a2b"
+              stroke-width="5.2"
+              stroke-linejoin="round"
+            />
+            <g stroke="#d3c5ab" stroke-width="2.8" fill="none" stroke-linecap="round" opacity="0.95">
+              <path d="M 640,366 C 682,374 718,390 742,410" />
+              <path d="M 654,360 C 694,366 726,380 746,398" />
+              <path d="M 628,388 C 638,398 650,404 662,407" />
+              <path d="M 646,406 C 658,414 670,416 682,417" />
+            </g>
+            <g fill="#efe4cd" stroke="#111a2b" stroke-width="4.2">
+              <ellipse cx="775" cy="404" rx="9" ry="31" transform="rotate(-69 775 404)" />
+              <ellipse cx="778" cy="414" rx="9" ry="31" transform="rotate(-57 778 414)" />
+              <ellipse cx="774" cy="424" rx="9" ry="30" transform="rotate(-45 774 424)" />
+            </g>
+            <ellipse cx="788" cy="438" rx="11" ry="11" transform="rotate(-45 788 438)" fill="#39424f" stroke="#111a2b" stroke-width="2.8" />
+            <path
+              d="M 748,392 C 766,404 780,418 790,432"
+              stroke="#fff3d8"
+              stroke-width="3"
+              fill="none"
+              stroke-linecap="round"
+              opacity="0.55"
+            />
+          </g>
+
+          <!-- ═════════ handlebar, bell, lamp ═════════ -->
+          <path d="M 752,482 L 752,452" stroke="#3d5a58" stroke-width="10" stroke-linecap="round" />
+          <path
+            d="M 700,458 C 718,442 782,440 808,456"
+            fill="none"
+            stroke="#20272f"
+            stroke-width="11"
+            stroke-linecap="round"
+          />
+          <path
+            d="M 700,458 C 718,442 782,440 808,456"
+            fill="none"
+            stroke="#7f8d9c"
+            stroke-width="3.6"
+            stroke-linecap="round"
+            opacity="0.75"
+          />
+          <g stroke="#5b4130" stroke-width="15" stroke-linecap="round">
+            <line x1="694" y1="462" x2="708" y2="456" />
+            <line x1="792" y1="449" x2="810" y2="456" />
+          </g>
+          <g transform="translate(730 436)">
+            <path d="M -11,4 C -11,-9 11,-9 11,4 Z" fill="#d9b464" stroke="#7e6425" stroke-width="2.6" stroke-linejoin="round" />
+            <rect x="-13" y="3" width="26" height="6" rx="3" fill="#b79a4d" stroke="#7e6425" stroke-width="2.2" />
+          </g>
+          <!-- headlamp -->
+          <g transform="translate(786 512)">
+            <ellipse cx="34" cy="4" rx="46" ry="30" fill="#ffd79a" opacity="0.22" filter="url(#glow)" />
+            <path
+              d="M -14,-11 L 14,-13 L 18,10 L -10,12 Z"
+              fill="#2f3742"
+              stroke="#0d1218"
+              stroke-width="3"
+              stroke-linejoin="round"
+            />
+            <path d="M -8,-9 L 10,-11 L 11,-2 L -7,0 Z" fill="#61707e" opacity="0.7" />
+            <circle cx="18" cy="0" r="11" fill="url(#lens)" stroke="#0d1218" stroke-width="2.6" />
+            <circle cx="18" cy="0" r="11" fill="#ffe9b8" opacity="0.55" filter="url(#glowTight)" />
+            <path d="M -14,-4 L -20,-2" stroke="#0d1218" stroke-width="4" stroke-linecap="round" />
+          </g>
+        </g>
+
+        <!-- ═════════ fireflies ═════════ -->
+        <g id="flies">
+          <g class="fly" transform="translate(150 610)">
+            <circle r="9" fill="#ffe28a" opacity="0.16" filter="url(#glowTight)" />
+            <circle r="2.6" fill="#fff0b8" />
+          </g>
+          <g class="fly" transform="translate(214 668)">
+            <circle r="8" fill="#ffe28a" opacity="0.14" filter="url(#glowTight)" />
+            <circle r="2.2" fill="#fff0b8" />
+          </g>
+          <g class="fly" transform="translate(96 546)">
+            <circle r="8" fill="#ffe28a" opacity="0.14" filter="url(#glowTight)" />
+            <circle r="2.4" fill="#fff0b8" />
+          </g>
+          <g class="fly" transform="translate(1092 636)">
+            <circle r="9" fill="#ffe28a" opacity="0.15" filter="url(#glowTight)" />
+            <circle r="2.6" fill="#fff0b8" />
+          </g>
+          <g class="fly" transform="translate(1146 596)">
+            <circle r="7" fill="#ffe28a" opacity="0.13" filter="url(#glowTight)" />
+            <circle r="2" fill="#fff0b8" />
+          </g>
+          <g class="fly" transform="translate(268 590)">
+            <circle r="7" fill="#ffe28a" opacity="0.13" filter="url(#glowTight)" />
+            <circle r="2.1" fill="#fff0b8" />
+          </g>
+        </g>
+      </svg>
+    </div>
+
+    <p class="caption">
+      <strong>Night Ride — Pelican on a Bike</strong>
+      <span>two-bone IK pedalling · hand-built svg · no libraries</span>
+    </p>
+
+    <script>
+      (() => {
+        "use strict";
+        const $ = (id) => document.getElementById(id);
+        const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+        const parts = {};
+        [
+          "rig", "bill", "eyelid", "roadLine", "spokesRear", "spokesFront", "beamGroup",
+          "nearLeg", "nearLegInk", "nearFoot", "nearPedal", "nearCrank",
+          "farLeg", "farLegInk", "farFoot", "farPedal", "farCrank"
+        ].forEach((id) => (parts[id] = $(id)));
+
+        /* rig geometry, in viewBox units */
+        const BB = { x: 556, y: 630 };
+        const CRANK = 50;
+        const HIP_NEAR = { x: 590, y: 452 };
+        const HIP_FAR = { x: 568, y: 452 };
+        const THIGH = 104;
+        const SHIN = 132;
+        const CADENCE = 1.05;
+        const GEAR = 1.3;
+        const ROAD_SPEED = 120;
+
+        /* two-bone IK; the perpendicular is picked so the knee bends forward */
+        function kneeOf(hip, foot) {
+          const dx = foot.x - hip.x;
+          const dy = foot.y - hip.y;
+          const raw = Math.hypot(dx, dy) || 1;
+          const ux = dx / raw;
+          const uy = dy / raw;
+          const d = Math.min(Math.max(raw, Math.abs(THIGH - SHIN) + 1), THIGH + SHIN - 1);
+          const a = (THIGH * THIGH - SHIN * SHIN + d * d) / (2 * d);
+          const h = Math.sqrt(Math.max(0, THIGH * THIGH - a * a));
+          return { x: hip.x + a * ux + h * uy, y: hip.y + a * uy - h * ux };
+        }
+
+        const f1 = (n) => n.toFixed(1);
+
+        function limb(inkEl, fillEl, hip, foot) {
+          const k = kneeOf(hip, foot);
+          const d =
+            "M " + f1(hip.x) + "," + f1(hip.y) +
+            " L " + f1(k.x) + "," + f1(k.y) +
+            " L " + f1(foot.x) + "," + f1(foot.y);
+          inkEl.setAttribute("d", d);
+          fillEl.setAttribute("d", d);
+        }
+
+        const at = (el, x, y) => el.setAttribute("transform", "translate(" + f1(x) + "," + f1(y) + ")");
+
+        const t0 = performance.now();
+        let raf = 0;
+
+        function frame(now) {
+          const t = (now - t0) / 1000;
+          const theta = t * Math.PI * 2 * CADENCE;
+          const bob = Math.sin(theta * 2) * 2;
+
+          const near = { x: BB.x + Math.cos(theta) * CRANK, y: BB.y + Math.sin(theta) * CRANK };
+          const far = { x: BB.x - Math.cos(theta) * CRANK, y: BB.y - Math.sin(theta) * CRANK };
+
+          const hipN = { x: HIP_NEAR.x, y: HIP_NEAR.y + bob };
+          const hipF = { x: HIP_FAR.x, y: HIP_FAR.y + bob };
+
+          limb(parts.nearLeg, parts.nearLegInk, hipN, near);
+          limb(parts.farLeg, parts.farLegInk, hipF, far);
+
+          at(parts.nearFoot, near.x, near.y);
+          at(parts.farFoot, far.x, far.y);
+          at(parts.nearPedal, near.x, near.y);
+          at(parts.farPedal, far.x, far.y);
+
+          parts.nearCrank.setAttribute("x2", f1(near.x));
+          parts.nearCrank.setAttribute("y2", f1(near.y));
+          parts.farCrank.setAttribute("x2", f1(far.x));
+          parts.farCrank.setAttribute("y2", f1(far.y));
+
+          parts.rig.setAttribute("transform", "translate(0 " + f1(bob) + ")");
+
+          const deg = (t * 360 * CADENCE * GEAR) % 360;
+          parts.spokesRear.setAttribute("transform", "rotate(" + f1(deg) + " 392 608)");
+          parts.spokesFront.setAttribute("transform", "rotate(" + f1(deg) + " 792 608)");
+
+          parts.roadLine.setAttribute("stroke-dashoffset", f1(-((t * ROAD_SPEED) % 174)));
+
+          const swing = Math.sin(theta * 2 + 0.5) * 1.3;
+          parts.bill.setAttribute("transform", "rotate(" + f1(swing) + " 736 246)");
+
+          /* lamp: a faint unsteady flicker, like a hub dynamo at low speed */
+          const flick = 0.94 + 0.06 * Math.sin(t * 9.3) * Math.sin(t * 3.1);
+          parts.beamGroup.setAttribute("opacity", f1(flick * 100) / 100);
+
+          const cyc = 5.2;
+          parts.eyelid.setAttribute("opacity", t % cyc > cyc - 0.12 ? "1" : "0");
+
+          raf = requestAnimationFrame(frame);
+        }
+
+        const kick = () => {
+          cancelAnimationFrame(raf);
+          raf = requestAnimationFrame(frame);
+        };
+
+        if (!reduced) {
+          kick();
+          document.addEventListener("visibilitychange", () => {
+            if (document.hidden) cancelAnimationFrame(raf);
+            else kick();
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>
