@@ -3,6 +3,7 @@
  * and built-in POV & Shorts episode presets.
  */
 
+import { GRANNY_COOKIE_HEIST_15S } from "./episodes/cookieHeist15s.js";
 import { THE_GREAT_ESCAPE_68S } from "./episodes/greatEscape75.js";
 import { ZOMBIE_FORT_5M } from "./episodes/zombieFort5m.js";
 import { COOKIE_CAPER_30S } from "./episodes/cookieCaper30.js";
@@ -37,6 +38,15 @@ export const CONFIG = {
   house: {
     scale: 0.42,
     groundFloorRawY: 13.32,
+  },
+  /** Body-aware staging guard rails (see src/stagingSafety.js & episodeSafety.js). */
+  staging: {
+    autoRepair: true,
+    castSeparation: 1.05,
+    playerStandoff: 1.15,
+    cameraStandoff: 1.15,
+    maxDeadAir: 2.5,
+    reportToConsole: true,
   },
   sfxPacer: {
     enabledByDefault: true,
@@ -2185,6 +2195,7 @@ export const THE_GREAT_ESCAPE_5M = {
 };
 
 export const EPISODE_PRESETS = {
+  granny_cookie_heist_15s: GRANNY_COOKIE_HEIST_15S,
   comedy_variety_1m: COMEDY_VARIETY_1M,
   cookie_heist_15s: COOKIE_HEIST_15S,
   rocket_ball_test: ROCKET_BALL_TEST,

@@ -179,6 +179,18 @@ async function openStudioSession({
     { ep: episode, pacerEnabled: pacer, aspectOverride: aspect }
   );
 
+  const remaining = (meta.stagingIssues || []).filter((i) => !i.applied && i.severity === "error");
+  if (remaining.length) {
+    console.warn(
+      `[Export] Staging gate: ${remaining.length} unfixable issue(s) remain — the render will contain them:\n` +
+        remaining.map((i) => `  - [${i.at.toFixed(2)}s] ${i.code}: ${i.message}`).join("\n")
+    );
+    if (process.env.STRICT_STAGING === "1") {
+      await browser.close();
+      throw new Error(`Staging gate failed with ${remaining.length} error(s). Set STRICT_STAGING=0 to render anyway.`);
+    }
+  }
+
   return { browser, page, errors, meta };
 }
 
@@ -587,6 +599,8 @@ async function main() {
           totalFrames,
           sfxCount: sfxEvents.length,
           bgmCount: bgmSegments.length,
+          staging: meta.staging || null,
+          stagingIssues: meta.stagingIssues || [],
           files: producedFiles,
         },
         null,

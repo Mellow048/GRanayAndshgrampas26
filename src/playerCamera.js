@@ -3,6 +3,15 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CONFIG } from "./config.js";
 import { createPropMesh } from "./comedyProps.js";
 import { findTaggedObject, getObjectBounds } from "./assetLoader.js";
+import {
+  BODY,
+  makeCapsule,
+  pushOutOfCapsules,
+  findSafeCameraSpot,
+  ensureRoute,
+  direction2D,
+  dist2D,
+} from "./stagingSafety.js";
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
@@ -83,6 +92,12 @@ export class PlayerCamera {
     this.orbitControls.enabled = false;
 
     this.mode = "pov"; // "pov" | "orbit"
+
+    // Body-aware staging. The runner installs a provider so the lens can never
+    // be placed inside a performer, and never walks through one.
+    this.actorProvider = null;
+    this.stagingReport = null;
+    this._lastDodged = [];
 
     // Player spatial state
     this.playerPos = new THREE.Vector3(0, 0, -2.6); // Feet XZ on floor
@@ -228,6 +243,7 @@ export class PlayerCamera {
     } else {
       this.playerPos.set(0, 0, -2.6);
     }
+    this._settleSpawn();
 
     if (lookAtPos) {
       const { yaw, pitch } = this._computeYawPitchTo(lookAtPos);
@@ -304,10 +320,72 @@ export class PlayerCamera {
     return findTaggedObject(activeScene, ref);
   }
 
+  /** Capsules for every visible performer (optionally excluding one). */
+  _actorCapsules(excludeId = null) {
+    const list = this.actorProvider ? this.actorProvider() : [];
+    const caps = [];
+    for (const actor of list) {
+      if (!actor?.root || actor.root.visible === false) continue;
+      if (excludeId && actor.id === excludeId) continue;
+      caps.push(
+        makeCapsule({
+          id: actor.id,
+          position: actor.root.position,
+          height: actor.spec?.targetHeight ?? BODY.height,
+        })
+      );
+    }
+    return caps;
+  }
+
+  _stagingWorld() {
+    return this.house?.stagingWorld || null;
+  }
+
   /**
-   * Computes a world-space point `standoff` meters (default 0.8m) outside the
-   * bounding box edge of a tagged mesh/object, preferring a walkable spot with
-   * clear line-of-sight facing the object's center.
+   * Pushes a floor position out of every performer and, if it ends up outside
+   * the walkable shell, spirals back to the nearest legal spot.
+   */
+  _safeFloorPoint(pos, { pad = BODY.noGoPad, excludeId = null } = {}) {
+    const world = this._stagingWorld();
+    const caps = this._actorCapsules(excludeId);
+    const pushed = pushOutOfCapsules({ x: pos.x, y: pos.y, z: pos.z }, caps, { pad, world });
+    const out = { x: pushed.pos.x, y: pos.y, z: pushed.pos.z };
+
+    if (world?.walkableAt && !world.walkableAt(out.x, out.z)) {
+      const baseX = out.x;
+      const baseZ = out.z;
+      for (let ring = 1; ring <= 6; ring += 1) {
+        let found = false;
+        for (let i = 0; i < 8; i += 1) {
+          const a = (i / 8) * Math.PI * 2;
+          const x = baseX + Math.cos(a) * ring * 0.22;
+          const z = baseZ + Math.sin(a) * ring * 0.22;
+          if (world.walkableAt(x, z)) {
+            out.x = x;
+            out.z = z;
+            found = true;
+            break;
+          }
+        }
+        if (found) break;
+      }
+    }
+    return { pos: out, dodged: pushed.dodged };
+  }
+
+  /** Called at reset so the episode never starts inside a body. */
+  _settleSpawn() {
+    const { pos, dodged } = this._safeFloorPoint(this.playerPos, { pad: 0.42 });
+    this.playerPos.x = pos.x;
+    this.playerPos.z = pos.z;
+    this._lastDodged = dodged;
+  }
+
+  /**
+   * Computes a world-space point `standoff` meters outside the bounding box
+   * edge of a tagged mesh/object, preferring a walkable spot with clear
+   * line-of-sight facing the object's center and *outside every other actor*.
    */
   resolveApproachPoint(tagOrName, { standoff = 0.8, fromPos = null, resolver = null } = {}) {
     const obj = this._resolveTaggedObject(tagOrName, resolver);
@@ -325,88 +403,53 @@ export class PlayerCamera {
       ? new THREE.Vector3(fromPos.x, fromPos.y ?? 0, fromPos.z)
       : this.playerPos.clone();
 
-    const floorY = center.y >= 2.1 ? 2.85 : 0.0;
-    const rawDx = origin.x - center.x;
-    const rawDz = origin.z - center.z;
-    const rawLen = Math.hypot(rawDx, rawDz);
-    const primaryDir = rawLen > 1e-3
-      ? { x: rawDx / rawLen, z: rawDz / rawLen }
-      : { x: 0, z: 1 };
+    const floorY = center.y >= 2.1 && Math.abs(origin.y - 2.85) < 0.8 ? 2.85 : 0.0;
+    const subjectId = obj.userData?.actorId || null;
 
-    const candidateDirs = [
-      primaryDir,
-      { x: 1, z: 0 },
-      { x: -1, z: 0 },
-      { x: 0, z: 1 },
-      { x: 0, z: -1 },
-      { x: Math.SQRT1_2, z: Math.SQRT1_2 },
-      { x: -Math.SQRT1_2, z: Math.SQRT1_2 },
-      { x: Math.SQRT1_2, z: -Math.SQRT1_2 },
-      { x: -Math.SQRT1_2, z: -Math.SQRT1_2 },
-    ];
-
-    let bestCandidate = null;
-    let bestScore = Infinity;
-
-    for (let idx = 0; idx < candidateDirs.length; idx += 1) {
-      const dir = candidateDirs[idx];
-      const tx = Math.abs(dir.x) > 1e-4 ? hx / Math.abs(dir.x) : Infinity;
-      const tz = Math.abs(dir.z) > 1e-4 ? hz / Math.abs(dir.z) : Infinity;
-      const edgeDist = Math.min(tx, tz);
-      const cx = center.x + dir.x * (edgeDist + standoff);
-      const cz = center.z + dir.z * (edgeDist + standoff);
-
-      const candidate = new THREE.Vector3(cx, floorY, cz);
-      const walkable =
-        !this.house || typeof this.house.isPointInsideWalkable !== "function"
-          ? true
-          : this.house.isPointInsideWalkable(cx, cz);
-      if (!walkable) continue;
-
-      let clearSight = true;
-      if (this.house && typeof this.house.hasClearSight === "function") {
-        const sightY = standoff <= 0.25 && this.baseEyeHeight < 1.0
-          ? floorY + Math.max(0.42, this.baseEyeHeight)
-          : floorY + this.baseEyeHeight;
-        const eyeTest = new THREE.Vector3(cx, sightY, cz);
-        // Aim sightline test just outside the mesh's own edge so combined room meshes
-        // (e.g. Furniture3/4/5) do not self-occlude rays aimed inside their own volume.
-        const nearDist = edgeDist + Math.min(0.18, standoff * 0.25);
-        const lookTest = new THREE.Vector3(
-          center.x + dir.x * nearDist,
-          Math.max(floorY + 0.42, Math.min(box.max.y + 0.05, sightY)),
-          center.z + dir.z * nearDist
-        );
-        clearSight = this.house.hasClearSight(cx, cz, lookTest.x, lookTest.z, eyeTest.y);
-      }
-
-      const travelDist = Math.hypot(cx - origin.x, cz - origin.z);
-      const sightPenalty = clearSight ? 0 : 12.0;
-      const primaryBonus = idx === 0 ? -0.35 : 0;
-      const score = travelDist + sightPenalty + primaryBonus;
-
-      if (score < bestScore) {
-        bestScore = score;
-        bestCandidate = candidate;
+    // Aim at the face for performers, at the object's middle otherwise.
+    const eyeTarget = new THREE.Vector3(center.x, Math.max(floorY + 1.0, center.y), center.z);
+    if (subjectId) {
+      const actor = resolver?.getActor?.(subjectId);
+      if (actor?.getHeadWorldPosition) {
+        actor.getHeadWorldPosition(eyeTarget);
+        eyeTarget.y -= 0.05;
+      } else {
+        eyeTarget.y = box.min.y + size.y * 0.72;
       }
     }
 
-    if (!bestCandidate) {
-      const tx = Math.abs(primaryDir.x) > 1e-4 ? hx / Math.abs(primaryDir.x) : Infinity;
-      const tz = Math.abs(primaryDir.z) > 1e-4 ? hz / Math.abs(primaryDir.z) : Infinity;
-      const edgeDist = Math.min(tx, tz);
-      bestCandidate = new THREE.Vector3(
-        center.x + primaryDir.x * (edgeDist + standoff),
-        floorY,
-        center.z + primaryDir.z * (edgeDist + standoff)
-      );
-    }
+    const preferredDir = direction2D(center, origin, { x: 0, z: 1 });
+    const dirX = Math.abs(preferredDir.x) > 1e-4 ? hx / Math.abs(preferredDir.x) : Infinity;
+    const dirZ = Math.abs(preferredDir.z) > 1e-4 ? hz / Math.abs(preferredDir.z) : Infinity;
+    const edgeDist = Number.isFinite(Math.min(dirX, dirZ)) ? Math.min(dirX, dirZ) : Math.max(hx, hz);
+    const requested = Math.max(BODY.radius + 0.75, Number(standoff) || 0.8);
+    const minDist = Math.max(1.15, edgeDist + requested);
+    const preferredDist = Math.min(minDist + 0.75, 3.6);
+
+    const spot = findSafeCameraSpot({
+      eyeTarget,
+      world: this._stagingWorld(),
+      actors: this._actorCapsules(subjectId),
+      subjectId,
+      preferredDir,
+      minDist,
+      maxDist: Math.max(minDist + 1.4, 3.8),
+      preferredDist,
+      lensHeight: floorY + this.baseEyeHeight,
+      floorY,
+      yawSamples: 28,
+    });
+
+    if (!spot) return null;
 
     return {
       object: obj,
       box,
       center,
-      standoffPos: bestCandidate,
+      standoffPos: new THREE.Vector3(spot.pos.x, floorY, spot.pos.z),
+      safe: !spot.fallback,
+      dodged: spot.dodged || [],
+      distance: spot.dist,
     };
   }
 
@@ -531,6 +574,37 @@ export class PlayerCamera {
     }
 
     if (!resolvedPoints || resolvedPoints.length < 2) return Promise.resolve();
+
+    // ---- Staging gate: never walk through a body or a wall ----
+    {
+      const caps = this._actorCapsules();
+      const last = resolvedPoints[resolvedPoints.length - 1];
+      if (caps.length) {
+        const clear = this._safeFloorPoint({ x: last.x, y: last.y, z: last.z }, { pad: 0.6 });
+        if (dist2D(clear.pos, last) > 0.02) {
+          resolvedPoints = [
+            ...resolvedPoints.slice(0, -1),
+            new THREE.Vector3(clear.pos.x, last.y, clear.pos.z),
+          ];
+          this._lastDodged = clear.dodged;
+        }
+      }
+
+      const world = this._stagingWorld();
+      const elevated = resolvedPoints.some((p) => Math.abs(p.y) > 0.35);
+      const hasJump = Boolean(segments?.some((seg) => seg?.isJumpArc));
+      if (world && !elevated && !hasJump) {
+        const route = ensureRoute(world, resolvedPoints[0], resolvedPoints.slice(1));
+        if (route.inserted || route.unresolved) {
+          resolvedPoints = route.points.map((p) => new THREE.Vector3(p.x, p.y ?? 0, p.z));
+          this.stagingReport = {
+            ...(this.stagingReport || {}),
+            routeInserted: route.inserted,
+            routeUnresolved: route.unresolved,
+          };
+        }
+      }
+    }
 
     if (resolvedFaceTarget) {
       // Cancel any in-flight lookAt or stale trackingRef so update() locks smoothly onto faceTarget
@@ -827,7 +901,34 @@ export class PlayerCamera {
           this.playerPos.y = Math.abs(pB.y - pA.y) < 0.05 ? pA.y : pA.y + (pB.y - pA.y) * alpha;
         }
 
-        if (
+        // Slide around bodies instead of ghosting through them.
+        if (this.actorProvider) {
+          const caps = this._actorCapsules();
+          if (caps.length) {
+            const slid = pushOutOfCapsules(
+              { x: this.playerPos.x, y: this.playerPos.y, z: this.playerPos.z },
+              caps,
+              { pad: 0.34, world: this._stagingWorld() }
+            );
+            if (slid.dodged.length) {
+              this.playerPos.x = slid.pos.x;
+              this.playerPos.z = slid.pos.z;
+            }
+          }
+        }
+
+        const lookDuringApproach =
+          this.activeWalk.faceTarget &&
+          (this.activeWalk.totalLength - targetDist <= 0.75 || rawT >= 0.82);
+
+        if (lookDuringApproach && !this.activeWalk.finalLookTriggered && !this.trackingRef) {
+          this.activeWalk.finalLookTriggered = true;
+          this.lookAt(
+            this.activeWalk.faceTarget,
+            { duration: Math.max(0.22, this.activeWalk.duration - this.activeWalk.elapsed) },
+            resolver
+          );
+        } else if (
           !this.activeWalk.faceTarget &&
           this.activeWalk.autoLook &&
           !this.trackingRef &&
@@ -1003,6 +1104,21 @@ export class PlayerCamera {
       this.camera.position.copy(this._tmpFinalPos);
     }
 
+    // The lens itself may never sit inside a performer's body.
+    if (this.actorProvider) {
+      const caps = this._actorCapsules();
+      if (caps.length) {
+        const res = pushOutOfCapsules(this.camera.position, caps, {
+          pad: 0.3,
+          world: this._stagingWorld(),
+        });
+        if (res.dodged.length) {
+          this.camera.position.set(res.pos.x, res.pos.y, res.pos.z);
+        }
+      }
+    }
+
+    this.camera.rotation.set(finalPitch, finalYaw, gestureRoll + shakeRoll, "YXZ");
     this.camera.rotation.set(finalPitch, finalYaw, gestureRoll + shakeRoll + this.turnRoll, "YXZ");
 
     // Animate bottom-right FPS held prop (deterministic viewmodel pass)

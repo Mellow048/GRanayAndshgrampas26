@@ -21,7 +21,30 @@ When asked to make a new episode (15 seconds, 5 minutes, or 40+ minutes):
    node scripts/verify-3d.mjs <your_preset_key>
    ```
 
+- `index.html` — Studio UI shell, importmap (`three@0.170.0`), `#stageContainer`, `#fadeOverlay`, and `?headless=1` export mode.
+- `src/config.js` — `CONFIG`, `ASSET_MANIFEST`, `SFX_MANIFEST`, verified indoor `SET_MAP` waypoints, `GRANDPA_KEY_POV_44S` (44s default episode), and `JUMP_RUN_WALK_EPISODE` (6s).
+- `src/assetLoader.js` — `loadHouse()` with 0.4m indoor A* navigation (`findPath`, `isPointInsideWalkable`, `clampCameraPosition`), `loadCharacterTemplate()`, `instantiateCharacter()` (`playAnim`, `faceTarget`, `lookAtPlayer`, `showBubble`, `setProp`).
+- `src/animationLibrary.js` — Mixamo `.fbx` template extraction, root-motion stripping, jump arc extraction (`0.32m` cap), and rest-pose quaternion retargeting (`AnimationLibrary`).
+- `src/playerCamera.js` — First-person POV controller (`PlayerCamera`): eye-level walking (`1.50m`) with head-bob, whip-pan `lookAt` + tracking, `nod_yes` / `shake_no` / `shake_panic` / `peek_lean` gestures, crouch (`0.42m`), bottom-right FPS held-item viewmodel (`holdProp`, `useHeldProp`), fade-to-black, wall clamping, and `16:9` / `9:16` aspect toggling + Orbit calibrator toggle.
+- `src/comedyProps.js` — `ThoughtBubbleCache` (`key`, `question`, `exclamation`, `zzz`, `angry`, `laugh`, `food`, `heart`) and `ComedyPropManager` (`golden_key`, `padlock`, `treasure_chest`, `emoji_ball`, `toy_blaster`, `cookie_jar`).
+- `src/sfxEngine.js` — Web Audio mixer (`SfxEngine`): looping BGM (`fluffing_a_duck`, `monkeys_spinning_monkeys`, `run_amok` in `SoundEffects/backroundMusics/`, plus `granny_ambience`, `granny_good_part`, `granny_chase`), `cutBgm` silence ducking, movement-synced footsteps, whip-pan/bubble/pickup/action foley, 1–2s gap pacer, and deterministic offline capture for FFmpeg.
+- `src/episodeRunner.js` — Deterministic 60Hz multi-skit timeline (`EpisodeRunner`) compiling `skits[].beats` (`at` / `after`) and legacy `actions`; validates + repairs every episode on load and refines each path leg against real house geometry (`_refineChainGeometry`).
+- `src/stagingSafety.js` — dependency-free staging geometry: actor capsules (`makeCapsule`, `pushOutOfCapsules`), camera placement (`findSafeCameraSpot`), prop support (`resolvePropPlacement`), route validity (`findBlockedLeg`, `ensureRoute`).
+- `src/episodeSafety.js` — script linter + deterministic auto-repair (`validateEpisode`, `validateAndRepair`) for spawn collisions, floating/overlapping props, wall-cutting routes, tight standoffs, action-less SFX, weapons left in hand, reactions facing away, dead air and framing.
+- `scripts/validate-episode.mjs` — `npm run validate:episode`, exits non-zero when an error survives repair (the export workflow runs it before rendering).
+- `src/studioUI.js` & `src/main.js` — Director controls, 28-clip Soundboard, Waypoint Calibrator (`WASD + Q/E`), Live Multi-Skit JSON Editor, and `window.__GRANNY_STUDIO__` headless export hooks.
+- `scripts/export-video.mjs` & `.github/workflows/export-video.yml` — Headless Playwright (SwiftShader WebGL) + FFmpeg video/BGM/ducking/SFX pipeline auto-publishing `.mp4`/`.webm` + `export-summary.json` to the `latest-export` GitHub Release.
+
+## Staging Rules (Must Preserve)
+
+1. **Bodies are solid.** Nothing (camera, player, performer, prop) may occupy an actor's capsule (`radius 0.44m`, `height 1.78m`). `playerCamera.actorProvider` + `pushOutOfCapsules` enforce this every frame; `findSafeCameraSpot` enforces it at plan time.
+2. **Surfaces are real.** Props sit on what the house actually has under them (`ComedyPropManager.seatProp`); never "fix" a floating prop by tuning `yOffset`.
+3. **Routes are geometry-checked.** Nav-graph edges are only hints: every compiled leg is traced against `HouseWalls`/furniture and replaced with the 0.4m grid A* detour when blocked. Keep `house.stagingWorld` wired into `PlayerCamera` and `EpisodeRunner`.
+4. **Ray helpers accept both call styles.** `isPointInsideWalkable(x, z)` and `hasClearSight(a, b)` also accept Vector3 arguments — passing a Vector3 into the numeric form silently produced NaN rays and disabled collision checks (the original "camera inside Grandpa" bug). Never remove that guard.
+5. **The gate is not optional.** `loadEpisode()` validates + repairs and stores the report on `runner.staging`; `scripts/validate-episode.mjs` gates the export workflow; `node --test tests/*.test.mjs` must stay green.
+
 ---
+
 
 ## Anti-Patterns (NEVER DO THIS)
 

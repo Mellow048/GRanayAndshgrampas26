@@ -1,0 +1,1039 @@
+/**
+ * episodeSafety — the script-level guard rails for POV episodes.
+ *
+ * `validateEpisode()` inspects an episode JSON *before* a single frame renders
+ * and reports (and, where it is deterministic, repairs) the seven classes of
+ * failure that used to reach the encoder:
+ *
+ *   camera spawns inside a body ...... SPAWN_INSIDE_ACTOR / SPAWN_OVERLAP
+ *   props float or interpenetrate ..... PROP_FLOATS / PROP_OVERLAP
+ *   actors walk through doorframes .... PATH_THROUGH_WALL
+ *   the lens passes through a head .... CAMERA_CLIPS_ACTOR / STANDOFF_TOO_CLOSE
+ *   dead air / empty framing .......... DEAD_AIR / OFF_CENTER_FRAMING
+ *   sound with no matching action ..... SOUND_WITHOUT_ANIM / PROP_STUCK_IN_HAND
+ *   reactions facing away ............. REACTION_FACING_AWAY
+ *
+ * The module is dependency-free (no THREE, no DOM) so the very same rules run
+ * in the browser studio, in the headless exporter and in `node --test`.
+ */
+
+import {
+  BODY,
+  dist2D,
+  dist3D,
+  pointSegmentDistance2D,
+  resolvePropPlacement,
+  isEmbedded,
+} from "./stagingSafety.js";
+
+/* ------------------------------------------------------------------ *
+ * Tunables
+ * ------------------------------------------------------------------ */
+
+export const STAGING_RULES = Object.freeze({
+  /** Minimum gap between two performers at spawn. */
+  castSeparation: 1.05,
+  /** Minimum gap between the player's eyes and any performer. */
+  playerStandoff: 1.15,
+  /** Camera may never come closer than this to a performer's head. */
+  cameraStandoff: 1.15,
+  /** A shot that holds nothing but a static pose for longer than this is dead air. */
+  maxDeadAir: 2.5,
+  /** A look/turn that swings more than this should be sold with a longer whip-pan. */
+  maxSnapAngleDeg: 75,
+  /** Vertical offsets above a floor-level waypoint larger than this are treated as floating. */
+  floatTolerance: 0.06,
+});
+
+/** Prop footprints (metres, half extents) used for overlap checks. */
+export const PROP_FOOTPRINTS = Object.freeze({
+  cookie_jar: { x: 0.11, y: 0.13, z: 0.11 },
+  golden_key: { x: 0.13, y: 0.03, z: 0.06 },
+  padlock: { x: 0.09, y: 0.11, z: 0.05 },
+  treasure_chest: { x: 0.36, y: 0.28, z: 0.28 },
+  emoji_ball: { x: 0.16, y: 0.16, z: 0.16 },
+  toy_blaster: { x: 0.1, y: 0.1, z: 0.22 },
+  red_button: { x: 0.16, y: 0.07, z: 0.16 },
+  delivery_box: { x: 0.34, y: 0.24, z: 0.3 },
+  rising_lava: { x: 1.4, y: 0.02, z: 1.4 },
+});
+const DEFAULT_FOOTPRINT = { x: 0.14, y: 0.12, z: 0.14 };
+
+/** Props that other props are *meant* to sit on / emerge from. */
+const CONTAINER_TYPES = new Set(["treasure_chest", "delivery_box"]);
+
+/** Animation cels the rig actually has. */
+export const AVAILABLE_ANIMS = Object.freeze([
+  "idle",
+  "walk",
+  "run",
+  "run2",
+  "sneak",
+  "jump",
+  "laugh",
+  "punch",
+  "sit",
+  "terrified",
+  "panic",
+  "hit",
+  "look",
+  "granny_walk",
+]);
+
+/**
+ * SFX that promise a visible action. If the cue plays and nobody does anything
+ * the audience sees a disembodied noise — exactly the "eating sound, no eating"
+ * complaint.
+ */
+export const CUE_ACTION_RULES = Object.freeze({
+  eat: { anims: ["sit", "look", "laugh"], props: ["cookie_jar", "treasure_chest"], label: "an eating beat" },
+  granny_laugh: { anims: ["laugh", "punch", "hit", "jump"], label: "a laugh" },
+  laugh: { anims: ["laugh", "look"], label: "a laugh" },
+  bonk: { anims: ["hit", "punch", "terrified", "panic", "jump"], label: "an impact reaction" },
+  explode_meme: { anims: ["terrified", "panic", "jump", "hit", "laugh", "run2"], label: "a panic reaction" },
+  vine_boom: { anyAnim: true, label: "a visible reaction" },
+  rizz: { anims: ["laugh", "look", "sit", "jump", "punch"], label: "a charm beat" },
+});
+
+/** Reactions that must be sold facing the lens. */
+const PLAYER_FACING_REACTIONS = new Set(["laugh", "punch", "terrified", "panic", "hit"]);
+
+/** Hand props that should be stowed before a friendly/neutral beat. */
+const HAND_WEAPONS = new Set(["shotgun", "bat"]);
+
+const LOCOMOTION = new Set(["walk", "run", "run2", "sneak", "granny_walk", "jump"]);
+
+/* ------------------------------------------------------------------ *
+ * Small helpers
+ * ------------------------------------------------------------------ */
+
+const round = (v, p = 2) => Math.round(v * 10 ** p) / 10 ** p;
+const isDoorway = (name = "") => /doorway|door_|stairs|stair_|landing|hall_center|up_.*door/i.test(name);
+
+export function formatTime(t) {
+  const s = Math.max(0, Number(t) || 0);
+  return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+}
+
+function issue(code, severity, at, message, extra = {}) {
+  return {
+    code,
+    severity,
+    at: round(Math.max(0, Number(at) || 0), 2),
+    time: formatTime(at),
+    message,
+    ...extra,
+  };
+}
+
+/** Flattens skits/actions into the same `at` timeline the runner compiles. */
+export function flattenBeats(episode) {
+  const out = [];
+  if (Array.isArray(episode?.skits)) {
+    let skitCursor = 0;
+    for (const skit of episode.skits) {
+      let cursor = skit.startAt ?? skitCursor;
+      let maxEnd = cursor;
+      const sequential = skit.sync === "sequential";
+      for (const beat of skit.beats || []) {
+        let at = cursor;
+        if (typeof beat.at === "number") at = beat.at;
+        else if (typeof beat.after === "number") at = cursor + beat.after;
+        const duration = Math.max(0, Number(beat.duration) || 0);
+        const awaited = beat.await === true || beat.sync === "sequential" || sequential;
+        out.push({ ...beat, at, duration, await: awaited, skit: skit.name || "", _src: beat });
+        cursor = at;
+        maxEnd = Math.max(maxEnd, at + (awaited ? 0 : duration));
+      }
+      skitCursor = maxEnd;
+    }
+  }
+  if (Array.isArray(episode?.actions)) {
+    for (const act of episode.actions) {
+      out.push({ ...act, at: Number(act.at) || 0, duration: Math.max(0, Number(act.duration) || 0), skit: "actions", _src: act });
+    }
+  }
+  return out.sort((a, b) => a.at - b.at);
+}
+
+/* ------------------------------------------------------------------ *
+ * Nav-graph doorway routing (geometry-free)
+ * ------------------------------------------------------------------ */
+
+function graphNeighbors(navGraph, id) {
+  const node = navGraph?.[id];
+  if (!node) return [];
+  if (Array.isArray(node.neighbors)) return node.neighbors;
+  return [];
+}
+
+/**
+ * Shortest chain of waypoint ids between two named waypoints, computed on the
+ * authored nav graph. Used to teach the author which `via` stops a room change
+ * needs, and to auto-insert them.
+ */
+export function doorwayChain(setMap, navGraph, fromName, toName) {
+  if (!setMap?.[fromName] || !setMap?.[toName]) return null;
+  if (fromName === toName) return [];
+
+  const dist = new Map([[fromName, 0]]);
+  const prev = new Map();
+  const open = new Set([fromName]);
+
+  const nodeDist = (id) => {
+    const n = navGraph?.[id] || setMap[id];
+    return n ? { x: n.x, y: n.y ?? 0, z: n.z } : null;
+  };
+
+  while (open.size) {
+    let u = null;
+    let best = Infinity;
+    for (const id of open) {
+      const d = dist.get(id) ?? Infinity;
+      if (d < best) {
+        best = d;
+        u = id;
+      }
+    }
+    if (!u || best === Infinity) break;
+    open.delete(u);
+    if (u === toName) break;
+
+    for (const v of graphNeighbors(navGraph, u)) {
+      const a = nodeDist(u);
+      const b = nodeDist(v);
+      if (!a || !b) continue;
+      const alt = best + dist3D(a, b);
+      if (alt < (dist.get(v) ?? Infinity)) {
+        dist.set(v, alt);
+        prev.set(v, u);
+        open.add(v);
+      }
+    }
+  }
+
+  if (!dist.has(toName)) return null;
+  const chain = [];
+  let cur = toName;
+  while (cur !== undefined) {
+    chain.unshift(cur);
+    cur = prev.get(cur);
+  }
+  return chain;
+}
+
+/** Intermediate waypoints worth naming in `via` (doorways, stairs, landings). */
+export function suggestedVia(setMap, navGraph, fromName, toName) {
+  const chain = doorwayChain(setMap, navGraph, fromName, toName);
+  if (!chain || chain.length <= 2) return [];
+  return chain.slice(1, -1);
+}
+
+/* ------------------------------------------------------------------ *
+ * Validator
+ * ------------------------------------------------------------------ */
+
+/**
+ * @param {object} episode  raw episode JSON
+ * @param {object} options  { setMap, navGraph, autoFix, world?, supportProbe? }
+ * @returns {{ issues: object[], episode: object, stats: object }}
+ */
+export function validateEpisode(episode, options = {}) {
+  const {
+    setMap = {},
+    navGraph = {},
+    autoFix = true,
+    world = null,
+    rules = STAGING_RULES,
+  } = options;
+
+  if (!episode || typeof episode !== "object") {
+    return { issues: [], episode, stats: { errors: 0, warnings: 0, fixed: 0 } };
+  }
+
+  /** Deep clone so repairs never mutate the caller's JSON mid-flight. */
+  const ep = JSON.parse(JSON.stringify(episode));
+  const issues = [];
+  const resolved = (name) => (name && setMap[name] ? setMap[name] : null);
+
+  const cast = Array.isArray(ep.cast) ? ep.cast : [];
+  const props = Array.isArray(ep.props) ? ep.props : [];
+  const beats = flattenBeats(ep);
+
+  const sourceOf = (beat) => beat?._src || beat;
+
+  /** Writes a repair back onto both the compiled beat and the authored JSON. */
+  function patchBeat(beat, changes) {
+    Object.assign(beat, changes);
+    const src = sourceOf(beat);
+    if (src && src !== beat) Object.assign(src, changes);
+  }
+
+  /** Inserts a beat before `beat` in the authored array. */
+  function insertBefore(beat, newBeat) {
+    const anchor = sourceOf(beat);
+    for (const skit of ep.skits || []) {
+      const list = skit.beats || [];
+      const idx = list.indexOf(anchor);
+      if (idx >= 0) {
+        list.splice(idx, 0, newBeat);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Inserts a beat right after `beat` in the authored array. */
+  function insertAfter(beat, newBeat) {
+    const anchor = sourceOf(beat);
+    for (const skit of ep.skits || []) {
+      const list = skit.beats || [];
+      const idx = list.indexOf(anchor);
+      if (idx >= 0) {
+        list.splice(idx + 1, 0, newBeat);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Last actor that performed an animation before `time` (the cue's owner). */
+  function lastPerformingActor(time) {
+    const prior = beats
+      .filter((b) => b.at <= time + 0.01 && (b.type === "char_anim" || b.type === "char_face") && b.actor)
+      .sort((a, b) => b.at - a.at);
+    if (prior[0]) return prior[0].actor;
+    return cast[0]?.id || null;
+  }
+
+  function appendBeat(newBeat) {
+    const skit = ep.skits?.[ep.skits.length - 1];
+    if (!skit) return false;
+    skit.beats = skit.beats || [];
+    skit.beats.push(newBeat);
+    return true;
+  }
+
+  const fixNote = (applied, description) => ({ applied: Boolean(applied), fix: description });
+
+  /* ---------------- 1. Cast / player spawn safety ---------------- */
+
+  const spawns = [];
+  for (const entry of cast) {
+    const wp = resolved(entry.spawn);
+    if (!wp) {
+      issues.push(
+        issue("UNKNOWN_SPAWN", "error", 0, `Cast "${entry.id}" spawns at unknown waypoint "${entry.spawn}".`, {
+          actor: entry.id,
+          ...fixNote(false, "Use a name from SET_MAP."),
+        })
+      );
+      continue;
+    }
+    spawns.push({ id: entry.id, x: wp.x, y: wp.y ?? 0, z: wp.z, name: entry.spawn });
+  }
+
+  const playerSpawnName = ep.playerSpawn || "back_hall";
+  const playerSpawnWp = resolved(playerSpawnName);
+  if (playerSpawnWp) {
+    const eye = { x: playerSpawnWp.x, y: (playerSpawnWp.y ?? 0) + BODY.height * BODY.eyeFraction, z: playerSpawnWp.z };
+    for (const s of spawns) {
+      const gap = Math.hypot(s.x - eye.x, s.z - eye.z);
+      const hardHit = gap < BODY.radius + 0.14;
+      if (gap < rules.playerStandoff) {
+        // Repair: choose the nearest waypoint that is clear of every cast spawn.
+        let repair = null;
+        if (autoFix && hardHit) {
+          let best = Infinity;
+          for (const [name, wp] of Object.entries(setMap)) {
+            if (Math.abs((wp.y ?? 0) - (playerSpawnWp.y ?? 0)) > 0.4) continue;
+            if (!Number.isFinite(wp.x) || !Number.isFinite(wp.z)) continue;
+            if ((wp.y ?? 0) < -0.01 || (wp.y ?? 0) > 0.2) continue; // same floor only
+            if (/lava|void|origin/i.test(name)) continue;            // never pick a gag/decor anchor
+            const clear = spawns.every((c) => Math.hypot(c.x - wp.x, c.z - wp.z) >= rules.playerStandoff + 0.15);
+            if (!clear) continue;
+            const d = Math.hypot(wp.x - playerSpawnWp.x, wp.z - playerSpawnWp.z);
+            if (d > 0.05 && d < best) {
+              best = d;
+              repair = name;
+            }
+          }
+          if (repair) ep.playerSpawn = repair;
+        }
+        issues.push(
+          issue(
+            hardHit ? "SPAWN_INSIDE_ACTOR" : "SPAWN_TOO_CLOSE",
+            hardHit ? "error" : "warn",
+            0,
+            hardHit
+              ? `Player spawn "${playerSpawnName}" is ${gap.toFixed(2)}m from ${s.id} — the lens starts inside the body (minimum ${rules.playerStandoff}m).`
+              : `Player spawn "${playerSpawnName}" is ${gap.toFixed(2)}m from ${s.id} — uncomfortably close (standoff ${rules.playerStandoff}m).`,
+            {
+              actor: s.id,
+              ...fixNote(
+                Boolean(repair),
+                repair
+                  ? `playerSpawn moved to "${repair}" (${dist2D(setMap[repair], playerSpawnWp).toFixed(2)}m away, clear of all cast).`
+                  : "Move playerSpawn at least 1.15m away from every cast spawn."
+              ),
+            }
+          )
+        );
+      }
+    }
+  }
+
+  for (let i = 0; i < spawns.length; i += 1) {
+    for (let j = i + 1; j < spawns.length; j += 1) {
+      const gap = Math.hypot(spawns[i].x - spawns[j].x, spawns[i].z - spawns[j].z);
+      if (gap < rules.castSeparation) {
+        issues.push(
+          issue(
+            "SPAWN_OVERLAP",
+            "warn",
+            0,
+            `${spawns[i].id} and ${spawns[j].id} spawn ${gap.toFixed(2)}m apart and will interpenetrate (separation ${rules.castSeparation}m).`,
+            { ...fixNote(false, "Give one of them a different spawn waypoint.") }
+          )
+        );
+      }
+    }
+  }
+
+  /* ---------------- 2. Prop placement ---------------- */
+
+  const placed = [];
+  for (const def of props) {
+    const wp = resolved(def.spawn);
+    const half = PROP_FOOTPRINTS[def.type] || DEFAULT_FOOTPRINT;
+    if (!wp) {
+      issues.push(
+        issue("UNKNOWN_PROP_SPAWN", "error", 0, `Prop "${def.id}" spawns at unknown waypoint "${def.spawn}".`, {
+          prop: def.id,
+          ...fixNote(false, "Use a name from SET_MAP."),
+        })
+      );
+      continue;
+    }
+
+    const baseY = wp.y ?? 0;
+    const yOffset = Number(def.yOffset) || 0;
+    const floorLevel = baseY < 0.2;
+    const isLava = def.type === "rising_lava";
+
+    if (!isLava) {
+      const floating = floorLevel && yOffset > rules.floatTolerance;
+      const hovering = !floorLevel && Math.abs(yOffset) > 0.25;
+      if (floating || hovering) {
+        let applied = false;
+        if (autoFix) {
+          delete def.yOffset;
+          applied = true;
+        }
+        issues.push(
+          issue(
+            "PROP_FLOATS",
+            "error",
+            0,
+            floating
+              ? `Prop "${def.id}" sits ${yOffset.toFixed(2)}m above the floor at "${def.spawn}" with nothing under it.`
+              : `Prop "${def.id}" floats ${yOffset.toFixed(2)}m above the "${def.spawn}" surface.`,
+            {
+              prop: def.id,
+              ...fixNote(
+                applied,
+                applied
+                  ? "Removed yOffset; the prop now snaps to the real surface under it at runtime."
+                  : "Spawn it on a surface waypoint (e.g. kitchen_counter_top) or drop yOffset so staging can snap it."
+              ),
+            }
+          )
+        );
+      }
+    }
+
+    const desired = {
+      x: wp.x + (Number(def.spawnOffset?.x) || 0),
+      y: baseY + (Number(def.yOffset) || 0),
+      z: wp.z + (Number(def.spawnOffset?.z) || 0),
+    };
+    let finalPos = desired;
+
+    if (world && !isLava) {
+      // Second opinion with real geometry: the runtime pass is authoritative.
+      const snap = resolvePropPlacement({
+        world,
+        desired,
+        halfExtents: half,
+        others: placed,
+        isSpotFree: (pos, h) => !isEmbedded(world, pos, h),
+      });
+      finalPos = snap.pos;
+      if (autoFix && snap.snapped && !floorLevel && Math.abs(snap.pos.y - baseY) <= 0.25) {
+        // Remember the real surface height so the re-validation pass agrees.
+        def.yOffset = round(snap.pos.y - baseY, 3);
+      }
+      if (autoFix && snap.nudged) {
+        def.spawnOffset = {
+          x: round(snap.pos.x - wp.x, 3),
+          z: round(snap.pos.z - wp.z, 3),
+        };
+      }
+      if (snap.embedded && !snap.nudged) {
+        issues.push(
+          issue(
+            "PROP_INSIDE_GEOMETRY",
+            "error",
+            0,
+            `Prop "${def.id}" is spawned inside solid furniture at "${def.spawn}" (microwave / cupboard / wall).`,
+            {
+              prop: def.id,
+              ...fixNote(false, "Move it to an open surface waypoint, or add a spawnOffset away from the furniture."),
+            }
+          )
+        );
+      }
+      if (snap.floating) {
+        issues.push(
+          issue("PROP_NO_SUPPORT", "error", 0, `No surface found under "${def.id}" at "${def.spawn}" — it hangs in mid-air.`, {
+            prop: def.id,
+            ...fixNote(false, "Place it on a counter/table waypoint (kitchen_counter_top, dining_table_top…)."),
+          })
+        );
+      } else if (snap.snapped || snap.nudged) {
+        issues.push(
+          issue(
+            "PROP_REPOSITIONED",
+            "info",
+            0,
+            `${def.id} was re-seated ${snap.snapped ? `to y=${round(snap.pos.y)}` : "aside to clear another prop"}.`,
+            { prop: def.id, ...fixNote(true, "Staging snapped it to the real support surface.") }
+          )
+        );
+      }
+    }
+
+    let box = aabbFromSafe(finalPos, half);
+    for (const other of placed) {
+      // A padlock on a chest or a button inside a box is stacking, not clipping.
+      if (CONTAINER_TYPES.has(def.type) || other.type === undefined || CONTAINER_TYPES.has(other.type)) continue;
+
+      const overlaps = (a, b) =>
+        a.min.x < b.max.x - 0.015 &&
+        a.max.x > b.min.x + 0.015 &&
+        a.min.y < b.max.y - 0.015 &&
+        a.max.y > b.min.y + 0.015 &&
+        a.min.z < b.max.z - 0.015 &&
+        a.max.z > b.min.z + 0.015;
+
+      if (!overlaps(box, other.aabb)) continue;
+
+      let applied = false;
+      let note = `Move "${def.id}" to a different surface or waypoint.`;
+      if (autoFix) {
+        // Slide it clear along the roomiest axis and remember the offset.
+        const shiftX = half.x + other.half.x + 0.07;
+        const shiftZ = half.z + other.half.z + 0.07;
+        const useX = shiftX <= shiftZ;
+        const off = useX ? { x: shiftX, z: 0 } : { x: 0, z: shiftZ };
+        def.spawnOffset = off;
+        finalPos = { x: finalPos.x + off.x, y: finalPos.y, z: finalPos.z + off.z };
+        box = aabbFromSafe(finalPos, half);
+        applied = !overlaps(box, other.aabb);
+        note = `Offset "${def.id}" by ${useX ? "x" : "z"} ${(useX ? shiftX : shiftZ).toFixed(2)}m (spawnOffset) so it sits beside "${other.id}".`;
+      }
+
+      issues.push(
+        issue(
+          "PROP_OVERLAP",
+          "error",
+          0,
+          `Props "${other.id}" and "${def.id}" occupy the same space at "${def.spawn}" — they will clip through each other.`,
+          { prop: def.id, ...fixNote(applied, note) }
+        )
+      );
+    }
+    placed.push({ id: def.id, type: def.type, half, aabb: box });
+  }
+
+  /* ---------------- 3. Move routing ---------------- */
+
+  const actorState = new Map();
+  for (const entry of cast) {
+    const wp = resolved(entry.spawn);
+    if (wp) actorState.set(entry.id, { x: wp.x, y: wp.y ?? 0, z: wp.z, name: entry.spawn });
+  }
+  let playerState = playerSpawnWp ? { x: playerSpawnWp.x, y: playerSpawnWp.y ?? 0, z: playerSpawnWp.z, name: playerSpawnName } : null;
+
+  const movesByActor = new Map();
+  for (const beat of beats) {
+    const type = beat.type;
+    const isMove = type === "char_move" || type === "move";
+    const isWalk = type === "player_walk";
+    if (!isMove && !isWalk) continue;
+
+    const key = isWalk ? "__player" : beat.actor;
+    const prev = movesByActor.get(key);
+    if (prev && beat.at < prev.at + prev.duration - 0.05) {
+      issues.push(
+        issue(
+          "MOVE_CONFLICT",
+          "warn",
+          beat.at,
+          `${isWalk ? "The player" : beat.actor} is given a new move at ${formatTime(beat.at)} while the previous one (${formatTime(prev.at)}) is still running.`,
+          { actor: beat.actor, ...fixNote(false, "Space the moves apart or mark the first as instant.") }
+        )
+      );
+    }
+    movesByActor.set(key, beat);
+
+    const fromName = beat.from || (isWalk ? playerState?.name : actorState.get(beat.actor)?.name);
+    const toName = typeof beat.to === "string" ? beat.to : null;
+    const startPos = resolved(fromName) || (isWalk ? playerState : actorState.get(beat.actor));
+    const endWp = toName ? resolved(toName) : null;
+
+    if (toName && !endWp && !actorState.has(toName)) {
+      issues.push(
+        issue("UNKNOWN_MOVE_TARGET", "error", beat.at, `${beat.actor || "Player"} is told to move to unknown waypoint "${toName}".`, {
+          actor: beat.actor,
+          ...fixNote(false, "Use a name from SET_MAP."),
+        })
+      );
+    }
+
+    // Player walks that aim at an actor: enforce a real standoff (this applies
+    // whether the beat names a `to` waypoint or approaches the target directly).
+    if (isWalk && beat.target && !beat.to) {
+      const standoff = Number(beat.standoff ?? 0.8);
+      if (standoff < rules.cameraStandoff) {
+        let applied = false;
+        if (autoFix) {
+          patchBeat(beat, { standoff: rules.cameraStandoff });
+          applied = true;
+        }
+        issues.push(
+          issue(
+            "STANDOFF_TOO_CLOSE",
+            "error",
+            beat.at,
+            `player_walk standoff ${standoff.toFixed(2)}m from "${beat.target}" puts the lens inside the body (minimum ${rules.cameraStandoff}m).`,
+            {
+              ...fixNote(
+                applied,
+                applied ? `standoff raised to ${rules.cameraStandoff}m.` : `Use standoff: ${rules.cameraStandoff}.`
+              ),
+            }
+          )
+        );
+      }
+    }
+
+    if (startPos && endWp) {
+      const straight = Math.hypot(endWp.x - startPos.x, endWp.z - startPos.z);
+      const chain = doorwayChain(setMap, navGraph, fromName, toName);
+      let graphLen = 0;
+      if (chain) {
+        for (let i = 1; i < chain.length; i += 1) {
+          const a = resolved(chain[i - 1]) || navGraph[chain[i - 1]];
+          const b = resolved(chain[i]) || navGraph[chain[i]];
+          if (a && b) graphLen += Math.hypot(b.x - a.x, b.z - a.z);
+        }
+      }
+      const viaNames = Array.isArray(beat.via) ? beat.via : [];
+      const missingDoorway =
+        chain && chain.length > 2 && graphLen > straight * 1.12 && viaNames.length === 0;
+
+      if (missingDoorway) {
+        // Prefer the doorway-named stops (readable `via`), but fall back to the
+        // whole inter-room chain when the path never passes a named doorway.
+        const doorwayStops = chain.slice(1, -1).filter((n) => isDoorway(n));
+        const needed = doorwayStops.length ? doorwayStops : chain.slice(1, -1);
+        let applied = false;
+        if (autoFix && needed.length) {
+          patchBeat(beat, { via: needed });
+          applied = true;
+        }
+        issues.push(
+          issue(
+            "PATH_THROUGH_WALL",
+            "error",
+            beat.at,
+            `${beat.actor || "Player"} routes "${fromName}" → "${toName}" in a straight line (${straight.toFixed(1)}m) instead of the ${graphLen.toFixed(1)}m doorway chain — it will cut the wall/doorframe.`,
+            {
+              actor: beat.actor,
+              ...fixNote(
+                applied,
+                applied
+                  ? `Inserted via: [${needed.map((n) => `"${n}"`).join(", ")}].`
+                  : `Add via: [${needed.map((n) => `"${n}"`).join(", ")}].`
+              ),
+            }
+          )
+        );
+      }
+
+      // Does the straight leg pass through a performer standing on it?
+      for (const [id, state] of actorState) {
+        if (id === beat.actor) continue;
+        const d = pointSegmentDistance2D(state, startPos, endWp);
+        if (d < BODY.radius + 0.12 && Math.hypot(endWp.x - startPos.x, endWp.z - startPos.z) > 0.3) {
+          issues.push(
+            issue(
+              "CAMERA_CLIPS_ACTOR",
+              "warn",
+              beat.at,
+              `${isWalk ? "The player's route" : `${beat.actor}'s route`} passes within ${d.toFixed(2)}m of ${id} — the lens can pass through the body.`,
+              { actor: id, ...fixNote(false, "Route around via a doorway waypoint, or move the performer first.") }
+            )
+          );
+        }
+      }
+    }
+
+    // Track state for the next leg.
+    if (endWp) {
+      const viaPositions = (beat.via || []).map((n) => resolved(n)).filter(Boolean);
+      const lastVia = viaPositions[viaPositions.length - 1];
+      const state = {
+        x: endWp.x,
+        y: endWp.y ?? 0,
+        z: endWp.z,
+        name: toName,
+        lastViaX: lastVia?.x ?? startPos?.x,
+        lastViaZ: lastVia?.z ?? startPos?.z,
+      };
+      if (isWalk) playerState = state;
+      else actorState.set(beat.actor, state);
+    }
+  }
+
+  /* ---------------- 4. Facing / reactions / hands ---------------- */
+
+  const handState = new Map();
+  for (const beat of beats) {
+    if (beat.type === "char_prop" && beat.actor) {
+      handState.set(beat.actor, beat.prop ?? null);
+    }
+    if (beat.type === "char_anim" && beat.actor) {
+      if (PLAYER_FACING_REACTIONS.has(beat.anim)) {
+        const priorFace = beats.find(
+          (b) =>
+            b.at <= beat.at + 0.01 &&
+            (b.type === "char_face" || b.type === "face") &&
+            b.actor === beat.actor &&
+            (b.followPlayer === true || b.target === "player")
+        );
+        if (!priorFace) {
+          let applied = false;
+          if (autoFix) applied = insertBefore(beat, { at: beat.at, type: "char_face", actor: beat.actor, followPlayer: true, instant: true });
+          issues.push(
+            issue(
+              "REACTION_FACING_AWAY",
+              "error",
+              beat.at,
+              `${beat.actor} plays "${beat.anim}" facing wherever it happens to be — the reaction is not sold to the lens.`,
+              {
+                actor: beat.actor,
+                ...fixNote(applied, applied ? "Inserted char_face followPlayer before the reaction." : "Add char_face { followPlayer: true, instant: true } first."),
+              }
+            )
+          );
+        }
+      }
+
+      const hand = handState.get(beat.actor);
+      if (hand && HAND_WEAPONS.has(hand) && !["hit", "punch", "terrified", "panic", "jump", "walk", "run", "run2"].includes(beat.anim)) {
+        let applied = false;
+        if (autoFix) applied = insertBefore(beat, { at: beat.at, type: "char_prop", actor: beat.actor, prop: "none" });
+        issues.push(
+          issue(
+            "PROP_STUCK_IN_HAND",
+            "error",
+            beat.at,
+            `${beat.actor} is still holding the ${hand} while playing "${beat.anim}" — stow it or play a weapon beat.`,
+            {
+              actor: beat.actor,
+              ...fixNote(applied, applied ? "Inserted char_prop prop:\"none\" before the beat." : "Add char_prop { prop: \"none\" } first."),
+            }
+          )
+        );
+      }
+    }
+
+    if (beat.type === "char_bubble" && beat.icon === "heart" && beat.actor) {
+      const hand = handState.get(beat.actor);
+      if (hand && HAND_WEAPONS.has(hand)) {
+        let applied = false;
+        if (autoFix) applied = insertBefore(beat, { at: beat.at, type: "char_prop", actor: beat.actor, prop: "none" });
+        issues.push(
+          issue(
+            "PROP_STUCK_IN_HAND",
+            "error",
+            beat.at,
+            `${beat.actor} shows a heart bubble while still holding the ${hand}.`,
+            { actor: beat.actor, ...fixNote(applied, applied ? "Stowed the weapon before the bubble." : "Stow the weapon first.") }
+          )
+        );
+      }
+    }
+  }
+
+  /* ---------------- 5. Sound needs a matching action ---------------- */
+
+  for (const beat of beats) {
+    if (beat.type !== "sfx") continue;
+    const rule = CUE_ACTION_RULES[beat.sound];
+    if (!rule) continue;
+    const windowStart = beat.at - 1.6;
+    const windowEnd = beat.at + 1.25;
+    const matched = beats.some((b) => {
+      if (b.at < windowStart || b.at > windowEnd) return false;
+      if (b.type === "char_anim" && (rule.anyAnim || rule.anims?.includes(b.anim))) return true;
+      if (b.type === "char_prop" && rule.props?.includes(b.prop)) return true;
+      if (b.type === "player_hold" && rule.props?.includes(b.prop)) return true;
+      // A meme sting can land on a prop slap or a camera gesture just as well as an anim.
+      if (rule.anyAnim && (b.type === "prop_action" || b.type === "player_gesture")) return true;
+      return false;
+    });
+    if (!matched) {
+      let applied = false;
+      let appliedNote = null;
+      const candidates = (rule.anims || []).filter((a) => AVAILABLE_ANIMS.includes(a));
+      const actorId = lastPerformingActor(beat.at);
+      if (autoFix && candidates.length && actorId) {
+        // A reaction we invent ourselves must also be sold to the lens.
+        if (PLAYER_FACING_REACTIONS.has(candidates[0])) {
+          insertAfter(beat, {
+            at: Math.round((beat.at + 0.01) * 100) / 100,
+            type: "char_face",
+            actor: actorId,
+            followPlayer: true,
+            instant: true,
+          });
+        }
+        applied = insertAfter(beat, {
+          at: Math.round((beat.at + 0.02) * 100) / 100,
+          type: "char_anim",
+          actor: actorId,
+          anim: candidates[0],
+          duration: 1.2,
+          loop: true,
+        });
+        if (applied) appliedNote = `Inserted ${actorId} "${candidates[0]}" at ${formatTime(beat.at)} so the cue has a visible action.`;
+      }
+      issues.push(
+        issue(
+          "SOUND_WITHOUT_ANIM",
+          "error",
+          beat.at,
+          `SFX "${beat.sound}" promises ${rule.label} but no matching animation or prop fires around it.`,
+          {
+            ...fixNote(
+              applied,
+              appliedNote ||
+                (candidates.length
+                  ? `Add a matching beat (${candidates.slice(0, 3).map((a) => `"${a}"`).join(" / ")}) or drop the SFX.`
+                  : "Drop the SFX or add the missing action.")
+            ),
+          }
+        )
+      );
+    }
+  }
+
+  /* ---------------- 6. Dead air ---------------- */
+
+  const activity = [];
+  for (const beat of beats) {
+    const moves = beat.type === "char_move" || beat.type === "move" || beat.type === "player_walk";
+    const acts = ["char_anim", "anim", "player_look", "player_gesture", "char_bubble", "prop_action", "player_hold", "char_face", "fade", "sfx", "char_prop"].includes(beat.type);
+    if (moves || acts) activity.push({ at: beat.at, end: beat.at + Math.max(0.15, beat.duration || 0), type: beat.type, beat });
+  }
+  activity.sort((a, b) => a.at - b.at);
+
+  const episodeEnd = activity.reduce((m, a) => Math.max(m, a.end), 0);
+  let cursor = 0;
+  const gaps = [];
+  for (const a of activity) {
+    if (a.at - cursor > rules.maxDeadAir && a.at > 0.5) gaps.push({ from: cursor, to: a.at });
+    cursor = Math.max(cursor, a.end);
+  }
+
+  for (const gap of gaps) {
+    const length = gap.to - gap.from;
+    let applied = false;
+    if (autoFix && ep.skits?.length) {
+      // Insert a tiny reaction beat into the skit that owns the gap.
+      const skit =
+        ep.skits.find((s) => (s.beats || []).some((b) => b.at >= gap.from - 0.01 && b.at <= gap.to + 0.01)) ||
+        ep.skits[ep.skits.length - 1];
+      if (skit) {
+        skit.beats = skit.beats || [];
+        const insertAt = Math.round((gap.from + gap.to) * 50) / 100;
+        skit.beats.push({ at: insertAt, type: "player_gesture", gesture: "peek_lean", duration: 1.0 });
+        applied = true;
+      }
+    }
+    issues.push(
+      issue(
+        "DEAD_AIR",
+        "error",
+        gap.from,
+        `${length.toFixed(1)}s of dead air (${formatTime(gap.from)}–${formatTime(gap.to)}) with nothing moving.`,
+        {
+          ...fixNote(
+            applied,
+            applied
+              ? "Inserted a 1.0s peek_lean at the centre of the gap — replace it with a real gag."
+              : "Fill it with movement, a bubble, a look or an SFX (max 2.5s)."
+          ),
+        }
+      )
+    );
+  }
+
+  /* ---------------- 7. Framing ---------------- */
+
+  for (const beat of beats) {
+    if (beat.type !== "player_look" || !beat.target) continue;
+    if (typeof beat.target !== "string" || !setMap[beat.target]) continue;
+    const dur = Number(beat.duration ?? 0.2);
+    if (dur < 0.16) {
+      issues.push(
+        issue("SNAP_PAN", "warn", beat.at, `player_look to "${beat.target}" runs ${dur.toFixed(2)}s — a snap that reads as a cut.`, {
+          ...fixNote(false, "Use 0.18–0.3s for a readable whip-pan."),
+        })
+      );
+    }
+    if (beat.track === false) {
+      const movingTarget = beats.some(
+        (b) => (b.type === "char_move" || b.type === "move") && b.actor === beat.target && Math.abs(b.at - beat.at) < 3
+      );
+      if (movingTarget) {
+        issues.push(
+          issue("OFF_CENTER_FRAMING", "warn", beat.at, `"${beat.target}" moves within 3s but the look is untracked — they will drift off-centre.`, {
+            ...fixNote(false, "Use track: true so the lens follows them."),
+          })
+        );
+      }
+    }
+  }
+
+  /* ---------------- 8. Ending on motion ---------------- */
+
+  const lastBeat = beats[beats.length - 1];
+  const fadeBeat = [...beats].reverse().find((b) => b.type === "fade" && Number(b.to) >= 0.99);
+  if (fadeBeat) {
+    const motionBefore = beats.some(
+      (b) =>
+        b.at >= fadeBeat.at - 2.6 &&
+        b.at <= fadeBeat.at + 0.1 &&
+        (b.type === "char_anim" || b.type === "char_move" || b.type === "move" || b.type === "player_gesture" || b.type === "player_walk")
+    );
+    if (!motionBefore) {
+      issues.push(
+        issue("END_ON_STILL", "warn", fadeBeat.at, `The episode fades on a still pose at ${formatTime(fadeBeat.at)} — end on motion.`, {
+          ...fixNote(false, "Add a run/jumpscare/gesture in the 2s before the fade."),
+        })
+      );
+    }
+  } else if (lastBeat && episodeEnd > 6) {
+    issues.push(issue("NO_FADE", "warn", episodeEnd, "The episode never fades out.", { ...fixNote(false, "Close with fade { to: 1 }.") }));
+  }
+
+  /* ---------------- Report ---------------- */
+
+  const errors = issues.filter((i) => i.severity === "error").length;
+  const warnings = issues.filter((i) => i.severity === "warn").length;
+  const fixed = issues.filter((i) => i.applied).length;
+
+  return {
+    issues: issues.sort((a, b) => a.at - b.at || (a.severity === "error" ? -1 : 1)),
+    episode: ep,
+    stats: { errors, warnings, fixed, beats: beats.length, duration: round(episodeEnd, 2) },
+  };
+}
+
+function aabbFromSafe(pos, half) {
+  return {
+    min: { x: pos.x - half.x, y: pos.y - half.y, z: pos.z - half.z },
+    max: { x: pos.x + half.x, y: pos.y + half.y, z: pos.z + half.z },
+  };
+}
+
+/**
+ * Validate, repair, then validate again so the report reflects the episode that
+ * will actually render (not the broken input plus a pile of promises).
+ */
+export function validateAndRepair(episode, options = {}) {
+  const first = validateEpisode(episode, { ...options, autoFix: options.autoFix !== false });
+  const second = validateEpisode(first.episode, { ...options, autoFix: false });
+  const applied = first.issues.filter((i) => i.applied);
+  const stillOpen = second.issues;
+  const seen = new Set();
+  const issues = [...stillOpen, ...applied].filter((i) => {
+    const key = `${i.code}|${round(i.at, 2)}|${i.prop ?? i.actor ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return {
+    issues: issues.sort(
+      (a, b) => a.at - b.at || (a.severity === "error" ? -1 : 1)
+    ),
+    episode: first.episode,
+    repaired: applied.length > 0,
+    stats: {
+      ...second.stats,
+      fixed: applied.length,
+      errorsBefore: first.stats.errors,
+      errorsAfter: second.stats.errors,
+      warningsBefore: first.stats.warnings,
+      warningsAfter: second.stats.warnings,
+    },
+  };
+}
+
+/** Human-readable report used by the CLI, the studio toast and CI. */
+export function formatStagingReport(result) {
+  const { issues, stats } = result;
+  const lines = [];
+  const fixedCount = stats.fixed ?? issues.filter((i) => i.applied).length;
+  const errors = stats.errorsAfter ?? issues.filter((i) => !i.applied && i.severity === "error").length;
+  const warnings = stats.warningsAfter ?? issues.filter((i) => !i.applied && i.severity === "warn").length;
+
+  lines.push(
+    `Staging report — ${errors} error(s), ${warnings} warning(s) remaining · ${fixedCount} auto-fix(es)`
+  );
+  lines.push(`Beats: ${stats.beats} · runtime: ~${stats.duration.toFixed(1)}s`);
+
+  const remaining = issues.filter((i) => !i.applied);
+  const applied = issues.filter((i) => i.applied);
+  const icon = { error: "✗", warn: "!", info: "·" };
+
+  if (!remaining.length && !applied.length) {
+    lines.push("✓ No staging issues found.");
+    return lines.join("\n");
+  }
+
+  if (remaining.length) {
+    lines.push("Remaining:");
+    for (const i of remaining) {
+      lines.push(`${icon[i.severity] || "·"} [${i.time}] ${i.code}: ${i.message}`);
+      if (i.fix) lines.push(`    fix: ${i.fix}`);
+    }
+  } else {
+    lines.push("✓ Nothing left to fix.");
+  }
+
+  if (applied.length) {
+    lines.push("Auto-fixed:");
+    for (const i of applied) {
+      lines.push(`✔ [${i.time}] ${i.code}: ${i.fix || i.message}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+export const episodeSafety = { validateEpisode, validateAndRepair, formatStagingReport, suggestedVia, doorwayChain, flattenBeats };
+export default episodeSafety;

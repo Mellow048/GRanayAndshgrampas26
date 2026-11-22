@@ -1,0 +1,29 @@
+{
+  "title": "Broken render — regression fixture",
+  "aspect": "16:9",
+  "playerSpawn": "kitchen",
+  "playerFacing": "kitchen_counter_top",
+  "cast": [
+    { "id": "grandpa", "asset": "grandpa", "spawn": "kitchen", "facing": "kitchen_counter_top" },
+    { "id": "granny", "asset": "granny", "spawn": "dining_center", "facing": "kitchen" }
+  ],
+  "props": [
+    { "id": "cookie_jar", "type": "cookie_jar", "spawn": "kitchen", "yOffset": 0.44 },
+    { "id": "red_button", "type": "red_button", "spawn": "kitchen", "yOffset": 0.44 }
+  ],
+  "skits": [
+    {
+      "name": "Every reported failure",
+      "beats": [
+        { "at": 0.5, "type": "sfx", "sound": "eat" },
+        { "at": 1.0, "type": "player_walk", "target": "grandpa", "standoff": 0.4 },
+        { "at": 2.5, "type": "char_move", "actor": "granny", "from": "back_room_east", "to": "living_room_left", "anim": "walk", "duration": 1.6 },
+        { "at": 4.0, "type": "char_anim", "actor": "granny", "anim": "laugh", "loop": true, "duration": 1.2 },
+        { "at": 6.0, "type": "char_prop", "actor": "grandpa", "prop": "shotgun" },
+        { "at": 7.0, "type": "char_bubble", "actor": "grandpa", "icon": "heart", "duration": 1.0 },
+        { "at": 12.0, "type": "char_move", "actor": "grandpa", "to": "living_room_entry", "anim": "walk", "duration": 2.0 },
+        { "at": 18.0, "type": "fade", "to": 1, "duration": 1.0 }
+      ]
+    }
+  ]
+}

@@ -201,7 +201,16 @@ function buildIndoorNavigation(houseRoot, allHouseMeshes) {
   const toCol = (x) => Math.max(0, Math.min(cols - 1, Math.round((x - xMin) / step)));
   const toRow = (z) => Math.max(0, Math.min(rows - 1, Math.round((z - zMin) / step)));
 
-  function isPointInsideWalkable(x, z) {
+  // Accept either (x, z) or a Vector3 — the old code was called both ways and
+  // a Vector3 produced NaN rays, which silently made every safety check pass.
+  function xzOf(a, b) {
+    if (a && typeof a === "object") return { x: a.x, z: a.z };
+    return { x: a, z: b };
+  }
+
+  function isPointInsideWalkable(a, b) {
+    const { x, z } = xzOf(a, b);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
     // Raycast from above the second floor downward
     ray.set(tmpA.set(x, 4.2, z), down);
     ray.far = 5.2;
@@ -219,8 +228,20 @@ function buildIndoorNavigation(houseRoot, allHouseMeshes) {
   }
 
   function hasClearSight(ax, az, bx, bz, y = 0.95) {
-    tmpA.set(ax, y, az);
-    tmpB.set(bx, y, bz);
+    // Two call styles: (ax, az, bx, bz, y) or (vecA, vecB, y).
+    let height = y;
+    if (ax && typeof ax === "object" && az && typeof az === "object") {
+      const a = ax;
+      const b = az;
+      height = typeof bx === "number" ? bx : y;
+      ax = a.x;
+      az = a.z;
+      bx = b.x;
+      bz = b.z;
+    }
+    if (![ax, az, bx, bz].every(Number.isFinite)) return false;
+    tmpA.set(ax, height, az);
+    tmpB.set(bx, height, bz);
     tmpDir.subVectors(tmpB, tmpA);
     const dist = tmpDir.length();
     if (dist < 1e-4) return true;
@@ -453,12 +474,49 @@ function buildIndoorNavigation(houseRoot, allHouseMeshes) {
     return bestPos || clampCameraPosition(lookTarget, lookTarget.clone().add(preferredOffset));
   }
 
+  /**
+   * Raycast adapter consumed by `stagingSafety` / `episodeSafety`.
+   * Keeps the geometry vocabulary (surfaces, walls) out of the rules module.
+   */
+  const stagingWorld = {
+    castRay(origin, dir, far) {
+      if (!origin || !dir) return null;
+      ray.set(tmpA.set(origin.x, origin.y, origin.z), tmpDir.set(dir.x, dir.y, dir.z).normalize());
+      ray.far = Math.max(0.01, far);
+      const hits = ray.intersectObjects(allHouseMeshes, false);
+      if (!hits.length) return null;
+      return { distance: hits[0].distance, point: hits[0].point.clone(), object: hits[0].object };
+    },
+    castDown(x, z, fromY, far) {
+      ray.set(tmpA.set(x, fromY, z), down);
+      ray.far = Math.max(0.01, far);
+      const hits = ray.intersectObjects(allHouseMeshes, false);
+      // Ignore ceilings/walls above; take the first surface strictly below.
+      const hit = hits.find((h) => h.point.y < fromY - 0.005);
+      if (!hit) return null;
+      return { distance: hit.distance, point: hit.point.clone(), object: hit.object };
+    },
+    walkableAt(x, z) {
+      return isPointInsideWalkable(x, z);
+    },
+    findPath(from, to) {
+      return findPath(
+        new THREE.Vector3(from.x, from.y ?? 0, from.z),
+        new THREE.Vector3(to.x, to.y ?? 0, to.z)
+      );
+    },
+    hasClearSight,
+    hasClearBodyCorridor,
+  };
+
   return {
     isPointInsideWalkable,
     hasClearSight,
+    hasClearBodyCorridor,
     findPath,
     clampCameraPosition,
     findClearCameraPosition,
+    stagingWorld,
   };
 }
 

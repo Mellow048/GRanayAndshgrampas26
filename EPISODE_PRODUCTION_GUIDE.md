@@ -190,9 +190,75 @@ Notice how every beat stays under `2.5s`, every reaction shows visual cause-and-
 
 ---
 
-## 7. Pre-Render Checklist & Cloud Rendering
+## 7. Staging Safety Gate (runs on every episode)
+
+The script is validated **before** a single frame is rendered. Two modules own this:
+
+| Module | Responsibility |
+| --- | --- |
+| `src/stagingSafety.js` | Pure geometry: actor capsules, camera standoffs, sightlines, prop support, route validity. No DOM/THREE — identical in browser, exporter and tests. |
+| `src/episodeSafety.js` | Script linter + auto-repair for the seven failure classes below, plus `scripts/validate-episode.mjs` (CLI). |
+
+`EpisodeRunner.loadEpisode()` runs the gate automatically, applies the deterministic repairs, logs the report to the console and shows a toast in the studio. The export workflow runs the same CLI **before** rendering.
+
+```bash
+npm run validate:episode                       # every preset
+npm run validate:episode -- --preset floor_is_lava_4m
+npm run validate:episode -- --file my-episode.json --out fixed.json
+npm run validate:episode -- --json             # for CI / tooling
+```
+
+Exit code is `1` when an error survives the repair pass.
+
+### What it refuses to let through
+
+| Code | Failure it catches | How to author it correctly |
+| --- | --- | --- |
+| `SPAWN_INSIDE_ACTOR` | Player/cast spawn inside another body (lens starts in a neck) | Keep `playerSpawn` **1.15m+** from every `cast[].spawn` |
+| `SPAWN_OVERLAP` | Two performers spawn on top of each other | Space cast spawns **1.05m+** apart |
+| `PROP_FLOATS` | `yOffset` lifting a prop into mid-air (floating cookie jar) | Put the prop on a **surface waypoint** (`kitchen_counter_top`, `dining_table_top`, `chest_spot`, `key_spot`) and omit `yOffset` |
+| `PROP_OVERLAP` | Two props in the same volume (jar clipping the red button) | Give each prop its own surface/waypoint, or a `spawnOffset` |
+| `PROP_INSIDE_GEOMETRY` | A prop spawned **inside** furniture (jar half-buried in the microwave) — the four-ray `isEmbedded` probe finds walls on every side | Spawn on open counter/table space, or add a `spawnOffset` that clears the object |
+| `PATH_THROUGH_WALL` | A cross-room move cutting a doorframe instead of using `via` | Name every doorway in `via` — the validator prints the exact chain it computed |
+| `STANDOFF_TOO_CLOSE` | `player_walk { target }` parking the lens in a face | `standoff: 1.15` or more |
+| `CAMERA_CLIPS_ACTOR` | A route passing through a standing performer | Route around them, or move them first |
+| `SOUND_WITHOUT_ANIM` | An SFX promising action nobody performs (eating sound, no eating) | Pair the cue with a `char_anim` / `char_prop` within ~1s |
+| `PROP_STUCK_IN_HAND` | A heart bubble or friendly beat while still holding the shotgun/bat | `char_prop { "prop": "none" }` before the beat |
+| `REACTION_FACING_AWAY` | `laugh` / `punch` / `terrified` played away from the lens | `char_face { "followPlayer": true, "instant": true }` first |
+| `DEAD_AIR` | More than 2.5s with nothing moving | Insert a gag, a look, a bubble or a move |
+| `SNAP_PAN` / `OFF_CENTER_FRAMING` | Unreadably fast pans, untracked moving subjects | `duration: 0.18–0.3`, `track: true` |
+| `END_ON_STILL` / `NO_FADE` | Fading on a frozen pose, or never fading | End on `run2` / jumpscare / gesture motion |
+
+### Automatic repairs (deterministic only)
+
+The gate will, without asking:
+
+- move `playerSpawn` to the nearest clear floor waypoint when it starts inside a body,
+- delete a floating `yOffset` so the prop snaps to the real surface under it,
+- slide an overlapping prop aside with a `spawnOffset`,
+- insert the missing doorway `via` chain,
+- raise a too-tight `standoff` to `1.15`,
+- insert `char_face { followPlayer: true }` before reactions,
+- stow a weapon (`char_prop: "none"`) before friendly beats / bubbles,
+- add a matching animation for an action SFX,
+- insert a short `peek_lean` in the middle of a dead-air gap.
+
+It will **not** invent story: anything it cannot repair deterministically stays in the report as an error.
+
+### Runtime guarantees (not just the linter)
+
+- `PlayerCamera.resolveApproachPoint()` sweeps a ring around the subject and only accepts a lens position that is outside every actor capsule, inside the walkable shell, and has a clear sightline (`findSafeCameraSpot`).
+- Player walks are re-routed through the house grid A* whenever a leg would clip geometry, and the camera **slides around** performers instead of passing through them.
+- Character moves are validated leg-by-leg in `EpisodeRunner._refineChainGeometry()`; a blocked leg is replaced with a real nav-grid detour (jump arcs and stairs keep their authored arcs).
+- Props are seated with a downward surface probe on load and on `show` / `pop_out`, and step aside when they would intersect another prop.
+- `char_face { followPlayer: true }` keeps tracking the live camera position, so a reaction is never played to the back of the room.
+
+---
+
+## 8. Pre-Render Checklist & Cloud Rendering
 
 Before rendering a new episode JSON:
+0. **Run the gate:** `npm run validate:episode -- --file my-episode.json` — fix everything under `Remaining:`.
 1. **No dead air > 2.5s:** Scan `beats` timestamps — every `2.5s` window should have movement, camera change, prop flight/pickup, or character action.
 2. **Doorway-centered paths:** Every cross-room `player_walk` or `char_move` includes `doorway_living` / `doorway_dining` in `via`. Prefer `cut` / `char_cut` over long commutes.
 3. **Close-range cause-and-effect:** Any `punch` / `hit` happens within `1.4m` of its target or right after a prop impact.

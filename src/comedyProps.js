@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { resolvePropPlacement, isEmbedded } from "./stagingSafety.js";
 
 const BUBBLE_ICONS = {
   key: { symbol: "KEY", bg: "#fef08a", accent: "#ca8a04", draw: "key" },
@@ -581,6 +582,71 @@ export class ComedyPropManager {
     this.scene.add(this.group);
 
     this.props = new Map(); // id -> { id, type, mesh, basePos, state }
+
+    // Surface-aware staging (installed by the runner once the house is loaded).
+    this.world = null;
+    this.actorProvider = null;
+    this.stagingLog = [];
+  }
+
+  setStaging(world, actorProvider = null) {
+    this.world = world || null;
+    this.actorProvider = actorProvider || null;
+  }
+
+  /** Existing props as `{id, aabb}` so new props can dodge them. */
+  _occupiedBoxes(exceptId = null) {
+    const out = [];
+    for (const p of this.props.values()) {
+      if (p.id === exceptId) continue;
+      if (p.mesh.visible === false) continue;
+      const box = new THREE.Box3().setFromObject(p.mesh);
+      if (!box.isEmpty()) out.push({ id: p.id, aabb: box });
+    }
+    return out;
+  }
+
+  /**
+   * Seats a prop's origin so its mesh rests on the surface underneath and does
+   * not intersect another prop. Returns the final position (origin space).
+   */
+  seatProp(mesh, desiredOrigin, exceptId = null) {
+    if (!this.world || !mesh) return desiredOrigin.clone();
+
+    const box = new THREE.Box3().setFromObject(mesh);
+    if (box.isEmpty()) return desiredOrigin.clone();
+    const size = box.getSize(new THREE.Vector3());
+    const centerOffsetY = (box.min.y + box.max.y) / 2;
+    const half = {
+      x: Math.max(0.03, size.x / 2),
+      y: Math.max(0.03, size.y / 2),
+      z: Math.max(0.03, size.z / 2),
+    };
+
+    const result = resolvePropPlacement({
+      world: this.world,
+      desired: { x: desiredOrigin.x, y: desiredOrigin.y + centerOffsetY, z: desiredOrigin.z },
+      halfExtents: half,
+      others: this._occupiedBoxes(exceptId),
+      // Never seat a prop inside a microwave / cupboard / wall.
+      isSpotFree: (pos, h) => !isEmbedded(this.world, pos, h),
+    });
+
+    const finalOrigin = new THREE.Vector3(
+      result.pos.x,
+      result.pos.y - centerOffsetY,
+      result.pos.z
+    );
+    if (result.snapped || result.nudged) {
+      this.stagingLog.push({
+        id: exceptId,
+        snapped: result.snapped,
+        nudged: result.nudged,
+        from: desiredOrigin.clone(),
+        to: finalOrigin.clone(),
+      });
+    }
+    return finalOrigin;
   }
 
   loadProps(propDefs = []) {
@@ -605,12 +671,22 @@ export class ComedyPropManager {
       });
       const wpName = def.spawn || def.waypoint;
       const wp = typeof wpName === "string" ? this.waypoints[wpName] : wpName;
+      const spawnOff = def.spawnOffset || null;
       const basePos = wp
-        ? new THREE.Vector3(wp.x, wp.y + (def.yOffset || 0), wp.z)
-        : new THREE.Vector3(0, def.yOffset || 0, 0);
+        ? new THREE.Vector3(
+            wp.x + (spawnOff?.x || 0),
+            wp.y + (def.yOffset || 0),
+            wp.z + (spawnOff?.z || 0)
+          )
+        : new THREE.Vector3(spawnOff?.x || 0, def.yOffset || 0, spawnOff?.z || 0);
 
       mesh.position.copy(basePos);
       if (def.rotationY) mesh.rotation.y = def.rotationY;
+      if (this.world) {
+        const seated = this.seatProp(mesh, basePos, def.id);
+        mesh.position.copy(seated);
+        basePos.copy(seated);
+      }
       if (def.scale) mesh.scale.setScalar(def.scale);
       mesh.visible = def.visible !== false;
 
@@ -715,7 +791,7 @@ export class ComedyPropManager {
         if (params.at && this.waypoints[params.at]) {
           const wp = this.waypoints[params.at];
           basePos.set(wp.x, wp.y + (params.yOffset || 0), wp.z);
-          mesh.position.copy(basePos);
+          mesh.position.copy(this.seatProp(mesh, basePos, propId));
         }
         break;
       case "hide":
@@ -775,7 +851,8 @@ export class ComedyPropManager {
         if (params.at && this.waypoints[params.at]) {
           const wp = this.waypoints[params.at];
           basePos.set(wp.x, wp.y + (params.yOffset || 0), wp.z);
-          mesh.position.copy(basePos);
+          mesh.position.copy(this.seatProp(mesh, basePos, propId));
+          basePos.copy(mesh.position);
         }
         state.popStartPos = basePos.clone();
         if (params.to && this.waypoints[params.to]) {

@@ -30,6 +30,7 @@ Instead of hand-coding massive fragile scripts, you write **one short gag functi
 ### Episode Presets (`src/config.js` / `src/episodes.js`)
 - **`comedy_variety_1m`** *(Default, `69.6s`, `16:9`)* — Chains all 5 gags back-to-back across 5 rooms with zero leaks.
 - **`cookie_heist_15s`** *(`15.0s`, `16:9`)* — Standalone 15-second slapstick gag showcase (`cookieHeist`).
+- **`granny_cookie_heist_15s`** *(`14.8s`, `16:9`)* — Hand-authored POV reference episode: Grandpa guards the jar, Granny storms in through the doorway, jumpscare finish. The episode the staging gate is regression-tested against (0 errors, 0 warnings, world-aware).
 - **`rocket_ball_test`** *(`14.0s`, `16:9`)* — Single `ballRace` gag preview.
 - **`rocket_ball_x3`** *(`42.8s`, `16:9`)* — Same `ballRace` gag chained across 3 different rooms with swapped roles.
 - **`cookie_caper_30s`** *(`30.2s`, `9:16` Vertical Short)* — Kid-safe vertical comedy Short.
@@ -37,6 +38,20 @@ Instead of hand-coding massive fragile scripts, you write **one short gag functi
 - **`grandpa_key_pov_44s`** *(`43.9s`, `16:9`)* — Legacy 3-skit chest adventure.
 
 ---
+
+## Staging Safety Gate (no more clipping renders)
+
+Every script is validated **before** it renders — spawn standoffs, prop support, doorway routing, camera sightlines, reaction facing, dead air and framing:
+
+```bash
+npm run validate:episode -- --preset granny_cookie_heist_15s   # human report + fixes
+npm run validate:episode -- --file my-episode.json --out fixed.json
+npm test                                                       # 13 geometry/rule tests
+```
+
+- `src/stagingSafety.js` — actor capsules, camera standoffs, prop surface snapping, `isEmbedded` geometry probe, wall-aware routing (pure JS, testable in Node).
+- `src/episodeSafety.js` — 15 linter codes with deterministic auto-repair; `EpisodeRunner.loadEpisode()` runs it automatically and keeps the report on `runner.staging`.
+- The export workflow runs `node --test` **and** the same gate before installing Playwright, and writes the results into `export-summary.json` (`STRICT_STAGING=1` fails the build).
 
 ## Run & Preview Locally
 
@@ -69,7 +84,9 @@ node scripts/verify-3d.mjs comedy_variety_1m
 ### Short / Standard Episodes (`<= 3 min`)
 ```bash
 gh workflow run export-video.yml -f preset=cookie_heist_15s -f fps=30 -f sfx_pacer=true -f format=mp4
+gh workflow run export-video.yml -f preset=granny_cookie_heist_15s -f fps=30 -f sfx_pacer=true -f format=mp4
 ```
+The rendered `.mp4` + `export-summary.json` (including the staging report) are published automatically to the `latest-export` GitHub Release.
 
 ### Long Multi-Gag Episodes (`5–40+ min`, Parallel Matrix + FFmpeg Concat)
 ```bash
