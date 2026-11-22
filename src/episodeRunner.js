@@ -1093,7 +1093,10 @@ export class EpisodeRunner {
           };
       let lookPos = null;
       if (ev.facing || ev.lookAt) {
-        lookPos = this.resolveWaypoint(ev.facing || ev.lookAt);
+        const lookRef = ev.facing || ev.lookAt;
+        lookPos =
+          this.playerCamera.resolveLookTarget?.(lookRef, this.resolver) ||
+          this.resolveWaypoint(lookRef);
       }
       this.playerCamera.teleport(dest, lookPos);
       // Audio stays authored: only play a cut sting when the beat asks for one.

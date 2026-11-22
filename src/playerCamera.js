@@ -647,6 +647,17 @@ export class PlayerCamera {
     return Promise.resolve();
   }
 
+  /**
+   * Resolve a beat target (actor id, prop id, semantic tag, or waypoint) into
+   * a world position suitable for a camera cut. Actors resolve to head height,
+   * props to their mesh, and floor waypoints to chest height, so a `cut` never
+   * snaps the view down at the floor.
+   */
+  resolveLookTarget(ref, resolver, out = new THREE.Vector3()) {
+    if (!ref) return null;
+    return this._resolveTargetPosition(ref, resolver, out) ? out : null;
+  }
+
   crouch({ crouched = true, duration = 0.35 } = {}) {
     if (this._crouchResolve) {
       this._crouchResolve();
