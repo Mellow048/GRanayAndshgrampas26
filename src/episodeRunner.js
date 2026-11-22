@@ -542,8 +542,10 @@ export class EpisodeRunner {
       } else if ((ev.type === "char_anim" || ev.type === "anim") && effDur === 0) {
         effDur = ev.loop ? 0.45 : 1.0;
       } else if (ev.type === "player_look") {
-        const cap = episode?.maxLookDuration ?? null;
-        if (cap) effDur = Math.min(effDur, cap);
+        const cap =
+          episode?.maxLookDuration ??
+          (episode?.allowSlowScans ? Infinity : CONFIG.maxLookDuration ?? 0.55);
+        if (Number.isFinite(cap)) effDur = Math.min(effDur, cap);
       } else if (ev.type === "cut") {
         const destRef = ev.to || ev.target || ev.spawn;
         if (destRef) {
@@ -1063,9 +1065,11 @@ export class EpisodeRunner {
     }
 
     if (type === "player_look" && this.playerCamera) {
-      const cap = this.episode?.maxLookDuration ?? null;
+      const cap =
+        this.episode?.maxLookDuration ??
+        (this.episode?.allowSlowScans ? Infinity : CONFIG.maxLookDuration ?? 0.55);
       const rawDur = ev.duration ?? 0.2;
-      const dur = cap ? Math.min(rawDur, cap) : rawDur;
+      const dur = Number.isFinite(cap) ? Math.min(rawDur, cap) : rawDur;
       const lookPromise = this.playerCamera.lookAt(
         ev.target,
         { duration: dur, track: Boolean(ev.track), maxDuration: cap },

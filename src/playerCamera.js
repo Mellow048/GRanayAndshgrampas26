@@ -625,9 +625,11 @@ export class PlayerCamera {
     this.lookTargetYaw = this.yaw + wrapAngleDiff(yaw, this.yaw);
     this.lookTargetPitch = pitch;
     this.lookElapsed = 0;
-    this.lookDuration = maxDuration
-      ? Math.max(0.01, Math.min(duration, maxDuration))
-      : Math.max(0.01, duration);
+    // Framework guardrail: default to a short whip-pan; episodes may pass a
+    // larger `maxDuration` (or Infinity for intentional slow scans).
+    const cap =
+      maxDuration ?? CONFIG.maxLookDuration ?? Number.POSITIVE_INFINITY;
+    this.lookDuration = Math.max(0.01, Math.min(duration, cap));
     this.trackingRef = trackRef;
     return new Promise((resolve) => {
       this._lookResolve = resolve;
