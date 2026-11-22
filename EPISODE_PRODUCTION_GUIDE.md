@@ -343,6 +343,10 @@ Scene 4 — Back To Bed
 
 Scale it: 20–24 scenes × 15s = 5–6 minutes.
 
+Because each scene is exactly one `skit`, `scripts/chunk-episode.mjs` and
+`.github/workflows/export-long-episode.yml` split long shows **on scene
+boundaries** — a 24-scene show renders in parallel chunks that stitch losslessly.
+
 ### Head tracking (the "look at me" mechanic)
 
 A taunt that plays to the wall is the single most damaging framing bug in these
