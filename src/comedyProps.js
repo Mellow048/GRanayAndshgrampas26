@@ -1,10 +1,11 @@
 import * as THREE from "three";
+import { resolvePropPlacement, isEmbedded } from "./stagingSafety.js";
 
 const BUBBLE_ICONS = {
   key: { symbol: "KEY", bg: "#fef08a", accent: "#ca8a04", draw: "key" },
   question: { symbol: "?", bg: "#e0f2fe", accent: "#0284c7", draw: "text" },
   exclamation: { symbol: "!", bg: "#fee2e2", accent: "#dc2626", draw: "text" },
-  zzz: { symbol: "ZZZ", bg: "#ede9fe", accent: "#6d28d9", draw: "text" },
+  zzz: { symbol: "Zzz", bg: "#ede9fe", accent: "#6d28d9", draw: "zzz" },
   angry: { symbol: "GRR!", bg: "#fecaca", accent: "#b91c1c", draw: "angry" },
   laugh: { symbol: "HAHA", bg: "#fef9c3", accent: "#ea580c", draw: "laugh" },
   food: { symbol: "COOKIE", bg: "#ffedd5", accent: "#c2410c", draw: "cookie" },
@@ -135,6 +136,25 @@ function drawComicBubbleTexture(iconName) {
       ctx.beginPath();
       ctx.arc(cx, cy, 5, 0, Math.PI * 2);
       ctx.fill();
+    }
+  } else if (spec.draw === "zzz") {
+    ctx.strokeStyle = "#0f172a";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (const [tx, ty, size, rot, col] of [
+      [-34, 14, 40, -0.14, "#7c3aed"],
+      [0, -4, 52, 0.08, "#6d28d9"],
+      [38, -22, 62, -0.1, "#5b21b6"],
+    ]) {
+      ctx.save();
+      ctx.translate(tx, ty);
+      ctx.rotate(rot);
+      ctx.font = `900 ${size}px ui-sans-serif, system-ui, sans-serif`;
+      ctx.lineWidth = 7;
+      ctx.fillStyle = col;
+      ctx.strokeText("Z", 0, 0);
+      ctx.fillText("Z", 0, 0);
+      ctx.restore();
     }
   } else if (spec.draw === "heart") {
     ctx.fillStyle = "#ec4899";
@@ -532,8 +552,122 @@ export function createPropMesh(propType) {
       break;
     }
 
-    case "cookie_jar":
-    default: {
+    case "soda_can": {
+      // A chunky cartoon energy-drink can (the "Mountain Dew" beat).
+      const canMat = new THREE.MeshStandardMaterial({ color: 0x65e02a, roughness: 0.35, metalness: 0.15 });
+      const bandMat = new THREE.MeshStandardMaterial({ color: 0x0b7a3b, roughness: 0.4 });
+      const topMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.25, metalness: 0.7 });
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.24, 18), canMat);
+      body.position.y = 0.12;
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0765, 0.0765, 0.08, 18), bandMat);
+      band.position.y = 0.15;
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.075, 0.025, 18), topMat);
+      top.position.y = 0.2525;
+      const tab = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.007, 6, 12), topMat);
+      tab.position.set(0.02, 0.266, 0);
+      tab.rotation.x = Math.PI / 2;
+      group.add(body, band, top, tab);
+      break;
+    }
+
+    case "fridge": {
+      // A real fridge, built as an open shell: the door is a pivot on the left
+      // edge so `open`/`close` swings it, the inside is visible when it opens,
+      // and a soda can can sit on the shelf (hidden while the door is shut).
+      const shellMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.55 });
+      const trimMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.4, metalness: 0.35 });
+      const innerMat = new THREE.MeshStandardMaterial({ color: 0xdbeafe, roughness: 0.85 });
+      const handleMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.3, metalness: 0.8 });
+
+      const W = 0.78;
+      const H = 1.75;
+      const D = 0.7;
+
+      const addBox = (w, h, d, x, y, z, mat = shellMat, name = "") => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+        m.position.set(x, y, z);
+        if (name) m.name = name;
+        group.add(m);
+        return m;
+      };
+
+      addBox(W, H, 0.05, 0, H / 2, D / 2 - 0.025, innerMat, "FridgeBack");
+      addBox(0.05, H, D, -W / 2 + 0.025, H / 2, 0, shellMat, "FridgeLeft");
+      addBox(0.05, H, D, W / 2 - 0.025, H / 2, 0, shellMat, "FridgeRight");
+      addBox(W, 0.05, D, 0, H - 0.025, 0, shellMat, "FridgeTop");
+      addBox(W, 0.06, D, 0, 0.03, 0, shellMat, "FridgeBase");
+      addBox(W - 0.1, 0.035, D - 0.08, 0, 0.52, 0.02, trimMat, "FridgeShelfLow");
+      addBox(W - 0.1, 0.035, D - 0.08, 0, 1.06, 0.02, trimMat, "FridgeShelf");
+
+      const doorPivot = new THREE.Group();
+      doorPivot.name = "FridgeDoor";
+      doorPivot.position.set(-W / 2, 0, -D / 2);
+      const door = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.05), shellMat);
+      door.position.set(W / 2, H / 2, 0);
+      const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.55, 10), handleMat);
+      handle.position.set(W - 0.09, 1.1, -0.07);
+      const handleArm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.06), handleMat);
+      handleArm.position.set(W - 0.09, 1.1, -0.03);
+      const seam = new THREE.Mesh(new THREE.BoxGeometry(W, 0.02, 0.055), trimMat);
+      seam.position.set(W / 2, H - 0.44, 0);
+      doorPivot.add(door, handle, handleArm, seam);
+      group.add(doorPivot);
+      break;
+    }
+
+    case "bed": {
+      group.userData.seat = false;
+      // A bed of our own, spawned once in an empty corner of the real house.
+      // (The house FBX has no bed mesh on the ground floor — its only bed is on
+      // the second floor, which has no staircase to reach it.)
+      const frameMat = new THREE.MeshStandardMaterial({ color: 0x8a6a44, roughness: 0.85 });
+      const sheetMat = new THREE.MeshStandardMaterial({ color: 0xf4f1e6, roughness: 0.95 });
+      const blanketMat = new THREE.MeshStandardMaterial({ color: 0x4f8d6b, roughness: 0.9 });
+      const pillowMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.3, 1.96), frameMat);
+      frame.name = "BedFrame";
+      frame.position.y = 0.15;
+      group.add(frame);
+      const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.2, 1.9), sheetMat);
+      mattress.name = "BedMattress";
+      mattress.position.y = 0.4;
+      group.add(mattress);
+      const blanket = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.08, 1.2), blanketMat);
+      blanket.name = "BedBlanket";
+      blanket.position.set(0, 0.53, 0.34);
+      group.add(blanket);
+      const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.14, 0.32), pillowMat);
+      pillow.name = "BedPillow";
+      pillow.position.set(0, 0.56, -0.72);
+      group.add(pillow);
+      const headboard = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.62, 0.08), frameMat);
+      headboard.position.set(0, 0.55, -1.0);
+      group.add(headboard);
+      group.userData.seat = false;
+      group.userData.topY = 0.5;
+      break;
+    }
+
+    case "shelf": {
+      group.userData.seat = false;
+      // A small wooden shelf that sits *inside* an existing piece of house
+      // furniture (the kitchen fridge), so a prop can rest on something real
+      // instead of floating in front of a door.
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0xb98a4b, roughness: 0.75 });
+      const bracketMat = new THREE.MeshStandardMaterial({ color: 0x8a5f2b, roughness: 0.7 });
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.035, 0.34), woodMat);
+      plank.name = "ShelfPlank";
+      plank.position.y = 0.0175;
+      group.add(plank);
+      for (const sx of [-0.18, 0.18]) {
+        const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.12, 0.3), bracketMat);
+        bracket.position.set(sx, -0.06, 0);
+        group.add(bracket);
+      }
+      break;
+    }
+
+    case "cookie_jar": {
       const jarMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.3 });
       const lidMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, roughness: 0.35 });
       const body = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.32, 16), jarMat);
@@ -543,6 +677,19 @@ export function createPropMesh(propType) {
       const knob = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), lidMat);
       knob.position.y = 0.39;
       group.add(body, lid, knob);
+      break;
+    }
+
+    default: {
+      // An unknown prop type used to render a cookie jar, which showed up in
+      // people's hands out of nowhere. Fail loudly and visibly instead.
+      console.warn(`[comedyProps] unknown prop type "${propType}" — rendering a placeholder.`);
+      const mat = new THREE.MeshStandardMaterial({ color: 0xff2d55, roughness: 0.6 });
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), mat);
+      box.position.y = 0.1;
+      box.name = `UnknownProp_${propType}`;
+      group.add(box);
+      group.userData.unknownPropType = String(propType);
       break;
     }
   }
@@ -562,6 +709,90 @@ export class ComedyPropManager {
     this.scene.add(this.group);
 
     this.props = new Map(); // id -> { id, type, mesh, basePos, state }
+
+    // Surface-aware staging (installed by the runner once the house is loaded).
+    this.world = null;
+    this.actorProvider = null;
+    this.stagingLog = [];
+  }
+
+  setStaging(world, actorProvider = null) {
+    this.world = world || null;
+    this.actorProvider = actorProvider || null;
+  }
+
+  /** Existing props as `{id, aabb}` so new props can dodge them. */
+  _occupiedBoxes(exceptId = null) {
+    const out = [];
+    for (const p of this.props.values()) {
+      if (p.id === exceptId) continue;
+      if (p.mesh.visible === false) continue;
+      const box = new THREE.Box3().setFromObject(p.mesh);
+      if (!box.isEmpty()) out.push({ id: p.id, aabb: box });
+    }
+    return out;
+  }
+
+  /** World boxes of every visible prop, for body-vs-prop avoidance. */
+  getObstacleBoxes() {
+    const out = [];
+    for (const p of this.props.values()) {
+      if (p.mesh.visible === false) continue;
+      const box = new THREE.Box3().setFromObject(p.mesh);
+      if (box.isEmpty()) continue;
+      out.push({ id: p.id, min: box.min.clone(), max: box.max.clone() });
+    }
+    return out;
+  }
+
+  /**
+   * Seats a prop's origin so its mesh rests on the surface underneath and does
+   * not intersect another prop. Returns the final position (origin space).
+   */
+  seatProp(mesh, desiredOrigin, exceptId = null) {
+    if (!this.world || !mesh) return desiredOrigin.clone();
+    // `seat: false` — the author placed this prop on something that is not part
+    // of the house (a fridge shelf, a performer's hand, a moving platform).
+    const owner = exceptId ? this.props.get(exceptId) : null;
+    if (owner && owner.initial?.seat === false) return desiredOrigin.clone();
+
+    mesh.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(mesh);
+    if (box.isEmpty()) return desiredOrigin.clone();
+    const size = box.getSize(new THREE.Vector3());
+    // Distance from the mesh ORIGIN to the centre of its bounding box. Using the
+    // world centre here (the old bug) lifted every table prop by its own height.
+    const centerOffsetY = (box.min.y + box.max.y) / 2 - mesh.position.y;
+    const half = {
+      x: Math.max(0.03, size.x / 2),
+      y: Math.max(0.03, size.y / 2),
+      z: Math.max(0.03, size.z / 2),
+    };
+
+    const result = resolvePropPlacement({
+      world: this.world,
+      desired: { x: desiredOrigin.x, y: desiredOrigin.y + centerOffsetY, z: desiredOrigin.z },
+      halfExtents: half,
+      others: this._occupiedBoxes(exceptId),
+      // Never seat a prop inside a microwave / cupboard / wall.
+      isSpotFree: (pos, h) => !isEmbedded(this.world, pos, h),
+    });
+
+    const finalOrigin = new THREE.Vector3(
+      result.pos.x,
+      result.pos.y - centerOffsetY,
+      result.pos.z
+    );
+    if (result.snapped || result.nudged) {
+      this.stagingLog.push({
+        id: exceptId,
+        snapped: result.snapped,
+        nudged: result.nudged,
+        from: desiredOrigin.clone(),
+        to: finalOrigin.clone(),
+      });
+    }
+    return finalOrigin;
   }
 
   loadProps(propDefs = []) {
@@ -584,13 +815,24 @@ export class ComedyPropManager {
         child.userData.semanticLabel = propLabel;
         child.userData.aliases = mesh.userData.aliases;
       });
-      const wp = this.waypoints[def.spawn];
+      const wpName = def.spawn || def.waypoint;
+      const wp = typeof wpName === "string" ? this.waypoints[wpName] : wpName;
+      const spawnOff = def.spawnOffset || null;
       const basePos = wp
-        ? new THREE.Vector3(wp.x, wp.y + (def.yOffset || 0), wp.z)
-        : new THREE.Vector3(0, def.yOffset || 0, 0);
+        ? new THREE.Vector3(
+            wp.x + (spawnOff?.x || 0),
+            wp.y + (def.yOffset || 0),
+            wp.z + (spawnOff?.z || 0)
+          )
+        : new THREE.Vector3(spawnOff?.x || 0, def.yOffset || 0, spawnOff?.z || 0);
 
       mesh.position.copy(basePos);
       if (def.rotationY) mesh.rotation.y = def.rotationY;
+      if (this.world) {
+        const seated = this.seatProp(mesh, basePos, def.id);
+        mesh.position.copy(seated);
+        basePos.copy(seated);
+      }
       if (def.scale) mesh.scale.setScalar(def.scale);
       mesh.visible = def.visible !== false;
 
@@ -600,6 +842,17 @@ export class ComedyPropManager {
         type: def.type,
         mesh,
         basePos: basePos.clone(),
+        initial: {
+          basePos: basePos.clone(),
+          rotationY: def.rotationY || 0,
+          scale: def.scale || 1,
+          visible: def.visible !== false,
+          // `seat: false` keeps the authored height (fridge shelf, hands, props
+          // standing on other props) instead of ray-casting onto the floor.
+          seat: def.seat !== false,
+          spin: Boolean(def.spin),
+          float: Boolean(def.float),
+        },
         state: {
           spin: Boolean(def.spin),
           float: Boolean(def.float),
@@ -622,12 +875,63 @@ export class ComedyPropManager {
     return this.props.get(id) || null;
   }
 
+  resetProp(propId, params = {}) {
+    const entry = this.props.get(propId);
+    if (!entry) return;
+    const { mesh, state, basePos, initial } = entry;
+
+    const wpRef = params.at || params.waypoint;
+    if (wpRef && this.waypoints[wpRef]) {
+      const wp = this.waypoints[wpRef];
+      basePos.set(wp.x, wp.y + (params.yOffset ?? 0), wp.z);
+    } else {
+      basePos.copy(initial.basePos);
+      if (params.yOffset !== undefined) {
+        basePos.y += params.yOffset;
+      }
+    }
+
+    mesh.position.copy(basePos);
+    mesh.rotation.set(0, params.rotationY ?? initial.rotationY, 0);
+    mesh.scale.setScalar(params.scale ?? initial.scale);
+    mesh.visible = params.visible !== undefined ? Boolean(params.visible) : initial.visible;
+
+    state.spin = params.spin !== undefined ? Boolean(params.spin) : initial.spin;
+    state.float = params.float !== undefined ? Boolean(params.float) : initial.float;
+    state.bounce = false;
+    state.popOut = false;
+    state.popEndPos = null;
+    state.lidOpen = false;
+    state.pressed = false;
+    state.riseActive = false;
+    state.riseStartY = basePos.y;
+    state.riseTargetY = basePos.y;
+    state.riseElapsed = 0;
+    state.phase = 0;
+
+    const glow = mesh.getObjectByName("ChestGlow");
+    if (glow) glow.visible = false;
+    const sparkles = mesh.getObjectByName("ChestSparkles");
+    if (sparkles) sparkles.visible = false;
+    const lid = mesh.getObjectByName("ChestLid");
+    if (lid) lid.rotation.x = 0;
+    const flapL = mesh.getObjectByName("BoxFlapL");
+    if (flapL) flapL.rotation.z = 0;
+    const flapR = mesh.getObjectByName("BoxFlapR");
+    if (flapR) flapR.rotation.z = 0;
+    const btnCap = mesh.getObjectByName("ButtonCap");
+    if (btnCap) btnCap.position.y = 0.155;
+  }
+
   performAction(propId, action, params = {}) {
     const entry = this.props.get(propId);
     if (!entry) return;
     const { mesh, state, basePos } = entry;
 
     switch (action) {
+      case "reset":
+        this.resetProp(propId, params);
+        break;
       case "show":
         mesh.visible = true;
         state.bounce = false;
@@ -636,7 +940,7 @@ export class ComedyPropManager {
         if (params.at && this.waypoints[params.at]) {
           const wp = this.waypoints[params.at];
           basePos.set(wp.x, wp.y + (params.yOffset || 0), wp.z);
-          mesh.position.copy(basePos);
+          mesh.position.copy(this.seatProp(mesh, basePos, propId));
         }
         break;
       case "hide":
@@ -696,7 +1000,8 @@ export class ComedyPropManager {
         if (params.at && this.waypoints[params.at]) {
           const wp = this.waypoints[params.at];
           basePos.set(wp.x, wp.y + (params.yOffset || 0), wp.z);
-          mesh.position.copy(basePos);
+          mesh.position.copy(this.seatProp(mesh, basePos, propId));
+          basePos.copy(mesh.position);
         }
         state.popStartPos = basePos.clone();
         if (params.to && this.waypoints[params.to]) {
@@ -711,6 +1016,27 @@ export class ComedyPropManager {
         mesh.visible = true;
         state.bounce = true;
         break;
+      case "place": {
+        // Put the prop down where the story says: on a waypoint, seated on the
+        // real surface under it (never floating, never inside furniture).
+        const wpRef = params.at || params.waypoint;
+        const wp = typeof wpRef === "string" ? this.waypoints[wpRef] : wpRef;
+        if (wp) {
+          basePos.set(wp.x + (params.spawnOffset?.x || 0), wp.y, wp.z + (params.spawnOffset?.z || 0));
+          mesh.position.copy(basePos);
+          mesh.rotation.set(0, params.rotationY ?? entry.initial.rotationY, 0);
+          const seated = this.seatProp(mesh, basePos, propId);
+          mesh.position.copy(seated);
+          basePos.copy(seated);
+        }
+        mesh.visible = true;
+        state.bounce = false;
+        state.popOut = false;
+        state.popEndPos = null;
+        state.spin = Boolean(params.spin);
+        state.float = Boolean(params.float);
+        break;
+      }
       case "stop":
         state.bounce = false;
         state.spin = false;
@@ -783,6 +1109,12 @@ export class ComedyPropManager {
       if (lid) {
         const targetAngle = state.lidOpen ? -1.95 : 0;
         lid.rotation.x += (targetAngle - lid.rotation.x) * Math.min(1, dt * 12);
+      }
+
+      const fridgeDoor = mesh.getObjectByName("FridgeDoor");
+      if (fridgeDoor) {
+        const targetAngle = state.lidOpen ? -1.75 : 0;
+        fridgeDoor.rotation.y += (targetAngle - fridgeDoor.rotation.y) * Math.min(1, dt * 9);
       }
 
       const flapL = mesh.getObjectByName("BoxFlapL");

@@ -3,6 +3,15 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CONFIG } from "./config.js";
 import { createPropMesh } from "./comedyProps.js";
 import { findTaggedObject, getObjectBounds } from "./assetLoader.js";
+import {
+  BODY,
+  makeCapsule,
+  pushOutOfCapsules,
+  findSafeCameraSpot,
+  ensureRoute,
+  direction2D,
+  dist2D,
+} from "./stagingSafety.js";
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
@@ -84,6 +93,12 @@ export class PlayerCamera {
 
     this.mode = "pov"; // "pov" | "orbit"
 
+    // Body-aware staging. The runner installs a provider so the lens can never
+    // be placed inside a performer, and never walks through one.
+    this.actorProvider = null;
+    this.stagingReport = null;
+    this._lastDodged = [];
+
     // Player spatial state
     this.playerPos = new THREE.Vector3(0, 0, -2.6); // Feet XZ on floor
     this.baseEyeHeight = CONFIG.playerEyeHeight;
@@ -95,6 +110,12 @@ export class PlayerCamera {
     // Look yaw/pitch state
     this.yaw = 0;
     this.pitch = 0;
+    // Set by an explicit `player_look`/teleport: the walk look-ahead must never
+    // drag a deliberate look back to the horizon ("look down, snap to middle").
+    this.pitchAuthored = false;
+    // Whole-body poses (e.g. lying in bed): eye height + lens roll/pitch bias.
+    this.pose = { active: false, eyeY: null, roll: 0, pitch: 0, x: 0, z: 0 };
+    this.poseTarget = { active: false, eyeY: null, roll: 0, pitch: 0, x: 0, z: 0 };
     this.lookStartYaw = 0;
     this.lookStartPitch = 0;
     this.lookTargetYaw = 0;
@@ -108,12 +129,17 @@ export class PlayerCamera {
     this.isWalking = false;
     this.bobPhase = 0;
     this.bobAmount = 0;
+    this.turnRoll = 0;
+    this.prevYaw = 0;
+    this.idleBreathPhase = 0;
 
     // Gestures (nod_yes, shake_no, shake_panic, shake_earthquake, peek_lean)
     this.activeGesture = null;
     this.shakeIntensity = 0;
     this.shakePhase = 0;
     this.quakeTimer = 0;
+    this.panicTimer = 0;
+    this._panicResolve = null;
 
     // Fade-to-black state
     this.fadeAlpha = 0;
@@ -189,14 +215,21 @@ export class PlayerCamera {
       this._fadeResolve = null;
     }
     if (this.activeGesture?._resolve) this.activeGesture._resolve();
+    if (this._panicResolve) {
+      this._panicResolve();
+      this._panicResolve = null;
+    }
 
     this.activeWalk = null;
     this.isWalking = false;
     this.bobPhase = 0;
     this.bobAmount = 0;
+    this.turnRoll = 0;
+    this.idleBreathPhase = 0;
     this.activeGesture = null;
     this.shakeIntensity = 0;
     this.quakeTimer = 0;
+    this.panicTimer = 0;
     this.trackingRef = null;
 
     this.baseEyeHeight = PLAYER_EYE_HEIGHT;
@@ -216,20 +249,79 @@ export class PlayerCamera {
     } else {
       this.playerPos.set(0, 0, -2.6);
     }
+    this._settleSpawn();
 
     if (lookAtPos) {
       const { yaw, pitch } = this._computeYawPitchTo(lookAtPos);
       this.yaw = yaw;
       this.pitch = pitch;
+      this.pitchAuthored = true;
     } else {
       this.yaw = 0;
       this.pitch = -0.04;
+      this.pitchAuthored = false;
     }
+    this.pose = { active: false, eyeY: null, roll: 0, pitch: 0, x: 0, z: 0 };
+    this.poseTarget = { active: false, eyeY: null, roll: 0, pitch: 0, x: 0, z: 0 };
+    this.prevYaw = this.yaw;
     this.lookStartYaw = this.yaw;
     this.lookTargetYaw = this.yaw;
     this.lookStartPitch = this.pitch;
     this.lookTargetPitch = this.pitch;
     this.lookElapsed = 1;
+  }
+
+  /**
+   * Hard camera cut / teleport for POV episodes.
+   * Instantly repositions the player and snaps the view to `lookAtPos` (or keeps
+   * the current yaw if omitted), cancelling any in-flight walk, look or gesture.
+   * Returns synchronously so a `cut` beat never blocks the timeline.
+   */
+  teleport(position, lookAtPos = null) {
+    if (this.activeWalk?._resolve) this.activeWalk._resolve();
+    this.activeWalk = null;
+    this.isWalking = false;
+    this.bobAmount = 0;
+
+    if (this._lookResolve) {
+      this._lookResolve();
+      this._lookResolve = null;
+    }
+    if (this._crouchResolve) {
+      this._crouchResolve();
+      this._crouchResolve = null;
+    }
+    if (this._fadeResolve) {
+      this._fadeResolve();
+      this._fadeResolve = null;
+    }
+    if (this._panicResolve) {
+      this._panicResolve();
+      this._panicResolve = null;
+    }
+    if (this.activeGesture?._resolve) this.activeGesture._resolve();
+    this.activeGesture = null;
+    this.trackingRef = null;
+    this.panicTimer = 0;
+
+    this.playerPos.set(position.x, position.y ?? 0, position.z);
+    this.baseEyeHeight = PLAYER_EYE_HEIGHT;
+    this.crouchStartHeight = PLAYER_EYE_HEIGHT;
+    this.crouchTargetHeight = PLAYER_EYE_HEIGHT;
+    this.crouchElapsed = 1;
+
+    if (lookAtPos) {
+      const { yaw, pitch } = this._computeYawPitchTo(lookAtPos);
+      this.yaw = yaw;
+      this.pitch = pitch;
+    }
+    this.prevYaw = this.yaw;
+    this.lookStartYaw = this.yaw;
+    this.lookStartPitch = this.pitch;
+    this.lookTargetYaw = this.yaw;
+    this.lookTargetPitch = this.pitch;
+    this.lookElapsed = 1;
+    this.lookDuration = 1;
   }
 
   _resolveTaggedObject(ref, resolver) {
@@ -238,10 +330,72 @@ export class PlayerCamera {
     return findTaggedObject(activeScene, ref);
   }
 
+  /** Capsules for every visible performer (optionally excluding one). */
+  _actorCapsules(excludeId = null) {
+    const list = this.actorProvider ? this.actorProvider() : [];
+    const caps = [];
+    for (const actor of list) {
+      if (!actor?.root || actor.root.visible === false) continue;
+      if (excludeId && actor.id === excludeId) continue;
+      caps.push(
+        makeCapsule({
+          id: actor.id,
+          position: actor.root.position,
+          height: actor.spec?.targetHeight ?? BODY.height,
+        })
+      );
+    }
+    return caps;
+  }
+
+  _stagingWorld() {
+    return this.house?.stagingWorld || null;
+  }
+
   /**
-   * Computes a world-space point `standoff` meters (default 0.8m) outside the
-   * bounding box edge of a tagged mesh/object, preferring a walkable spot with
-   * clear line-of-sight facing the object's center.
+   * Pushes a floor position out of every performer and, if it ends up outside
+   * the walkable shell, spirals back to the nearest legal spot.
+   */
+  _safeFloorPoint(pos, { pad = BODY.noGoPad, excludeId = null } = {}) {
+    const world = this._stagingWorld();
+    const caps = this._actorCapsules(excludeId);
+    const pushed = pushOutOfCapsules({ x: pos.x, y: pos.y, z: pos.z }, caps, { pad, world });
+    const out = { x: pushed.pos.x, y: pos.y, z: pushed.pos.z };
+
+    if (world?.walkableAt && !world.walkableAt(out.x, out.z)) {
+      const baseX = out.x;
+      const baseZ = out.z;
+      for (let ring = 1; ring <= 6; ring += 1) {
+        let found = false;
+        for (let i = 0; i < 8; i += 1) {
+          const a = (i / 8) * Math.PI * 2;
+          const x = baseX + Math.cos(a) * ring * 0.22;
+          const z = baseZ + Math.sin(a) * ring * 0.22;
+          if (world.walkableAt(x, z)) {
+            out.x = x;
+            out.z = z;
+            found = true;
+            break;
+          }
+        }
+        if (found) break;
+      }
+    }
+    return { pos: out, dodged: pushed.dodged };
+  }
+
+  /** Called at reset so the episode never starts inside a body. */
+  _settleSpawn() {
+    const { pos, dodged } = this._safeFloorPoint(this.playerPos, { pad: 0.42 });
+    this.playerPos.x = pos.x;
+    this.playerPos.z = pos.z;
+    this._lastDodged = dodged;
+  }
+
+  /**
+   * Computes a world-space point `standoff` meters outside the bounding box
+   * edge of a tagged mesh/object, preferring a walkable spot with clear
+   * line-of-sight facing the object's center and *outside every other actor*.
    */
   resolveApproachPoint(tagOrName, { standoff = 0.8, fromPos = null, resolver = null } = {}) {
     const obj = this._resolveTaggedObject(tagOrName, resolver);
@@ -260,77 +414,52 @@ export class PlayerCamera {
       : this.playerPos.clone();
 
     const floorY = center.y >= 2.1 && Math.abs(origin.y - 2.85) < 0.8 ? 2.85 : 0.0;
-    const rawDx = origin.x - center.x;
-    const rawDz = origin.z - center.z;
-    const rawLen = Math.hypot(rawDx, rawDz);
-    const primaryDir = rawLen > 1e-3
-      ? { x: rawDx / rawLen, z: rawDz / rawLen }
-      : { x: 0, z: 1 };
+    const subjectId = obj.userData?.actorId || null;
 
-    const candidateDirs = [
-      primaryDir,
-      { x: 1, z: 0 },
-      { x: -1, z: 0 },
-      { x: 0, z: 1 },
-      { x: 0, z: -1 },
-      { x: Math.SQRT1_2, z: Math.SQRT1_2 },
-      { x: -Math.SQRT1_2, z: Math.SQRT1_2 },
-      { x: Math.SQRT1_2, z: -Math.SQRT1_2 },
-      { x: -Math.SQRT1_2, z: -Math.SQRT1_2 },
-    ];
-
-    let bestCandidate = null;
-    let bestScore = Infinity;
-
-    for (let idx = 0; idx < candidateDirs.length; idx += 1) {
-      const dir = candidateDirs[idx];
-      const tx = Math.abs(dir.x) > 1e-4 ? hx / Math.abs(dir.x) : Infinity;
-      const tz = Math.abs(dir.z) > 1e-4 ? hz / Math.abs(dir.z) : Infinity;
-      const edgeDist = Math.min(tx, tz);
-      const cx = center.x + dir.x * (edgeDist + standoff);
-      const cz = center.z + dir.z * (edgeDist + standoff);
-
-      const candidate = new THREE.Vector3(cx, floorY, cz);
-      const walkable =
-        !this.house || typeof this.house.isPointInsideWalkable !== "function"
-          ? true
-          : this.house.isPointInsideWalkable(candidate);
-      if (!walkable) continue;
-
-      let clearSight = true;
-      if (this.house && typeof this.house.hasClearSight === "function") {
-        const eyeTest = new THREE.Vector3(cx, floorY + this.baseEyeHeight, cz);
-        const lookTest = new THREE.Vector3(center.x, Math.max(floorY + 0.35, center.y), center.z);
-        clearSight = this.house.hasClearSight(eyeTest, lookTest);
-      }
-
-      const travelDist = Math.hypot(cx - origin.x, cz - origin.z);
-      const sightPenalty = clearSight ? 0 : 12.0;
-      const primaryBonus = idx === 0 ? -0.35 : 0;
-      const score = travelDist + sightPenalty + primaryBonus;
-
-      if (score < bestScore) {
-        bestScore = score;
-        bestCandidate = candidate;
+    // Aim at the face for performers, at the object's middle otherwise.
+    const eyeTarget = new THREE.Vector3(center.x, Math.max(floorY + 1.0, center.y), center.z);
+    if (subjectId) {
+      const actor = resolver?.getActor?.(subjectId);
+      if (actor?.getHeadWorldPosition) {
+        actor.getHeadWorldPosition(eyeTarget);
+        eyeTarget.y -= 0.05;
+      } else {
+        eyeTarget.y = box.min.y + size.y * 0.72;
       }
     }
 
-    if (!bestCandidate) {
-      const tx = Math.abs(primaryDir.x) > 1e-4 ? hx / Math.abs(primaryDir.x) : Infinity;
-      const tz = Math.abs(primaryDir.z) > 1e-4 ? hz / Math.abs(primaryDir.z) : Infinity;
-      const edgeDist = Math.min(tx, tz);
-      bestCandidate = new THREE.Vector3(
-        center.x + primaryDir.x * (edgeDist + standoff),
-        floorY,
-        center.z + primaryDir.z * (edgeDist + standoff)
-      );
-    }
+    const preferredDir = direction2D(center, origin, { x: 0, z: 1 });
+    const dirX = Math.abs(preferredDir.x) > 1e-4 ? hx / Math.abs(preferredDir.x) : Infinity;
+    const dirZ = Math.abs(preferredDir.z) > 1e-4 ? hz / Math.abs(preferredDir.z) : Infinity;
+    const edgeDist = Number.isFinite(Math.min(dirX, dirZ)) ? Math.min(dirX, dirZ) : Math.max(hx, hz);
+    const requested = Math.max(BODY.radius + 0.75, Number(standoff) || 0.8);
+    const minDist = Math.max(1.15, edgeDist + requested);
+    const preferredDist = Math.min(minDist + 0.75, 3.6);
+
+    const spot = findSafeCameraSpot({
+      eyeTarget,
+      world: this._stagingWorld(),
+      actors: this._actorCapsules(subjectId),
+      subjectId,
+      preferredDir,
+      minDist,
+      maxDist: Math.max(minDist + 1.4, 3.8),
+      preferredDist,
+      lensHeight: floorY + this.baseEyeHeight,
+      floorY,
+      yawSamples: 28,
+    });
+
+    if (!spot) return null;
 
     return {
       object: obj,
       box,
       center,
-      standoffPos: bestCandidate,
+      standoffPos: new THREE.Vector3(spot.pos.x, floorY, spot.pos.z),
+      safe: !spot.fallback,
+      dodged: spot.dodged || [],
+      distance: spot.dist,
     };
   }
 
@@ -383,8 +512,10 @@ export class PlayerCamera {
     }
     const wp = resolver.getWaypoint(ref);
     if (wp) {
-      // Surface waypoints (e.g. counter top y=1.13) target just above the surface rather than adding +1.35m eye height.
-      const yOff = (wp.y || 0) > 0.2 ? 0.12 : 1.35;
+      // Surface waypoints (elevated furniture like counter top y=1.13 or bed y=3.83) target just above the surface;
+      // ground floor (y=0) and upstairs floor (y=2.85) waypoints target eye/chest level (+1.35m).
+      const isFloorLevel = Math.abs(wp.y || 0) < 0.15 || Math.abs((wp.y || 0) - 2.85) < 0.15;
+      const yOff = wp.elevated || !isFloorLevel ? 0.12 : 1.35;
       out.set(wp.x, (wp.y || 0) + yOff, wp.z);
       return true;
     }
@@ -436,7 +567,7 @@ export class PlayerCamera {
     }
 
     let resolvedPoints = points;
-    let resolvedFaceTarget = faceTarget;
+    let resolvedFaceTarget = faceTarget || target || null;
     if ((!resolvedPoints || resolvedPoints.length < 2) && target) {
       const approach = this.resolveApproachPoint(target, {
         standoff,
@@ -444,7 +575,6 @@ export class PlayerCamera {
         resolver,
       });
       if (approach) {
-        resolvedFaceTarget = resolvedFaceTarget || target;
         if (this.house && typeof this.house.findPath === "function") {
           resolvedPoints = this.house.findPath(this.playerPos, approach.standoffPos);
         } else {
@@ -454,6 +584,47 @@ export class PlayerCamera {
     }
 
     if (!resolvedPoints || resolvedPoints.length < 2) return Promise.resolve();
+
+    // ---- Staging gate: never walk through a body or a wall ----
+    {
+      const caps = this._actorCapsules();
+      const last = resolvedPoints[resolvedPoints.length - 1];
+      if (caps.length) {
+        const clear = this._safeFloorPoint({ x: last.x, y: last.y, z: last.z }, { pad: 0.6 });
+        if (dist2D(clear.pos, last) > 0.02) {
+          resolvedPoints = [
+            ...resolvedPoints.slice(0, -1),
+            new THREE.Vector3(clear.pos.x, last.y, clear.pos.z),
+          ];
+          this._lastDodged = clear.dodged;
+        }
+      }
+
+      const world = this._stagingWorld();
+      const elevated = resolvedPoints.some((p) => Math.abs(p.y) > 0.35);
+      const hasJump = Boolean(segments?.some((seg) => seg?.isJumpArc));
+      if (world && !elevated && !hasJump) {
+        const route = ensureRoute(world, resolvedPoints[0], resolvedPoints.slice(1));
+        if (route.inserted || route.unresolved) {
+          resolvedPoints = route.points.map((p) => new THREE.Vector3(p.x, p.y ?? 0, p.z));
+          this.stagingReport = {
+            ...(this.stagingReport || {}),
+            routeInserted: route.inserted,
+            routeUnresolved: route.unresolved,
+          };
+        }
+      }
+    }
+
+    if (resolvedFaceTarget) {
+      // Cancel any in-flight lookAt or stale trackingRef so update() locks smoothly onto faceTarget
+      if (this._lookResolve) {
+        this._lookResolve();
+        this._lookResolve = null;
+      }
+      this.lookElapsed = this.lookDuration;
+      this.trackingRef = null;
+    }
 
     const walkSpeed = Math.max(0.4, Number(speed) || BASE_WALK_SPEED);
     const cumDist = [0];
@@ -511,15 +682,15 @@ export class PlayerCamera {
       totalLength,
       elapsed: 0,
       duration: effectiveDuration,
+      walkSpeed,
       maxVerticalSpeed,
       autoLook,
       faceTarget: resolvedFaceTarget,
-      finalLookTriggered: false,
       _resolve: resolveWalk,
     };
     this.isWalking = true;
 
-    if (autoLook && totalLength > 0.08) {
+    if (!resolvedFaceTarget && autoLook && totalLength > 0.08) {
       const lookAhead = this._sampleAlongWalk(this.activeWalk, Math.min(totalLength, 1.25));
       lookAhead.y = this.playerPos.y + this.baseEyeHeight - 0.05;
       this.lookAtPosition(lookAhead, { duration: 0.35, trackRef: null });
@@ -527,7 +698,7 @@ export class PlayerCamera {
     return donePromise;
   }
 
-  lookAtPosition(targetPos, { duration = 0.25, trackRef = null } = {}) {
+  lookAtPosition(targetPos, { duration = 0.25, trackRef = null, maxDuration = null } = {}) {
     if (this._lookResolve) {
       this._lookResolve();
       this._lookResolve = null;
@@ -537,19 +708,25 @@ export class PlayerCamera {
     this.lookStartPitch = this.pitch;
     this.lookTargetYaw = this.yaw + wrapAngleDiff(yaw, this.yaw);
     this.lookTargetPitch = pitch;
+    this.pitchAuthored = true;
     this.lookElapsed = 0;
-    this.lookDuration = Math.max(0.01, duration);
+    // Framework guardrail: default to a short whip-pan; episodes may pass a
+    // larger `maxDuration` (or Infinity for intentional slow scans).
+    const cap =
+      maxDuration ?? CONFIG.maxLookDuration ?? Number.POSITIVE_INFINITY;
+    this.lookDuration = Math.max(0.01, Math.min(duration, cap));
     this.trackingRef = trackRef;
     return new Promise((resolve) => {
       this._lookResolve = resolve;
     });
   }
 
-  lookAt(ref, { duration = 0.25, track = false } = {}, resolver) {
+  lookAt(ref, { duration = 0.25, track = false, maxDuration = null } = {}, resolver) {
     if (this._resolveTargetPosition(ref, resolver, this._tmpTargetPos)) {
       return this.lookAtPosition(this._tmpTargetPos, {
         duration,
         trackRef: track ? ref : null,
+        maxDuration,
       });
     }
     return Promise.resolve();
@@ -573,8 +750,16 @@ export class PlayerCamera {
 
   triggerGesture(type = "nod_yes", duration = 0.7) {
     if (type === "shake_panic") {
-      this.shakeIntensity = Math.max(this.shakeIntensity, 0.4);
-      return Promise.resolve();
+      if (this._panicResolve) {
+        this._panicResolve();
+        this._panicResolve = null;
+      }
+      const dur = Math.max(0.25, duration);
+      this.panicTimer = Math.max(this.panicTimer, dur);
+      this.shakeIntensity = Math.max(this.shakeIntensity, 0.42);
+      return new Promise((resolve) => {
+        this._panicResolve = resolve;
+      });
     }
     if (type === "shake_earthquake") {
       this.quakeTimer = Math.max(this.quakeTimer, Math.max(0.5, duration));
@@ -595,6 +780,10 @@ export class PlayerCamera {
   }
 
   holdProp(propType = null) {
+    // "none" / "empty" / "" mean *nothing in hand* — never a fallback mesh.
+    if (typeof propType === "string" && /^(none|null|empty|nothing)$/i.test(propType.trim())) {
+      propType = null;
+    }
     if (this.heldPropMesh) {
       this.heldItemMount.remove(this.heldPropMesh);
       this.heldPropMesh.traverse((n) => {
@@ -626,6 +815,46 @@ export class PlayerCamera {
     this.heldItemMount.add(mesh);
     this.heldPropMesh = mesh;
     this.heldEquipPop = 0;
+  }
+
+  /**
+   * Whole-body pose for POV beats that are not standing: `lie` drops the eye to
+   * a surface (bed, floor) and rolls the lens so the frame reads as lying down.
+   */
+  setPose({
+    pose = "stand",
+    surfaceY = null,
+    surfaceX = null,
+    surfaceZ = null,
+    lift = 0.3,
+    slide = 0.6,
+    roll = -1.15,
+    pitch = 0.22,
+    duration = 0.9,
+  } = {}) {
+    const lying = pose === "lie" || pose === "lie_back";
+    this.poseTarget = {
+      active: lying,
+      eyeY: lying && Number.isFinite(surfaceY) ? surfaceY + lift : null,
+      roll: lying ? roll : 0,
+      pitch: lying ? pitch : 0,
+      // Slide the eye toward the surface (bed) instead of just dropping it, so
+      // getting up does not teleport the camera sideways. Capped at `slide` so a
+      // surface across the room cannot fling the lens.
+      x: 0,
+      z: 0,
+    };
+    if (lying && Number.isFinite(surfaceX) && Number.isFinite(surfaceZ)) {
+      const dx = surfaceX - this.playerPos.x;
+      const dz = surfaceZ - this.playerPos.z;
+      const dist = Math.hypot(dx, dz);
+      const reach = Math.min(dist, slide);
+      const k = dist > 1e-4 ? reach / dist : 0;
+      this.poseTarget.x = dx * k;
+      this.poseTarget.z = dz * k;
+    }
+    this.poseDuration = Math.max(0.05, duration);
+    return Promise.resolve();
   }
 
   useHeldProp() {
@@ -727,6 +956,22 @@ export class PlayerCamera {
           this.playerPos.y = Math.abs(pB.y - pA.y) < 0.05 ? pA.y : pA.y + (pB.y - pA.y) * alpha;
         }
 
+        // Slide around bodies instead of ghosting through them.
+        if (this.actorProvider) {
+          const caps = this._actorCapsules();
+          if (caps.length) {
+            const slid = pushOutOfCapsules(
+              { x: this.playerPos.x, y: this.playerPos.y, z: this.playerPos.z },
+              caps,
+              { pad: 0.34, world: this._stagingWorld() }
+            );
+            if (slid.dodged.length) {
+              this.playerPos.x = slid.pos.x;
+              this.playerPos.z = slid.pos.z;
+            }
+          }
+        }
+
         const lookDuringApproach =
           this.activeWalk.faceTarget &&
           (this.activeWalk.totalLength - targetDist <= 0.75 || rawT >= 0.82);
@@ -739,8 +984,8 @@ export class PlayerCamera {
             resolver
           );
         } else if (
+          !this.activeWalk.faceTarget &&
           this.activeWalk.autoLook &&
-          !this.activeWalk.finalLookTriggered &&
           !this.trackingRef &&
           this.lookElapsed >= this.lookDuration
         ) {
@@ -753,14 +998,33 @@ export class PlayerCamera {
             const desiredYaw = Math.atan2(-dx, -dz);
             this.yaw += wrapAngleDiff(desiredYaw, this.yaw) * Math.min(1, dt * 5.2);
           }
-          const desiredPitch = meta.isStair
-            ? clamp(Math.atan2(pB.y - pA.y, Math.max(0.4, Math.hypot(pB.x - pA.x, pB.z - pA.z))) * 0.42, -0.26, 0.22)
-            : -0.04;
-          this.pitch += (desiredPitch - this.pitch) * Math.min(1, dt * 4.5);
+          // Stairs get a small tilt; otherwise the walk only recentres the pitch
+          // if the author never aimed the camera (see pitchAuthored).
+          if (!this.pitchAuthored) {
+            const desiredPitch = meta.isStair
+              ? clamp(
+                  Math.atan2(pB.y - pA.y, Math.max(0.4, Math.hypot(pB.x - pA.x, pB.z - pA.z))) * 0.42,
+                  -0.26,
+                  0.22
+                )
+              : -0.04;
+            this.pitch += (desiredPitch - this.pitch) * Math.min(1, dt * 4.5);
+          }
         }
       }
 
-      this.bobPhase += dt * 11.2;
+      if (this.activeWalk.faceTarget) {
+        const lookTarget = new THREE.Vector3();
+        if (this._resolveTargetPosition(this.activeWalk.faceTarget, resolver, lookTarget, { liveTrack: true })) {
+          const { yaw, pitch } = this._computeYawPitchTo(lookTarget);
+          this.yaw += wrapAngleDiff(yaw, this.yaw) * Math.min(1, dt * 8.0);
+          this.pitch += (pitch - this.pitch) * Math.min(1, dt * 8.0);
+        }
+      }
+
+      const curWalkSpeed = this.activeWalk.walkSpeed || BASE_WALK_SPEED;
+      const bobRate = clamp(curWalkSpeed * 4.2, 5.4, 13.8);
+      this.bobPhase += dt * bobRate;
       this.bobAmount += (1 - this.bobAmount) * Math.min(1, dt * 10);
 
       if (rawT >= 1) {
@@ -768,8 +1032,13 @@ export class PlayerCamera {
         this.playerPos.copy(finished.points[finished.points.length - 1]);
         this.activeWalk = null;
         this.isWalking = false;
-        if (finished.faceTarget && !finished.finalLookTriggered) {
-          this.lookAt(finished.faceTarget, { duration: 0.22 }, resolver);
+        if (finished.faceTarget) {
+          const finalTarget = new THREE.Vector3();
+          if (this._resolveTargetPosition(finished.faceTarget, resolver, finalTarget, { liveTrack: true })) {
+            const { yaw, pitch } = this._computeYawPitchTo(finalTarget);
+            this.yaw = yaw;
+            this.pitch = pitch;
+          }
         }
         if (finished._resolve) finished._resolve();
       }
@@ -794,7 +1063,8 @@ export class PlayerCamera {
 
     if (this.lookElapsed < this.lookDuration) {
       this.lookElapsed = Math.min(this.lookDuration, this.lookElapsed + dt);
-      const lt = easeOutCubic(this.lookElapsed / this.lookDuration);
+      const progress = this.lookElapsed / this.lookDuration;
+      const lt = this.lookDuration > 0.65 ? easeInOutSine(progress) : easeOutCubic(progress);
       this.yaw = this.lookStartYaw + (this.lookTargetYaw - this.lookStartYaw) * lt;
       this.pitch = this.lookStartPitch + (this.lookTargetPitch - this.lookStartPitch) * lt;
       if (this.lookElapsed >= this.lookDuration && this._lookResolve) {
@@ -828,13 +1098,35 @@ export class PlayerCamera {
       }
     }
 
-    // Subtle footsteps head-bob + damped handheld shake
-    const bobY = Math.sin(this.bobPhase) * 0.028 * this.bobAmount;
-    const bobX = Math.cos(this.bobPhase * 0.5) * 0.014 * this.bobAmount;
+    // Speed-scaled footsteps head-bob + organic idle breathing + turn roll + handheld shake
+    this.idleBreathPhase += dt;
+    const speedAmp = this.activeWalk
+      ? clamp((this.activeWalk.walkSpeed || BASE_WALK_SPEED) / BASE_WALK_SPEED, 0.45, 1.35)
+      : 1.0;
+    const crouchAmp = this.baseEyeHeight < 1.0 ? 0.55 : 1.0;
+    const bobScale = this.bobAmount * speedAmp * crouchAmp;
+    const idleBreathY = Math.sin(this.idleBreathPhase * 1.9) * 0.008 * (1 - this.bobAmount * 0.7);
+    const idleBreathPitch = Math.sin(this.idleBreathPhase * 1.35) * 0.004 * (1 - this.bobAmount * 0.7);
+    const bobY = Math.sin(this.bobPhase) * 0.026 * bobScale + idleBreathY;
+    const bobX = Math.cos(this.bobPhase * 0.5) * 0.013 * bobScale;
+
+    const yawDelta = dt > 1e-4 ? wrapAngleDiff(this.yaw, this.prevYaw) / dt : 0;
+    this.prevYaw = this.yaw;
+    const targetTurnRoll = this.isWalking ? clamp(-yawDelta * 0.014, -0.032, 0.032) : 0;
+    this.turnRoll += (targetTurnRoll - this.turnRoll) * Math.min(1, dt * 8.0);
 
     let shakeX = 0;
     let shakeY = 0;
     let shakeRoll = 0;
+    if (this.panicTimer > 0) {
+      this.panicTimer = Math.max(0, this.panicTimer - dt);
+      this.shakeIntensity = Math.max(this.shakeIntensity, 0.42);
+      if (this.panicTimer <= 0 && this._panicResolve) {
+        const res = this._panicResolve;
+        this._panicResolve = null;
+        res();
+      }
+    }
     if (this.quakeTimer > 0) {
       this.quakeTimer = Math.max(0, this.quakeTimer - dt);
       this.shakeIntensity = Math.max(this.shakeIntensity, 0.72);
@@ -844,22 +1136,42 @@ export class PlayerCamera {
       shakeX = Math.sin(this.shakePhase * 1.1) * this.shakeIntensity * 0.028;
       shakeY = Math.cos(this.shakePhase * 1.45) * this.shakeIntensity * 0.028;
       shakeRoll = Math.sin(this.shakePhase * 0.9) * this.shakeIntensity * 0.022;
-      if (this.quakeTimer <= 0) {
+      if (this.quakeTimer <= 0 && this.panicTimer <= 0) {
         this.shakeIntensity *= Math.exp(-7.5 * dt);
       }
     } else {
       this.shakeIntensity = 0;
     }
 
+    // Ease the body pose (standing <-> lying) and apply it to the lens.
+    const poseEase = Math.min(1, (dt / Math.max(1e-3, this.poseDuration ?? 0.9)) * 3.2);
+    this.pose.active = this.poseTarget.active;
+    this.pose.roll += (this.poseTarget.roll - this.pose.roll) * poseEase;
+    this.pose.pitch += (this.poseTarget.pitch - this.pose.pitch) * poseEase;
+    this.pose.x += ((this.poseTarget.x ?? 0) - this.pose.x) * poseEase;
+    this.pose.z += ((this.poseTarget.z ?? 0) - this.pose.z) * poseEase;
+    if (this.poseTarget.eyeY === null) {
+      this.pose.eyeY = null;
+    } else {
+      this.pose.eyeY =
+        this.pose.eyeY === null
+          ? this.poseTarget.eyeY
+          : this.pose.eyeY + (this.poseTarget.eyeY - this.pose.eyeY) * poseEase;
+    }
+
     const finalYaw = this.yaw + gestureYaw;
-    const finalPitch = clamp(this.pitch + gesturePitch, MIN_CAMERA_PITCH, MAX_CAMERA_PITCH);
+    const finalPitch = clamp(
+      this.pitch + gesturePitch + idleBreathPitch + this.pose.pitch,
+      MIN_CAMERA_PITCH,
+      MAX_CAMERA_PITCH
+    );
     const rightX = Math.cos(finalYaw);
     const rightZ = -Math.sin(finalYaw);
 
     this._tmpEyePos.set(
-      this.playerPos.x,
-      this.playerPos.y + this.baseEyeHeight,
-      this.playerPos.z
+      this.playerPos.x + this.pose.x,
+      this.pose.eyeY ?? this.playerPos.y + this.baseEyeHeight,
+      this.playerPos.z + this.pose.z
     );
     this._tmpFinalPos.set(
       this._tmpEyePos.x + rightX * (bobX + gestureLeanX + shakeX),
@@ -875,7 +1187,26 @@ export class PlayerCamera {
       this.camera.position.copy(this._tmpFinalPos);
     }
 
-    this.camera.rotation.set(finalPitch, finalYaw, gestureRoll + shakeRoll, "YXZ");
+    // The lens itself may never sit inside a performer's body.
+    if (this.actorProvider) {
+      const caps = this._actorCapsules();
+      if (caps.length) {
+        const res = pushOutOfCapsules(this.camera.position, caps, {
+          pad: 0.3,
+          world: this._stagingWorld(),
+        });
+        if (res.dodged.length) {
+          this.camera.position.set(res.pos.x, res.pos.y, res.pos.z);
+        }
+      }
+    }
+
+    this.camera.rotation.set(
+      finalPitch,
+      finalYaw,
+      gestureRoll + shakeRoll + this.turnRoll + this.pose.roll,
+      "YXZ"
+    );
 
     // Animate bottom-right FPS held prop (deterministic viewmodel pass)
     if (this.heldPropMesh) {

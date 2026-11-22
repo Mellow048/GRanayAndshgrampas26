@@ -1,6 +1,29 @@
 import * as THREE from "three";
 import { CONFIG, SET_MAP, NAV_GRAPH } from "./config.js";
 import { findTaggedObject, getObjectBounds } from "./assetLoader.js";
+import { validateAndRepair, formatStagingReport } from "./episodeSafety.js";
+import { route as planFloorRoute } from "./nav/houseNav.js";
+import {
+  BODY,
+  makeCapsule,
+  pushOutOfCapsules,
+  pushOutOfBoxes,
+  segmentClear,
+  dist3D,
+  dist2D,
+} from "./stagingSafety.js";
+
+/** Clips where a performer must keep eye contact with the lens. */
+const HEAD_TRACK_REACTIONS = new Set([
+  "laugh",
+  "punch",
+  "terrified",
+  "panic",
+  "hit",
+  "jump",
+  "look",
+  "idle",
+]);
 
 const LOCOMOTION_ANIMS = new Set(["walk", "run", "run2", "sneak", "granny_walk", "jump"]);
 const PLAYER_PERSONAL_SPACE = 1.3;
@@ -63,6 +86,9 @@ export class EpisodeRunner {
 
     this.episode = null;
     this.events = [];
+    this.staging = null;
+    this._routeRepairs = 0;
+    this._detourCache = new Map();
     this.activeCharMoves = [];
     this.nextMoveId = 1;
 
@@ -89,11 +115,45 @@ export class EpisodeRunner {
       getWaypoint: (id) => (typeof id === "string" ? SET_MAP[id] || null : id),
       getScene: () => this.playerCamera?.scene || this.comedyProps?.scene || null,
     };
+
+    this._installStaging();
   }
 
   setHouse(house) {
     this.house = house;
     this.playerCamera?.setHouse(house);
+    this._installStaging();
+  }
+
+  /**
+   * Hands the house geometry to the camera and the prop manager, and gives the
+   * camera a live view of the cast so it can keep the lens out of their bodies.
+   */
+  _installStaging() {
+    const world = this.house?.stagingWorld || null;
+    const actorProvider = () => Object.values(this.characters || {});
+    if (this.playerCamera) {
+      this.playerCamera.actorProvider = actorProvider;
+      if (this.playerCamera.house == null && this.house) this.playerCamera.setHouse(this.house);
+    }
+    this.comedyProps?.setStaging(world, actorProvider);
+  }
+
+  /** Capsules for every visible performer except `excludeId`. */
+  _actorCapsules(excludeId = null) {
+    const out = [];
+    for (const actor of Object.values(this.characters || {})) {
+      if (!actor?.root || actor.root.visible === false) continue;
+      if (excludeId && actor.id === excludeId) continue;
+      out.push(
+        makeCapsule({
+          id: actor.id,
+          position: actor.root.position,
+          height: actor.spec?.targetHeight ?? BODY.height,
+        })
+      );
+    }
+    return out;
   }
 
   resolveWaypoint(target) {
@@ -238,6 +298,26 @@ export class EpisodeRunner {
     const startVec = new THREE.Vector3(fromPos.x ?? 0, fromPos.y ?? 0, fromPos.z ?? 0);
     const goalVec = new THREE.Vector3(toPos.x ?? 0, toPos.y ?? 0, toPos.z ?? 0);
 
+    // Walk the baked floor of the real house. Hand-authored NAV_GRAPH hops are
+    // only a fallback: they are just numbers in space and can cross a wall.
+    const planned = planFloorRoute(
+      { x: startVec.x, y: startVec.y, z: startVec.z },
+      { x: goalVec.x, y: goalVec.y, z: goalVec.z }
+    );
+    if (planned && planned.length >= 2) {
+      const pts = [startVec.clone()];
+      for (const p of planned) {
+        const v = new THREE.Vector3(p.x, p.y, p.z);
+        if (pts[pts.length - 1].distanceTo(v) > 0.06) pts.push(v);
+      }
+      if (pts.length >= 2) {
+        return {
+          points: pts,
+          segments: pts.slice(1).map(() => ({ isJumpArc: false, arcHeight: 0 })),
+        };
+      }
+    }
+
     if (startVec.distanceTo(goalVec) < 0.05) {
       return { points: [startVec, goalVec], segments: [{ isJumpArc: false, arcHeight: 0 }] };
     }
@@ -259,10 +339,17 @@ export class EpisodeRunner {
       const prevNode = i > 0 ? NAV_GRAPH[nodeIds[i - 1]] : null;
       const prevElevated = prevNode ? Boolean(prevNode.elevated) : isElevatedSurfacePos(prev);
       const curElevated = Boolean(node.elevated);
-      const isJumpArc = prevElevated || curElevated;
-      const arcHeight = isJumpArc
-        ? Math.min(0.62, 0.30 + Math.abs(pt.y - prev.y) * 0.25)
-        : 0;
+      const isBalconyJump =
+        !isOnStairs(prev) &&
+        !isOnStairs(pt) &&
+        Math.abs(pt.y - prev.y) > 1.8 &&
+        ((prevNode?.id === "upstairs_balcony") || id === "upstairs_balcony" || id === "foyer_atrium" || prevNode?.id === "foyer_atrium");
+      const isJumpArc = prevElevated || curElevated || isBalconyJump;
+      const arcHeight = isBalconyJump
+        ? 0.52
+        : isJumpArc
+          ? Math.min(0.62, 0.30 + Math.abs(pt.y - prev.y) * 0.25)
+          : 0;
 
       chain.push({ pt, isJumpArc, arcHeight });
     }
@@ -278,7 +365,59 @@ export class EpisodeRunner {
       });
     }
 
-    return this._finalizeChain(chain);
+    return this._finalizeChain(this._refineChainGeometry(chain));
+  }
+
+  /**
+   * Re-checks every straight leg of a compiled path against the actual house
+   * geometry and, where a leg clips a wall or a doorframe, replaces it with the
+   * 0.4m grid A* detour. This is what stops performers gliding through walls
+   * even when the authored `via` chain is wrong or missing.
+   */
+  /** Grid detours are expensive; a preset compiles the same legs repeatedly. */
+  _cachedDetour(world, a, b) {
+    const key = `${a.x.toFixed(2)},${a.y.toFixed(2)},${a.z.toFixed(2)}|${b.x.toFixed(2)},${b.y.toFixed(2)},${b.z.toFixed(2)}`;
+    if (this._detourCache.has(key)) return this._detourCache.get(key);
+    const detour = world.findPath(a, b);
+    this._detourCache.set(key, detour);
+    if (this._detourCache.size > 256) {
+      const first = this._detourCache.keys().next().value;
+      this._detourCache.delete(first);
+    }
+    return detour;
+  }
+
+  _refineChainGeometry(chain) {
+    const world = this.house?.stagingWorld;
+    if (!world || !chain || chain.length < 2) return chain;
+
+    const out = [chain[0]];
+    for (let i = 1; i < chain.length; i += 1) {
+      const next = chain[i];
+      const prev = out[out.length - 1];
+      const a = prev.pt;
+      const b = next.pt;
+
+      const elevated = Boolean(next.isJumpArc) || Boolean(prev.isJumpArc) || Math.abs(a.y - b.y) > 0.3;
+      if (elevated || segmentClear(world, a, b, { radius: 0.16, heights: [0.45, 1.15] })) {
+        out.push(next);
+        continue;
+      }
+
+      const detour = this._cachedDetour(world, a, b);
+      if (!detour || detour.length < 2) {
+        out.push(next);
+        continue;
+      }
+      this._routeRepairs += 1;
+      for (let k = 1; k < detour.length; k += 1) {
+        const p = detour[k];
+        const last = out[out.length - 1].pt;
+        if (dist3D(last, p) < 0.06) continue;
+        out.push({ pt: p.clone(), isJumpArc: false, arcHeight: 0, rerouted: true });
+      }
+    }
+    return out;
   }
 
   _finalizeChain(chain) {
@@ -534,6 +673,25 @@ export class EpisodeRunner {
         };
       } else if ((ev.type === "char_anim" || ev.type === "anim") && effDur === 0) {
         effDur = ev.loop ? 0.45 : 1.0;
+      } else if (ev.type === "player_look") {
+        const cap =
+          episode?.maxLookDuration ??
+          (episode?.allowSlowScans ? Infinity : CONFIG.maxLookDuration ?? 0.55);
+        if (Number.isFinite(cap)) effDur = Math.min(effDur, cap);
+      } else if (ev.type === "cut") {
+        const destRef = ev.to || ev.target || ev.spawn;
+        if (destRef) {
+          const dest = this.resolveWaypoint(destRef);
+          playerPos = { x: dest.x, y: dest.y ?? 0, z: dest.z };
+        }
+        effDur = Math.max(0, ev.duration ?? 0);
+      } else if (ev.type === "char_cut") {
+        const destRef = ev.to || ev.target;
+        if (destRef && ev.actor) {
+          const dest = this.resolveWaypoint(destRef);
+          actorPos[ev.actor] = { x: dest.x, y: dest.y ?? 0, z: dest.z };
+        }
+        effDur = 0;
       }
 
       maxEnd = Math.max(maxEnd, fireSim + effDur);
@@ -546,8 +704,25 @@ export class EpisodeRunner {
   }
 
   loadEpisode(episodeJson) {
-    const episode =
+    const raw =
       typeof episodeJson === "string" ? JSON.parse(episodeJson) : episodeJson;
+
+    // Staging gate: validate the script, auto-repair what is deterministic, and
+    // keep the report on the instance so the UI / exporter can show it.
+    const autoRepair = CONFIG.staging?.autoRepair !== false;
+    const report = validateAndRepair(raw, {
+      setMap: SET_MAP,
+      navGraph: NAV_GRAPH,
+      autoFix: autoRepair,
+      world: this.house?.stagingWorld || null,
+    });
+    this.staging = report;
+    if (report.issues.length > 0) {
+      const line = formatStagingReport(report);
+      if (report.stats.errorsAfter > 0) console.warn(`[staging]\n${line}`);
+      else console.info(`[staging]\n${line}`);
+    }
+    const episode = autoRepair ? report.episode : raw;
 
     this.episode = episode;
     this.reset();
@@ -557,6 +732,8 @@ export class EpisodeRunner {
       title: episode.title ?? "Untitled Episode",
       duration: this.duration,
       eventCount: this.events.length,
+      staging: report.stats,
+      issues: report.issues,
     };
   }
 
@@ -757,16 +934,20 @@ export class EpisodeRunner {
   }
 
   async stepAsync(dt, { silentSeek = false } = {}) {
-    this.step(dt, { silentSeek });
-    await this._flushMicrotasks();
+    const resolvedAny = this.step(dt, { silentSeek });
+    if (resolvedAny || this.isAwaitingBeat) {
+      await this._flushMicrotasks();
+    }
   }
 
   _resolveReadyWaiters() {
+    let resolvedAny = false;
     for (let i = this._simWaiters.length - 1; i >= 0; i--) {
       const w = this._simWaiters[i];
       if (w.runToken !== this._runToken || this.simTime >= w.targetTime - 1e-6) {
         this._simWaiters.splice(i, 1);
         w.resolve();
+        resolvedAny = true;
       }
     }
     for (let i = this._timelineWaiters.length - 1; i >= 0; i--) {
@@ -774,8 +955,10 @@ export class EpisodeRunner {
       if (w.runToken !== this._runToken || this.timelineTime >= w.targetTime - 1e-6) {
         this._timelineWaiters.splice(i, 1);
         w.resolve();
+        resolvedAny = true;
       }
     }
+    return resolvedAny;
   }
 
   step(dt, { silentSeek = false } = {}) {
@@ -879,7 +1062,9 @@ export class EpisodeRunner {
       for (let j = i + 1; j < visibleActors.length; j += 1) {
         const actorA = visibleActors[i];
         const actorB = visibleActors[j];
-        if (movingActorSet.has(actorA) || movingActorSet.has(actorB)) continue;
+        const aMoving = movingActorSet.has(actorA);
+        const bMoving = movingActorSet.has(actorB);
+        if (aMoving && bMoving) continue;
         const a = actorA.root.position;
         const b = actorB.root.position;
         if (Math.abs(a.y - b.y) > 0.55) continue;
@@ -895,11 +1080,11 @@ export class EpisodeRunner {
           const az = a.z - nz * push;
           const bx = b.x + nx * push;
           const bz = b.z + nz * push;
-          if (!this.house || a.y >= 0.4 || this.house.isPointInsideWalkable(ax, az)) {
+          if (!aMoving && (!this.house || a.y >= 0.4 || this.house.isPointInsideWalkable(ax, az))) {
             a.x = ax;
             a.z = az;
           }
-          if (!this.house || b.y >= 0.4 || this.house.isPointInsideWalkable(bx, bz)) {
+          if (!bMoving && (!this.house || b.y >= 0.4 || this.house.isPointInsideWalkable(bx, bz))) {
             b.x = bx;
             b.z = bz;
           }
@@ -952,11 +1137,20 @@ export class EpisodeRunner {
     if (!silentSeek && this.sfxEngine) {
       const anyMoving = playerMoving || anyCharMoving;
       const moveAnim = playerMoving ? "walk" : fastestMoveAnim;
-      this.sfxEngine.tickPacer(dt, this.simTime, { anyMoving, moveAnim });
+      const movingActors = this.activeCharMoves.map((m) => ({
+        id: m.actor.id,
+        anim: m.anim,
+      }));
+      this.sfxEngine.tickPacer(dt, this.simTime, {
+        anyMoving,
+        playerMoving,
+        moveAnim,
+        movingActors,
+      });
     }
 
     // 7. Resolve timeline & simulation-time Promises ready on this tick
-    this._resolveReadyWaiters();
+    const resolvedAny = this._resolveReadyWaiters();
 
     // 8. Check completion (only finish when all events dispatched and no awaited beat active)
     if (
@@ -976,6 +1170,30 @@ export class EpisodeRunner {
     } else {
       this.emitState();
     }
+    return resolvedAny;
+  }
+
+  /**
+   * Reaction coverage guardrail: characters performing a reaction should face
+   * the camera so the audience actually sees the expression/bubble.
+   * Opt out per beat with `facePlayer: false` (or `keepFacing: true`).
+   */
+  _faceActorToCamera(actor, ev = {}) {
+    if (!actor || ev.facePlayer === false || ev.keepFacing) return;
+    const camPos = this.playerCamera?.getEyeWorldPosition
+      ? this.playerCamera.getEyeWorldPosition()
+      : this.playerCamera?.camera?.position;
+    if (!camPos) return;
+    actor.faceTarget(camPos, ev.faceInstant === false ? 10 : 999);
+    if (HEAD_TRACK_REACTIONS.has(ev.anim) && ev.headTrack !== false) {
+      actor.setHeadTrack?.(true);
+    }
+  }
+
+  /** Visible prop boxes that performers must not walk through. */
+  _propObstacleBoxes() {
+    const boxes = this.comedyProps?.getObstacleBoxes?.() || [];
+    return boxes.filter((b) => b && b.max && b.min);
   }
 
   async executeBeat(ev, { silentSeek = false, runToken = this._runToken } = {}) {
@@ -1004,7 +1222,7 @@ export class EpisodeRunner {
             y: approach.standoffPos.y,
             z: approach.standoffPos.z,
           };
-          if (ev.faceTarget !== false) {
+          if (ev.faceTarget !== false && (ev.standoff ?? 0.8) > 0.25) {
             faceTarget = ev.target;
           }
         } else {
@@ -1025,16 +1243,48 @@ export class EpisodeRunner {
     }
 
     if (type === "player_look" && this.playerCamera) {
-      const dur = ev.duration ?? 0.2;
+      const cap =
+        this.episode?.maxLookDuration ??
+        (this.episode?.allowSlowScans ? Infinity : CONFIG.maxLookDuration ?? 0.55);
+      const rawDur = ev.duration ?? 0.2;
+      const dur = Number.isFinite(cap) ? Math.min(rawDur, cap) : rawDur;
       const lookPromise = this.playerCamera.lookAt(
         ev.target,
-        { duration: dur, track: Boolean(ev.track) },
+        { duration: dur, track: Boolean(ev.track), maxDuration: cap },
         this.resolver
       );
       if (!silentSeek) {
         this.sfxEngine?.notifyWhipPan(dur, this.simTime);
       }
       return lookPromise;
+    }
+
+    if (type === "cut" && this.playerCamera) {
+      // Instant POV cut: relocate the player and snap the view without blocking.
+      const destRef = ev.to || ev.target || ev.spawn;
+      const dest = destRef
+        ? this.resolveWaypoint(destRef)
+        : {
+            x: this.playerCamera.playerPos.x,
+            y: this.playerCamera.playerPos.y,
+            z: this.playerCamera.playerPos.z,
+          };
+      let lookPos = null;
+      if (ev.facing || ev.lookAt) {
+        lookPos = this.resolveWaypoint(ev.facing || ev.lookAt);
+      }
+      if (ev.clearHold !== false) {
+        this.playerCamera.holdProp(null);
+      }
+      this.playerCamera.teleport(dest, lookPos);
+      // Audio stays authored: only play a cut sting when the beat asks for one.
+      if (!silentSeek && ev.sound) {
+        this.sfxEngine?.play(ev.sound, {
+          volume: ev.volume ?? 0.6,
+          simTime: this.simTime,
+        });
+      }
+      return Promise.resolve();
     }
 
     if (type === "player_gesture" && this.playerCamera) {
@@ -1045,6 +1295,33 @@ export class EpisodeRunner {
       return this.playerCamera.crouch({
         crouched: Boolean(ev.crouched),
         duration: ev.duration ?? 0.35,
+      });
+    }
+
+    if (type === "player_pose" && this.playerCamera) {
+      // Whole-body POV poses: stand back up, or lie on a real surface (bed).
+      let surfaceY = ev.surfaceY ?? null;
+      let surfaceX = null;
+      let surfaceZ = null;
+      const ref = ev.surface || ev.at;
+      if (typeof ref === "string") {
+        const wp = this.resolveWaypoint(ref);
+        if (wp) {
+          if (!Number.isFinite(surfaceY)) surfaceY = wp.y;
+          surfaceX = wp.x;
+          surfaceZ = wp.z;
+        }
+      }
+      return this.playerCamera.setPose({
+        pose: ev.pose || "stand",
+        surfaceY,
+        surfaceX,
+        surfaceZ,
+        lift: ev.lift ?? 0.3,
+        slide: ev.slide ?? 0.6,
+        roll: ev.roll ?? -1.15,
+        pitch: ev.pitch ?? 0.22,
+        duration: ev.duration ?? 0.9,
       });
     }
 
@@ -1071,6 +1348,7 @@ export class EpisodeRunner {
     if (type === "char_anim" || type === "anim") {
       const actor = this.characters[ev.actor];
       if (!actor) return;
+      this._faceActorToCamera(actor, ev);
       actor.playAnim(
         ev.anim,
         ev.fadeDuration ?? 0.16,
@@ -1083,6 +1361,40 @@ export class EpisodeRunner {
       const clipDur = actor.currentAction?.getClip()?.duration || 1.0;
       const waitDur = ev.duration ?? (ev.loop ? 0.45 : clipDur);
       return this._waitSim(waitDur, runToken);
+    }
+
+    if (type === "char_cut") {
+      // Instant actor teleport for scene cuts (no walk through empty rooms).
+      const actor = this.characters[ev.actor];
+      if (!actor) return;
+      actor.lookAtPlayer(false);
+      actor.setHeadTrack?.(ev.facePlayer !== false ? true : false);
+      actor.showBubble(null);
+      actor.setProp(ev.prop ?? "cane");
+      for (let i = this.activeCharMoves.length - 1; i >= 0; i--) {
+        if (this.activeCharMoves[i].actor === actor) {
+          if (this.activeCharMoves[i].resolve) this.activeCharMoves[i].resolve();
+          this.activeCharMoves.splice(i, 1);
+        }
+      }
+      const destRef = ev.to || ev.target;
+      if (destRef) {
+        const pos = this.resolveWaypoint(destRef);
+        actor.root.position.set(pos.x, pos.y ?? 0, pos.z);
+      }
+      const eyePos = this.playerCamera?.getEyeWorldPosition
+        ? this.playerCamera.getEyeWorldPosition()
+        : this.playerCamera?.camera?.position;
+      const faceTarget = ev.facing || ev.faceTarget || null;
+      if (faceTarget === "player") {
+        actor.lookAt(eyePos);
+      } else if (faceTarget) {
+        actor.lookAt(this.resolveWaypoint(faceTarget));
+      } else if (ev.facePlayer !== false) {
+        actor.lookAt(eyePos);
+      }
+      actor.playAnim(ev.anim || "idle", 0.05, null, ev.loop !== false);
+      return Promise.resolve();
     }
 
     if (type === "char_move" || type === "move") {
@@ -1105,6 +1417,25 @@ export class EpisodeRunner {
             z: actor.root.position.z,
           };
       const stops = [...(ev.via || []), ev.to];
+      const caps = this._actorCapsules(ev.actor);
+      if (caps.length && stops.length) {
+        const dest = this.resolveWaypoint(stops[stops.length - 1]);
+        const nudged = pushOutOfCapsules(dest, caps, {
+          pad: 0.5,
+          world: this.house?.stagingWorld || null,
+        });
+        if (nudged.dodged.length || dist2D(nudged.pos, dest) > 0.02) {
+          stops[stops.length - 1] = { x: nudged.pos.x, y: nudged.pos.y, z: nudged.pos.z };
+        }
+      }
+      // Never park a performer inside a prop that is sitting in the room.
+      if (stops.length) {
+        const dest = this.resolveWaypoint(stops[stops.length - 1]);
+        const clearProp = pushOutOfBoxes(dest, this._propObstacleBoxes(), { pad: 0.34 });
+        if (dist2D(clearProp.pos, dest) > 0.02) {
+          stops[stops.length - 1] = { x: clearProp.pos.x, y: dest.y ?? 0, z: clearProp.pos.z };
+        }
+      }
       const { points, segments } = this._buildFullStopChain(from, stops);
 
       const requestedAnim = ev.anim || "walk";
@@ -1155,12 +1486,27 @@ export class EpisodeRunner {
       const speed = ev.instant ? 999 : 14;
       if (typeof ev.followPlayer === "boolean") {
         actor.lookAtPlayer(ev.followPlayer);
+        // Head-tracking: keep the face on the lens through every clip that follows.
+        actor.setHeadTrack?.(ev.followPlayer && ev.headTrack !== false, {
+          maxYaw: ev.maxHeadYaw ?? 0.95,
+          maxPitch: ev.maxHeadPitch ?? 0.42,
+        });
         if (ev.followPlayer && ev.instant && this.playerCamera) {
-          actor.lookAt(this.playerCamera.camera.position);
+          const eyePos = this.playerCamera.getEyeWorldPosition
+            ? this.playerCamera.getEyeWorldPosition()
+            : this.playerCamera.camera.position;
+          actor.lookAt(eyePos);
         }
       }
-      if (ev.target === "player" && this.playerCamera) {
-        actor.faceTarget(this.playerCamera.camera.position, speed);
+      if (ev.targetActor) {
+        const other = this.characters[ev.targetActor];
+        if (other) actor.faceTarget(other.root.position, speed);
+      } else if (ev.target === "player" && this.playerCamera) {
+        const eyePos = this.playerCamera.getEyeWorldPosition
+          ? this.playerCamera.getEyeWorldPosition()
+          : this.playerCamera.camera.position;
+        actor.faceTarget(eyePos, speed);
+        if (ev.persist !== false) actor.lookAtPlayer(true);
       } else if (ev.target) {
         actor.faceTarget(this.resolveWaypoint(ev.target), speed);
       }
@@ -1170,6 +1516,7 @@ export class EpisodeRunner {
     if (type === "char_bubble") {
       const actor = this.characters[ev.actor];
       if (!actor) return;
+      this._faceActorToCamera(actor, ev);
       actor.showBubble(ev.icon || "question", ev.duration ?? 2.0);
       if (!silentSeek) {
         this.sfxEngine?.notifyBubblePop(ev.icon, this.simTime);
@@ -1181,6 +1528,7 @@ export class EpisodeRunner {
       const actor = this.characters[ev.actor];
       if (!actor) return;
       actor.setProp(ev.prop ?? null);
+      this._faceActorToCamera(actor, ev);
       return this._waitSim(ev.duration ?? 0, runToken);
     }
 
@@ -1191,7 +1539,12 @@ export class EpisodeRunner {
         travelDuration: ev.travelDuration,
         targetY: ev.targetY,
         duration: ev.duration,
-        yOffset: ev.yOffset ?? 0.25,
+        yOffset: ev.yOffset ?? (ev.action === "reset" ? 0 : 0.25),
+        rotationY: ev.rotationY,
+        scale: ev.scale,
+        visible: ev.visible,
+        spin: ev.spin,
+        float: ev.float,
       });
       return this._waitSim(ev.duration ?? 0, runToken);
     }

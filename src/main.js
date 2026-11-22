@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { CONFIG, DEFAULT_EPISODE, EPISODE_PRESETS, SET_MAP } from "./config.js";
+import { buildShow } from "./shows/index.js";
 import {
   loadHouse,
   loadCharacterTemplate,
@@ -11,6 +12,8 @@ import { PlayerCamera } from "./playerCamera.js";
 import { ComedyPropManager, ThoughtBubbleCache } from "./comedyProps.js";
 import { EpisodeRunner } from "./episodeRunner.js";
 import { StudioUI } from "./studioUI.js";
+import { buildEpisode } from "./episodeBuilder.js";
+import { GAG_REGISTRY } from "./gags/index.js";
 
 const urlParams = new URLSearchParams(window.location.search);
 const isHeadless = urlParams.get("headless") === "1";
@@ -186,6 +189,16 @@ async function bootstrap() {
   function loadEpisode(epObj) {
     const info = runner.loadEpisode(epObj);
     resizeRenderer(playerCamera.aspectKey);
+
+    // Surface the staging gate: the script is validated & repaired before it plays.
+    const staging = info?.staging;
+    if (staging && (staging.errorsAfter > 0 || staging.fixed > 0)) {
+      const message =
+        staging.errorsAfter > 0
+          ? `Staging: ${staging.errorsAfter} unfixable issue(s) — check the console.`
+          : `Staging: ${staging.fixed} auto-fix(es) applied (${staging.errorsBefore} error(s) caught).`;
+      ui?.toast(message, staging.errorsAfter > 0);
+    }
     ui?.setEpisodeJson(epObj);
     ui?.syncButtons();
     ui?.syncState({
@@ -230,9 +243,36 @@ async function bootstrap() {
   });
   window.addEventListener("keyup", (e) => heldKeys.delete(e.code));
 
-  const startPresetKey = urlParams.get("preset") || "grandpa_key_pov_44s";
-  const initialEp = EPISODE_PRESETS[startPresetKey] || DEFAULT_EPISODE;
+  const startGagKey = urlParams.get("gag");
+  const startPresetKey = urlParams.get("preset") || "comedy_variety_1m";
+  // Long-form shows: ?show=mountain_dew_run (or ?show=…&scene=bed for one scene).
+  const startShowId = urlParams.get("show");
+  const startSceneId = urlParams.get("scene");
+  let initialEp = startShowId
+    ? buildShow(startShowId, { onlyScene: startSceneId || null })
+    : EPISODE_PRESETS[startPresetKey] || DEFAULT_EPISODE;
+  if (startGagKey && GAG_REGISTRY[startGagKey]) {
+    const gagOpts = {};
+    for (const k of ["location", "victim", "chaser", "prop"]) {
+      const v = urlParams.get(k);
+      if (v) gagOpts[k] = v;
+    }
+    const g = GAG_REGISTRY[startGagKey](gagOpts);
+    initialEp = buildEpisode({
+      title: `Gag Lab: ${g.name}`,
+      playerSpawn: g.playerSpawn,
+      playerFacing: g.playerFacing,
+      gags: [g],
+    });
+  }
   loadEpisode(initialEp);
+  if (ui?.els?.presetSelect) {
+    if (startGagKey && GAG_REGISTRY[startGagKey]) {
+      ui.els.presetSelect.value = `gag:${startGagKey}`;
+    } else if (EPISODE_PRESETS[startPresetKey]) {
+      ui.els.presetSelect.value = startPresetKey;
+    }
+  }
 
   if (isHeadless) {
     document.body.classList.add("headless-mode");
@@ -328,6 +368,7 @@ async function bootstrap() {
     version: "2.0.0-pov",
     ready: true,
     getPresetKeys: () => Object.keys(EPISODE_PRESETS),
+    getGagKeys: () => Object.keys(GAG_REGISTRY),
     beginHeadlessExport: async ({ episode, pacerEnabled = true, aspectOverride = "" } = {}) => {
       sfxEngine.setPacerEnabled(pacerEnabled);
       sfxEngine.startEventCapture();
@@ -349,8 +390,13 @@ async function bootstrap() {
         aspectKey: playerCamera.aspectKey,
         width: renderer.domElement.width,
         height: renderer.domElement.height,
+        staging: runner.staging?.stats || null,
+        stagingIssues: (runner.staging?.issues || []).map(({ code, severity, at, message, applied }) => ({
+          code, severity, at, message, applied: Boolean(applied),
+        })),
       };
     },
+    getStagingReport: () => runner.staging || null,
     advanceExportFrames: async (frameCount, dt) => {
       if (frameCount > 0 && dt > 0) {
         const subSteps = Math.max(1, Math.round(dt / CONFIG.fixedDt));

@@ -1,6 +1,13 @@
-# EPISODE_PRODUCTION_GUIDE.md — Granny POV Comedy Short Playbook
+# EPISODE_PRODUCTION_GUIDE.md — Engine Reference & Pacing Rules
 
-Use this guide whenever you write, generate, or render a new **Granny POV 3D Cartoon Episode** (`16:9` YouTube POV or `9:16` Shorts). Every rule here comes from real rendered output audits and maps directly to `src/config.js`, `src/episodeRunner.js`, `src/playerCamera.js`, `src/comedyProps.js`, `src/sfxEngine.js`, and `scripts/export-video.mjs`.
+> **STOP — Authoring a New Episode?**
+> Use the modular gag framework in **`src/gags/`** + **`src/episodeBuilder.js`** (`buildEpisode()`), NOT giant raw `after`/`await` timelines.
+> Start with **`src/gags/README.md`** (copy-paste 20-line template) and **`AGENTS.md`** (complete catalog of helpers, locations, props, animations, SFX, and verification commands).
+> This guide documents the lower-level engine invariants, `SET_MAP` coordinates, and pacing rules that power `EpisodeRunner` under the hood.
+
+---
+
+Use this guide whenever you extend the engine or inspect low-level beat timing for **Granny POV 3D Cartoon Episodes** (`16:9` YouTube POV or `9:16` Shorts). Every rule here maps directly to `src/config.js`, `src/episodeRunner.js`, `src/playerCamera.js`, `src/comedyProps.js`, `src/sfxEngine.js`, and `scripts/export-video.mjs`.
 
 ---
 
@@ -8,7 +15,9 @@ Use this guide whenever you write, generate, or render a new **Granny POV 3D Car
 
 | What you need | Where to find it | Notes |
 | --- | --- | --- |
-| **Waypoints, Cast, SFX/BGM Manifest & Presets** | `src/config.js` | `SET_MAP`, `SFX_MANIFEST`, `ASSET_MANIFEST`, `GRANDPA_KEY_POV_44S`, `FLOOR_IS_LAVA_4M`, `JUMP_RUN_WALK_EPISODE` |
+| **Waypoints, Cast, SFX/BGM Manifest & Presets** | `src/config.js` | `SET_MAP`, `SFX_MANIFEST`, `ASSET_MANIFEST`, `GRANDPA_KEY_POV_44S`, `FLOOR_IS_LAVA_4M`, `JUMP_RUN_WALK_EPISODE`, `EPISODE_PRESETS` |
+| **Fast-Cut Escape Episode** | `src/episodes/greatEscape75.js` | `THE_GREAT_ESCAPE_68S` — reference implementation for hard cuts, whip-pans, and zero dead air |
+| **Pacing Audit (runs before every cloud render)** | `scripts/audit-pacing.mjs` | Fails on dead air / runaway runtime / dangling refs; warns on oversized looks and awaited beats |
 | **Background Music (Looping Comedy/Chase BGM)** | `SoundEffects/backroundMusics/` + `SoundEffects/*.mp3` | Registered in `SFX_MANIFEST` with `category: "bgm"` — auto-loops in browser & FFmpeg |
 | **22 Sound Effects (Impacts, Voices, UI, Cuts)** | `SoundEffects/*.mp3` | Registered in `SFX_MANIFEST` in `src/config.js` |
 | **3D House & Character Models + Mixamo Clips** | `Assets/` | `GrannyHouse.fbx`, `GrannyTest6.fbx`, `grandpach3.fbx`, `Assets/AnimationTemplates/*.fbx` |
@@ -26,6 +35,8 @@ Kids' attention drops within **3 seconds** if nothing changes visually. Bake the
 ### Rule 1: No Beat Over 2–2.5 Seconds Without Movement ("Zero Dead Air")
 - **Never** leave the camera staring at a bobbing prop or stationary character for 3–5 seconds.
 - **Every `1.5–2.5s`**, change something on screen: a whip-pan (`player_look`), camera walk (`player_walk`), crouch/peek (`player_crouch` / `peek_lean`), prop flying across the room (`pop_out` with `to` + `travelDuration`), pickup (`player_hold`), or a character moving/reacting (`char_move` / `char_anim` + `char_bubble`).
+- A `player_look` is a **whip-pan, not a stare**: keep source durations at or below `CONFIG.maxLookDuration` (`0.55s`). The engine hard-caps anything longer, and the audit warns on it.
+- **Cut, don't commute.** When the next gag is in another room, use `cut` (`to`, `facing`) instead of a 4–8s walk through empty geometry. Move actors with `char_cut` (`actor`, `to`, `facing`) for the same reason. Walks are for tension inside a shot, not for travel between shots.
 - If a prop pops out of a box or chest, **immediately** send it flying across the room (`to` waypoint), bonk a character with it, or grab it into the player's hand within `1.5–2.0s`.
 
 ### Rule 2: Always Show Cause-and-Effect Visually (No Shadowboxing Thin Air)
@@ -90,6 +101,12 @@ Sync SFX directly to visible actions (`1.2s–1.85s` rhythm; avoid overlapping v
 Targets with `elevated: true` in `SET_MAP` automatically route to their ground `approach` waypoint first, then perform a parabolic jump-arc hop (`jump` animation for characters) onto the elevated surface—or hop directly between adjacent surfaces (`< 2.2m` apart on the same floor):
 - **Ground Floor Elevated:** `dining_table_top` (`y=1.11`), `dining_table_top_west` (`y=1.11`), `kitchen_table_top` (`y=1.13`), `kitchen_counter_top` (`y=1.13`), `back_bed_top` (`y=0.98`), `living_room_sofa` (`y=0.47`), `living_room_shelf_top` (`y=0.72`)
 - **Upstairs Elevated:** `up_bed_top` (`y=3.83`), `up_bed_top_west` (`y=3.83`), `upstairs_west_desk_top` (`y=3.54`), `upstairs_east_bed_top` (`y=3.54`)
+
+### Instant Cuts (`cut` / `char_cut`)
+- `{ "at": 12.2, "type": "cut", "to": "kitchen_lane", "facing": "golden_key" }` teleports the POV player and snaps the view in the same frame. `to` is optional (omit it to rotate in place), `facing` is optional, and `sound` optionally plays a sting.
+- `{ "at": 12.3, "type": "char_cut", "actor": "granny", "to": "foyer", "facing": "player" }` teleports an actor, cancels its active move, and faces it at the player (or a waypoint).
+- Cuts are **zero-duration** and never block the timeline, so authored `at` timestamps stay exact. Use them to jump between rooms, reset a chase, or land a jumpscare.
+- Reactions (`char_anim`, `char_bubble`, `char_prop`) auto-face the camera so the expression reads on screen; pass `"facePlayer": false` when a character must deliberately look away.
 
 ### Timeline Synchronization (`await: true` & `sync: "sequential"`)
 - Add `"await": true` (or `"sync": "sequential"`) to any `char_move`, `player_walk`, `char_anim`, `player_look`, or `player_gesture` beat to **halt timeline advancement** until that character/camera movement or one-shot animation finishes before dispatching the next beat.
@@ -173,21 +190,248 @@ Notice how every beat stays under `2.5s`, every reaction shows visual cause-and-
 
 ---
 
-## 7. Pre-Render Checklist & Cloud Rendering
+## 7. Staging Safety Gate (runs on every episode)
+
+The script is validated **before** a single frame is rendered. Two modules own this:
+
+| Module | Responsibility |
+| --- | --- |
+| `src/stagingSafety.js` | Pure geometry: actor capsules, camera standoffs, sightlines, prop support, route validity. No DOM/THREE — identical in browser, exporter and tests. |
+| `src/episodeSafety.js` | Script linter + auto-repair for the seven failure classes below, plus `scripts/validate-episode.mjs` (CLI). |
+
+`EpisodeRunner.loadEpisode()` runs the gate automatically, applies the deterministic repairs, logs the report to the console and shows a toast in the studio. The export workflow runs the same CLI **before** rendering.
+
+```bash
+npm run validate:episode                       # every preset
+npm run validate:episode -- --preset floor_is_lava_4m
+npm run validate:episode -- --file my-episode.json --out fixed.json
+npm run validate:episode -- --json             # for CI / tooling
+```
+
+Exit code is `1` when an error survives the repair pass.
+
+### What it refuses to let through
+
+| Code | Failure it catches | How to author it correctly |
+| --- | --- | --- |
+| `SPAWN_INSIDE_ACTOR` | Player/cast spawn inside another body (lens starts in a neck) | Keep `playerSpawn` **1.15m+** from every `cast[].spawn` |
+| `SPAWN_OVERLAP` | Two performers spawn on top of each other | Space cast spawns **1.05m+** apart |
+| `PROP_FLOATS` | `yOffset` lifting a prop into mid-air (floating cookie jar) | Put the prop on a **surface waypoint** (`kitchen_counter_top`, `dining_table_top`, `chest_spot`, `key_spot`) and omit `yOffset` |
+| `PROP_OVERLAP` | Two props in the same volume (jar clipping the red button) | Give each prop its own surface/waypoint, or a `spawnOffset` |
+| `PROP_INSIDE_GEOMETRY` | A prop spawned **inside** furniture (jar half-buried in the microwave) — the four-ray `isEmbedded` probe finds walls on every side | Spawn on open counter/table space, or add a `spawnOffset` that clears the object |
+| `PATH_THROUGH_WALL` | A cross-room move cutting a doorframe instead of using `via` | Name every doorway in `via` — the validator prints the exact chain it computed |
+| `STANDOFF_TOO_CLOSE` | `player_walk { target }` parking the lens in a face | `standoff: 1.15` or more |
+| `CAMERA_CLIPS_ACTOR` | A route passing through a standing performer | Route around them, or move them first |
+| `SOUND_WITHOUT_ANIM` | An SFX promising action nobody performs (eating sound, no eating) | Pair the cue with a `char_anim` / `char_prop` within ~1s |
+| `PROP_STUCK_IN_HAND` | A heart bubble or friendly beat while still holding the shotgun/bat | `char_prop { "prop": "none" }` before the beat |
+| `REACTION_FACING_AWAY` | `laugh` / `punch` / `terrified` played away from the lens | `char_face { "followPlayer": true, "instant": true }` first |
+| `DEAD_AIR` | More than 2.5s with nothing moving | Insert a gag, a look, a bubble or a move |
+| `SNAP_PAN` / `OFF_CENTER_FRAMING` | Unreadably fast pans, untracked moving subjects | `duration: 0.18–0.3`, `track: true` |
+| `END_ON_STILL` / `NO_FADE` | Fading on a frozen pose, or never fading | End on `run2` / jumpscare / gesture motion |
+
+### Automatic repairs (deterministic only)
+
+The gate will, without asking:
+
+- move `playerSpawn` to the nearest clear floor waypoint when it starts inside a body,
+- delete a floating `yOffset` so the prop snaps to the real surface under it,
+- slide an overlapping prop aside with a `spawnOffset`,
+- insert the missing doorway `via` chain,
+- raise a too-tight `standoff` to `1.15`,
+- insert `char_face { followPlayer: true }` before reactions,
+- stow a weapon (`char_prop: "none"`) before friendly beats / bubbles,
+- add a matching animation for an action SFX,
+- insert a short `peek_lean` in the middle of a dead-air gap.
+
+It will **not** invent story: anything it cannot repair deterministically stays in the report as an error.
+
+### Runtime guarantees (not just the linter)
+
+- `PlayerCamera.resolveApproachPoint()` sweeps a ring around the subject and only accepts a lens position that is outside every actor capsule, inside the walkable shell, and has a clear sightline (`findSafeCameraSpot`).
+- Player walks are re-routed through the house grid A* whenever a leg would clip geometry, and the camera **slides around** performers instead of passing through them.
+- Character moves are validated leg-by-leg in `EpisodeRunner._refineChainGeometry()`; a blocked leg is replaced with a real nav-grid detour (jump arcs and stairs keep their authored arcs).
+- Props are seated with a downward surface probe on load and on `show` / `pop_out`, and step aside when they would intersect another prop.
+- `char_face { followPlayer: true }` keeps tracking the live camera position, so a reaction is never played to the back of the room.
+
+---
+
+## 8. Long-Form (5–6 min): Build It In Scenes
+
+A 15-second gag fits in one file. A 6-minute POV short **does not**: it is
+20–24 scenes, and every scene must be small enough to fix on its own.
+
+### The rule
+
+> **One scene = one file = one room cluster = 10–20 seconds = 4–5 beats.**
+
+Never author a 900-line timeline with global timestamps. When something looks
+wrong at `4:12` you should be able to open `scene17-hallway.js`, see the floating
+prop in 40 lines, and re-render **that scene** — not hunt a wall of JSON.
+
+```
+src/shows/<show>/
+  index.js            storyboard: the scene order + show title/aspect
+  scene1-wake.js      14s  bedroom
+  scene2-argument.js  15s  dining
+  scene3-fridge.js    20s  kitchen
+  scene4-bed.js       12s  bedroom
+```
+
+Scenes use **local** timings (`at: 0` = scene start). Shows are **continuous**
+(`transitions: "continuous"`, the default for `buildShow()`): a boundary emits
+**no beats at all**. No fade, no `cut`, no `char_cut`, no prop reset. The player
+keeps their exact spot/facing/held item, the cast stays put, props stay where
+they were.
+
+That is a hard rule, not a preference: a fade-to-black between scenes tells the
+audience "we cheated", and a teleport tells them "you are somewhere else now".
+Continuous shows hide the seam by *not having one*.
+
+### The continuity contract
+
+* A scene's `playerSpawn` must be where the previous scene's last walk ends.
+  `checkSceneContinuity()` walks the timeline and raises
+  **`SCENE_START_MISMATCH`** when it is not.
+* `cast: { granny: {} }` (no `spawn`) = "she is still where you left her". The
+  first scene that shows an actor must give a `spawn` (the builder throws
+  otherwise).
+* Props are declared once, in the scene where they enter the story, then persist
+  (`seat: false` for props resting on non-house geometry, e.g. a fridge shelf).
+* Held items persist across boundaries.
+* The only `fade` allowed is the last one of the show.
+
+### Writing one scene
+
+```js
+import { defineScene } from "../sceneKit.js";
+
+export default defineScene({
+  id: "fridge",
+  title: "The Cold One",
+  room: "kitchen",
+  duration: 20,
+  playerSpawn: "dining_center",
+  playerFacing: "kitchen",
+  cast: { granny: { spawn: "living_room", facing: "living_room_left" } },
+  props: [{ id: "soda_can", type: "soda_can", spawn: "kitchen_table_top" }],
+  beats: [
+    { at: 0.0, type: "fade", to: 0, duration: 0.5 },
+    { at: 0.2, type: "player_walk", via: ["kitchen_lane"], to: "kitchen", duration: 3.2 },
+    { at: 4.8, type: "prop_action", prop: "soda_can", action: "pickup" },
+    { at: 4.8, type: "player_hold", prop: "soda_can" },
+  ],
+});
+```
+
+`sceneKit.defineScene()` rejects a scene with a bad id, a zero duration, no
+`playerSpawn`, or a beat scheduled past `duration`.
+
+### Scene-scoped gate
+
+```bash
+node scripts/validate-episode.mjs --list-shows                  # storyboard
+node scripts/validate-episode.mjs --show mountain_dew_run       # full show, grouped by scene
+node scripts/validate-episode.mjs --show mountain_dew_run --scene bed
+```
+
+The report is grouped per scene, and every issue carries `scene` / `sceneIndex`:
+
+```
+Staging report — 0 error(s), 0 warning(s) remaining · 2 auto-fix(es)
+Scene 4 — Back To Bed
+! [1:01] CAMERA_CLIPS_ACTOR: granny's route passes within 0.28m of grandpa …
+```
+
+### Reference storyboard: `mountain_dew_run` (61s, 4 scenes)
+
+| # | id | title | room | s | beats |
+| - | -- | ----- | ---- | - | ----- |
+| 1 | `wake` | Wake Up | bedroom | 14 | crouch→stand, look around, walk out to the stairs |
+| 2 | `argument` | The Argument | dining | 15 | Granny & Grandpa bicker, both glare at the lens, we sigh |
+| 3 | `fridge` | The Cold One | kitchen | 20 | grab the soda can, haul it back and up the stairs |
+| 4 | `bed` | Back To Bed | bedroom | 12 | `prop_action place` on the nightstand, collapse |
+
+Scale it: 20–24 scenes × 15s = 5–6 minutes.
+
+### Beat vocabulary added for continuity
+
+| Beat | Why |
+| --- | --- |
+| `player_pose { pose: "lie", surface: "up_bed_top_west" }` | lie on a real surface: eye drops to the mattress and the lens rolls, so "in bed" reads as in bed — not as crouching on the floor |
+| `char_face { actor, targetActor }` | aim an actor at another actor (arguments, conversations) instead of at the lens |
+| `argueBeats({ from, until, a, b })` (`sceneKit.js`) | kid-safe bickering: alternating angry bubbles + they face each other + mumble SFX. No punches, no `terrified` |
+| `prop_action { prop, action: "open" / "close" }` | swings a real `fridge` door (the `fridge` prop is an open shell with a hinged door, so the inside is visible when it opens) |
+| `seat: false` on a prop | keeps the authored height: the can rests on the fridge shelf instead of being dropped to the floor |
+
+A deliberate look now **holds**: the walk look-ahead used to drag the pitch back
+to the horizon about a second later ("look down, snap to the middle"). `pitchAuthored`
+makes an authored pitch stick until the next look.
+
+Because each scene is exactly one `skit`, `scripts/chunk-episode.mjs` and
+`.github/workflows/export-long-episode.yml` split long shows **on scene
+boundaries** — a 24-scene show renders in parallel chunks that stitch losslessly.
+
+### Head tracking (the "look at me" mechanic)
+
+A taunt that plays to the wall is the single most damaging framing bug in these
+shorts. Two layers fix prospecting:
+
+1. **Body turn** — `char_face { followPlayer: true }` (reacts/animations do it
+   automatically unless `facePlayer: false`).
+2. **Head aim** — `setHeadTrack()` in `src/assetLoader.js` rotates the head bone
+   toward the live camera **on top of whatever clip is playing**, clamped to
+   ±54° yaw / ±24° pitch (tunable per beat with `maxHeadYaw` / `maxHeadPitch`) so
+   the neck never snaps. The maths lives in `headAimAngles()`
+   (`src/stagingSafety.js`) and is unit-tested.
+
+Emitted automatically when a reaction plays (`laugh`, `punch`, `terrified`,
+`panic`, `hit`, `jump`) or when a `char_face` beat fires. Clear it with
+`char_face { followPlayer: false }`.
+
+### Props on surfaces (no floating, no phasing)
+
+- `ComedyPropManager.seatProp()` measures the mesh's **own** bounding box, drops
+  a ray under it and rests the origin on the hit — the old code used the world
+  centre, which floated every table prop by its own half-height.
+- `prop_action { action: "place", waypoint: "up_bed_top_west" }` re-seats a prop
+  wherever the story needs it (nightstand, counter, bed).
+- Performers cannot walk through visible props: `char_move` destinations are
+  pushed out of prop boxes (`pushOutOfBoxes`), and the gate reports
+  `CAMERA_CLIPS_ACTOR` when a route sweeps a body.
+
+---
+
+## 9. Pre-Render Checklist & Cloud Rendering
 
 Before rendering a new episode JSON:
+0. **Run the gate:** `npm run validate:episode -- --file my-episode.json` (or `--show <id>` for a long-form show) — fix everything under `Remaining:` before rendering.
 1. **No dead air > 2.5s:** Scan `beats` timestamps — every `2.5s` window should have movement, camera change, prop flight/pickup, or character action.
-2. **Doorway-centered paths:** Every cross-room `player_walk` or `char_move` includes `doorway_living` / `doorway_dining` in `via`.
+2. **Doorway-centered paths:** Every cross-room `player_walk` or `char_move` includes `doorway_living` / `doorway_dining` in `via`. Prefer `cut` / `char_cut` over long commutes.
 3. **Close-range cause-and-effect:** Any `punch` / `hit` happens within `1.4m` of its target or right after a prop impact.
 4. **Motion ending:** Final `2s` before `fade` has active `run2` chase / lunge, never a frozen pose.
-5. **Cloud render command (zero local CPU/GPU encoding):**
+5. **Run the pacing audit** (the workflow runs it automatically and blocks the render on failure):
+   ```bash
+   node scripts/audit-pacing.mjs the_great_escape_68s
+   ```
+   Compare against the reference numbers: `~68s` runtime, `0` awaited beats, `>= 8` hard cuts, look average `< 0.4s`, longest uncovered gap `<= 0.75s`.
+6. **Cloud render command (zero local CPU/GPU encoding):**
    ```bash
    gh workflow run export-video.yml --ref main \
-     -f preset=custom_json \
-     -f custom_json="$(cat path/to/my-episode.json)" \
-     -f aspect=9:16 \
+     -f preset=the_great_escape_68s \
+     -f aspect=auto \
      -f fps=30 \
      -f sfx_pacer=true \
      -f format=mp4
    ```
    Rendered `.mp4` + `export-summary.json` are published automatically to the `latest-export` GitHub Release.
+
+   For a one-off script, pass the whole JSON in the **`episode_json`** input (the workflow uses it as an override, and `preset=custom_json` also works):
+   ```bash
+   gh workflow run export-video.yml --ref main \
+     -f preset=custom_json \
+     -f episode_json="$(cat path/to/my-episode.json)" \
+     -f aspect=9:16 \
+     -f fps=30 \
+     -f sfx_pacer=true \
+     -f format=mp4
+   ```
