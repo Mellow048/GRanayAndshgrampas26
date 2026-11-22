@@ -89,15 +89,17 @@ test("the long-form show passes the staging gate and tags issues by scene", () =
   assert.equal(result.stats.errorsAfter, 0, "the reference show must not need hand-fixing");
 
   // Force a fault inside scene 3 and make sure the report names scene 3.
+  // The house has no staircase, so a walk to the second floor can only be
+  // "walking on air" — the floor router must refuse it and say where.
   const broken = buildShow("mountain_dew_run");
   const fridgeStart = broken.sceneMap.find((m) => m.id === "fridge").start;
   broken.skits
     .find((s) => s.sceneId === "fridge")
-    .beats.push({ at: +(fridgeStart + 2).toFixed(3), type: "player_walk", to: "living_room", duration: 2 });
+    .beats.push({ at: +(fridgeStart + 2).toFixed(3), type: "player_walk", to: "up_bed_side", duration: 2 });
 
   const bad = validateAndRepair(broken, { setMap: SET_MAP, navGraph: NAV_GRAPH });
-  const wallCut = bad.issues.find((i) => i.code === "PATH_THROUGH_WALL");
-  assert.ok(wallCut, "the wall-cutting walk is reported");
+  const wallCut = bad.issues.find((i) => i.code === "NO_WALKABLE_ROUTE");
+  assert.ok(wallCut, "the walk with no floor under it is reported");
   assert.equal(wallCut.scene, "fridge");
   assert.equal(wallCut.sceneTitle, "The Cold One");
   assert.match(formatStagingReport(bad), /Scene 3 — The Cold One/);

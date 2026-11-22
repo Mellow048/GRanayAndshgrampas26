@@ -111,27 +111,40 @@ Studio previews:
 | `sfx { sound, volume }` | 28 clips; movement, pans and bubbles are automatic |
 | `fade { to, duration }` | fades are for story beats, CUTs are for scene changes |
 
-## Use the house you already have
+## The character walks on measured floor, not on numbers you typed
 
-The house FBX is merged geometry, so there are no named "bed" or "fridge"
-objects — but they are there. Find them by scanning, not by guessing:
+`src/data/houseNav.js` is a **bake of the actual house mesh**: every standable
+0.2 m cell, the height of the floor under it, and the links between cells.
+`src/nav/houseNav.js` plans walks over that surface, so:
+
+- a route cannot cross a wall — there is no edge through it;
+- a route cannot float — the height of every point comes from the floor;
+- a route to somewhere that does not exist (the second floor, with no
+  staircase) returns `null`, and the gate reports `NO_WALKABLE_ROUTE`.
+
+Write `to:` and let the router plan. **Do not hand-author `via:` chains** — that
+is how earlier cuts walked through walls.
+
+Regenerate after any change to `Assets/granny-1-house/source/GrannyHouse.fbx`:
 
 ```bash
-# surface-height map of a room (b = low platform / bed, t = table, H = tall unit)
-node /tmp/fwtest/heat2.mjs          # drop a ray grid, read the ASCII map
+npm i -D three@0.170.0     # dev-only; the browser build stays dependency-free
+node scripts/bake-nav.mjs  # writes src/data/houseNav.js
+node scripts/bake-nav.mjs --map   # + ASCII maps of floor / stairs / doorways
 ```
 
-Facts already established (don't re-invent them):
+Measured facts (do not re-invent them):
 
 | Thing | Where | Height |
 | --- | --- | --- |
-| Bed (upstairs) | x -8.2..-6.8, z -3.9..-0.9 | mattress top **3.56** (`up_bed_mattress`) |
-| Table (upstairs) | x -6.0..-4.2, z -1.8..-1.0 | top **3.83** (`up_bed_top_west`) — this is the table, not the bed |
-| Fridge (kitchen) | x -6.9..-5.1, z -0.6..-0.1 | tall unit on the north wall (`kitchen_fridge`) |
-| Counter (kitchen) | x -8.2..-7.1, z 0.2..1.3 | top **1.1** |
+| Ground floor | whole footprint | **0.00** |
+| Second floor | whole footprint | **2.85** — decorative: **the model has no staircase**, so nothing may walk up |
+| Bed (the show's) | `bed_home` (-7.4, -4.1) | prop we spawn once; mattress **0.5** |
+| Fridge (kitchen) | x -6.9..-5.1, z -0.6..-0.1, front z -0.61 | shelf **1.1** (`kitchen_fridge_shelf`) |
+| Dining table | x -5.6..-4.2, z 2.0..3.6 | top **1.11** (`dining_table_top`) |
 
-Never build a second bed or a second fridge — put your prop on the real thing
-(the `shelf` prop exists exactly for that: a plank inside the existing fridge).
+Cell tags in the bake: `0` open floor, `1` stairs/ramp, `2` doorway (a passage
+two cells wide), `3` narrow strip along a wall.
 
 ## The six rules that keep a 6-minute show clean
 

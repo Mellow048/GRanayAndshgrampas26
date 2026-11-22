@@ -54,8 +54,14 @@ When asked to make a new episode (15 seconds, 5 minutes, or 40+ minutes):
 3. **Scene-scoped gate.** `node scripts/validate-episode.mjs --show <id> [--scene <id>]`. Every issue carries `scene` / `sceneIndex`; `formatStagingReport()` groups by scene. Fix the scene, not the timestamp.
 4. **Props enter once and persist.** Declare a prop in the scene where it enters the story; it is never re-spawned. `prop_action { action: "place", waypoint }` moves it, `seat: false` means "its height is authored, do not ray-cast it onto the floor" (fridge shelf, hands).
 5. **Face the lens.** `char_face { followPlayer: true }` turns the body; `setHeadTrack()` (assetLoader) keeps the **head** on the camera through any clip, rebuilt from the bind pose each frame (never accumulated — that spins the head), clamped to ±54°/±24° and rate-limited to 4 rad/s. Reactions enable it automatically; conversations use `char_face { targetActor }`.
-6. **Never invent house furniture.** The bed, table, fridge and counters already exist in `GrannyHouse.fbx`; their coordinates are tabulated in `src/shows/README.md`. Put props on the real surfaces (`shelf` prop inside the fridge, `place` on the table) instead of building a duplicate bed/fridge next to the real one.
-7. **Kids' show, not a fight club.** Arguments are staged with `argueBeats()` (bubbles + facing each other + mumble SFX). Never `punch`, never `terrified`, and never a reaction with nothing on screen to react to.
+6. **Walks are routed on the baked floor.** `src/nav/houseNav.js` plans over
+   `src/data/houseNav.js`, a bake of the real house mesh (0.2 m cells, real
+   heights, tagged doorway/stairs/narrow strips). Never hand-author `via:`
+   chains to steer a character — set `to:` and let the router work. The only
+   legal stairs are the ones in the bake (this house has none, so nothing may
+   walk to y 2.85). Re-bake with `node scripts/bake-nav.mjs`.
+7. **Never invent house furniture.** The bed, table, fridge and counters already exist in `GrannyHouse.fbx`; their coordinates are tabulated in `src/shows/README.md`. Put props on the real surfaces (`shelf` prop inside the fridge, `place` on the table) instead of building a duplicate bed/fridge next to the real one.
+8. **Kids' show, not a fight club.** Arguments are staged with `argueBeats()` (bubbles + facing each other + mumble SFX). Never `punch`, never `terrified`, and never a reaction with nothing on screen to react to.
 
 ## Anti-Patterns (NEVER DO THIS)
 

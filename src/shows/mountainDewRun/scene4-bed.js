@@ -1,63 +1,57 @@
 import { defineScene } from "../sceneKit.js";
 
 /**
- * Scene 4 — Back To Bed (22s)
+ * Scene 4 — Back To Bed (18s)
  *
- * Scene 3 stopped at the bottom of the stairs with the can in hand; this scene
- * starts on that exact step. Up the stairs, around the table, the can goes on
- * the table (a real surface), then we get into the REAL bed and lie down.
- *
- * The camera does not stare at the ceiling when it lies down — that is how the
- * decorative shelf near the ceiling ended up in frame last time.
+ * Starts at the dining table where scene 3 left us, can in hand. The can goes
+ * down on the real table surface, then we walk back along the baked floor and
+ * get into the bed — the only bed in the show, spawned once in scene 1, still
+ * in exactly the same place.
  */
 export default defineScene({
   id: "bed",
   title: "Back To Bed",
   room: "bedroom",
-  duration: 22,
-  playerSpawn: "stairs_bottom",
-  playerFacing: "stairs_middle",
-  notes: "Held prop carries across the boundary; `place` re-seats it on the table.",
+  duration: 18,
+  playerSpawn: "dining_table_front",
+  playerFacing: "dining_table_top",
+  notes: "`place` puts the can on the table; the walk home is routed on real floor.",
   beats: [
     { at: 0.0, type: "bgm", sound: "granny_ambience", volume: 0.16 },
 
-    // Up the stairs, along the hall, around the table.
-    {
-      at: 0.3,
-      type: "player_walk",
-      via: ["stairs_middle", "stairs_top", "upstairs_landing", "upstairs_hall_center", "up_bed_hall_corner", "up_bed_hall"],
-      to: "up_bed_side",
-      duration: 13.0,
-      speed: 2.2,
-    },
-    { at: 3.0, type: "player_look", target: "stairs_middle", duration: 0.45 },
-    { at: 7.0, type: "player_look", target: "upstairs_landing", duration: 0.4 },
-    { at: 10.4, type: "player_look", target: "up_bed_hall_corner", duration: 0.4 },
-    { at: 12.4, type: "player_look", target: "up_bed_side", duration: 0.45 },
+    // Put the can down on the table (a real surface at y 1.11).
+    { at: 0.2, type: "player_look", target: "dining_table_top", duration: 0.45 },
+    { at: 1.0, type: "prop_action", prop: "soda_can", action: "place", waypoint: "dining_table_top" },
+    { at: 1.0, type: "player_hold", prop: "none" },
+    { at: 1.1, type: "sfx", sound: "click", volume: 0.5 },
+    { at: 1.8, type: "player_gesture", gesture: "nod_yes", duration: 0.8 },
+    { at: 1.9, type: "sfx", sound: "checkmark", volume: 0.45 },
 
-    // Put the can somewhere safe: the table.
-    { at: 13.6, type: "player_look", target: "up_bed_top_west", duration: 0.5 },
-    { at: 14.4, type: "prop_action", prop: "soda_can", action: "place", waypoint: "up_bed_top_west" },
-    { at: 14.4, type: "player_hold", prop: "none" },
-    { at: 14.5, type: "sfx", sound: "click", volume: 0.5 },
-    { at: 15.2, type: "player_gesture", gesture: "nod_yes", duration: 0.9 },
-    { at: 15.3, type: "sfx", sound: "checkmark", volume: 0.5 },
+    // Home.
+    { at: 2.6, type: "player_look", target: "hall_corner", duration: 0.5 },
+    { at: 3.0, type: "player_walk", to: "bed_side", duration: 6.4, speed: 1.7 },
+    { at: 5.2, type: "char_bubble", actor: "grandpa", icon: "angry", duration: 1.2, facePlayer: false },
+    { at: 6.6, type: "sfx", sound: "discord", volume: 0.28 },
+    { at: 7.4, type: "player_look", target: "bed_foot", duration: 0.45 },
 
-    // Into the bed — the real one — and drift off.
-    { at: 16.2, type: "player_look", target: "up_bed_mattress", duration: 0.5 },
-    { at: 16.8, type: "player_walk", to: "up_bed_side", duration: 1.2, speed: 1.5 },
+    // Into bed.
+    { at: 9.8, type: "player_look", target: "bed_sleep", duration: 0.5 },
+    { at: 10.4, type: "player_walk", to: "bed_side", duration: 1.0, speed: 1.4 },
     {
-      at: 18.2,
+      at: 11.6,
       type: "player_pose",
       pose: "lie",
-      surface: "up_bed_mattress",
+      surface: "bed_sleep",
       lift: 0.32,
-      roll: -0.75,
-      pitch: 0.12,
-      duration: 1.4,
+      slide: 1.0,
+      roll: -0.6,
+      pitch: 0.1,
+      duration: 1.5,
     },
-    { at: 18.4, type: "sfx", sound: "aww", volume: 0.42 },
-    { at: 19.8, type: "player_gesture", gesture: "nod_yes", duration: 0.9 },
-    { at: 20.4, type: "fade", to: 1, duration: 1.6 },
+    { at: 12.0, type: "sfx", sound: "aww", volume: 0.4 },
+    { at: 13.4, type: "player_gesture", gesture: "nod_yes", duration: 0.9 },
+    { at: 14.6, type: "sfx", sound: "yawn", volume: 0.4 },
+    { at: 15.4, type: "player_gesture", gesture: "shake_no", duration: 1.0 },
+    { at: 16.0, type: "sfx", sound: "swoosh", volume: 0.2 },
   ],
 });

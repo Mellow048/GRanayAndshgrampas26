@@ -25,6 +25,7 @@ import {
   resolvePropPlacement,
   isEmbedded,
 } from "./stagingSafety.js";
+import { route as planFloorRoute, validateRoute, snap as snapToFloor } from "./nav/houseNav.js";
 
 /* ------------------------------------------------------------------ *
  * Tunables
@@ -611,6 +612,7 @@ export function validateEpisode(episode, options = {}) {
     const fromName = beat.from || (isWalk ? playerState?.name : actorState.get(beat.actor)?.name);
     const toName = typeof beat.to === "string" ? beat.to : null;
     const startPos = resolved(fromName) || (isWalk ? playerState : actorState.get(beat.actor));
+    let plannedRoute = null;
     const endWp = toName ? resolved(toName) : null;
 
     if (toName && !endWp && !actorState.has(toName)) {
@@ -650,6 +652,53 @@ export function validateEpisode(episode, options = {}) {
     }
 
     if (startPos && endWp) {
+      // ---- Real floor gate -------------------------------------------------
+      // Every walk is planned on the baked surface of the actual house, so a
+      // route can only follow floor that exists. If no such route exists the
+      // character would have to fly, and that is an error, not a style note.
+      if (isWalk) {
+        const planned = planFloorRoute(startPos, endWp);
+        plannedRoute = planned;
+        if (!planned) {
+          issues.push(
+            issue(
+              "NO_WALKABLE_ROUTE",
+              "error",
+              beat.at,
+              `No floor route from "${fromName || "here"}" to "${toName}" — the only way there is through a wall, off a ledge or up a staircase this house does not have.`,
+              { actor: beat.actor, ...fixNote(false, "Pick a target on the same floor, or add the missing geometry.") }
+            )
+          );
+        } else {
+          const problems = validateRoute(planned);
+          if (problems.length) {
+            const first = problems[0];
+            issues.push(
+              issue(
+                "ROUTE_OFF_FLOOR",
+                "error",
+                beat.at,
+                `The route to "${toName}" leaves the floor (${problems.length} samples, first at ${first.kind.toLowerCase()} near x=${first.x.toFixed(1)}, z=${first.z.toFixed(1)}).`,
+                { actor: beat.actor, ...fixNote(false, "Re-bake the nav or move the waypoint onto real floor.") }
+              )
+            );
+          }
+          // The endpoint must actually sit on floor.
+          const snapped = snapToFloor(endWp.x, endWp.z, endWp.y ?? 0);
+          if (!snapped || Math.hypot(snapped.x - endWp.x, snapped.z - endWp.z) > 0.6) {
+            issues.push(
+              issue(
+                "WAYPOINT_OFF_FLOOR",
+                "warn",
+                beat.at,
+                `"${toName}" is ${snapped ? Math.hypot(snapped.x - endWp.x, snapped.z - endWp.z).toFixed(1) + "m" : "well"} away from any standable floor.`,
+                { actor: beat.actor, ...fixNote(false, "Snap the waypoint to the baked floor.") }
+              )
+            );
+          }
+        }
+      }
+
       const straight = Math.hypot(endWp.x - startPos.x, endWp.z - startPos.z);
       const chain = doorwayChain(setMap, navGraph, fromName, toName);
       let graphLen = 0;
@@ -664,7 +713,7 @@ export function validateEpisode(episode, options = {}) {
       const missingDoorway =
         chain && chain.length > 2 && graphLen > straight * 1.12 && viaNames.length === 0;
 
-      if (missingDoorway) {
+      if (missingDoorway && !plannedRoute) {
         // Prefer the doorway-named stops (readable `via`), but fall back to the
         // whole inter-room chain when the path never passes a named doorway.
         const doorwayStops = chain.slice(1, -1).filter((n) => isDoorway(n));
@@ -697,7 +746,12 @@ export function validateEpisode(episode, options = {}) {
       // Test the real via chain, not the straight line from start to finish —
       // a doorway detour is exactly how you avoid walking through somebody.
       const legs = [];
-      {
+      if (plannedRoute && plannedRoute.length >= 2) {
+        // Measure against the path the character will really walk.
+        for (let i = 1; i < plannedRoute.length; i += 1) {
+          legs.push([plannedRoute[i - 1], plannedRoute[i]]);
+        }
+      } else {
         let prev = startPos;
         for (const name of Array.isArray(beat.via) ? beat.via : []) {
           const wp = resolved(name);

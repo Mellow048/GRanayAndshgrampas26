@@ -615,6 +615,39 @@ export function createPropMesh(propType) {
       break;
     }
 
+    case "bed": {
+      group.userData.seat = false;
+      // A bed of our own, spawned once in an empty corner of the real house.
+      // (The house FBX has no bed mesh on the ground floor — its only bed is on
+      // the second floor, which has no staircase to reach it.)
+      const frameMat = new THREE.MeshStandardMaterial({ color: 0x8a6a44, roughness: 0.85 });
+      const sheetMat = new THREE.MeshStandardMaterial({ color: 0xf4f1e6, roughness: 0.95 });
+      const blanketMat = new THREE.MeshStandardMaterial({ color: 0x4f8d6b, roughness: 0.9 });
+      const pillowMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.3, 1.96), frameMat);
+      frame.name = "BedFrame";
+      frame.position.y = 0.15;
+      group.add(frame);
+      const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.2, 1.9), sheetMat);
+      mattress.name = "BedMattress";
+      mattress.position.y = 0.4;
+      group.add(mattress);
+      const blanket = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.08, 1.2), blanketMat);
+      blanket.name = "BedBlanket";
+      blanket.position.set(0, 0.53, 0.34);
+      group.add(blanket);
+      const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.14, 0.32), pillowMat);
+      pillow.name = "BedPillow";
+      pillow.position.set(0, 0.56, -0.72);
+      group.add(pillow);
+      const headboard = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.62, 0.08), frameMat);
+      headboard.position.set(0, 0.55, -1.0);
+      group.add(headboard);
+      group.userData.seat = false;
+      group.userData.topY = 0.5;
+      break;
+    }
+
     case "shelf": {
       group.userData.seat = false;
       // A small wooden shelf that sits *inside* an existing piece of house

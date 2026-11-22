@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { CONFIG, SET_MAP, NAV_GRAPH } from "./config.js";
 import { findTaggedObject, getObjectBounds } from "./assetLoader.js";
 import { validateAndRepair, formatStagingReport } from "./episodeSafety.js";
+import { route as planFloorRoute } from "./nav/houseNav.js";
 import {
   BODY,
   makeCapsule,
@@ -296,6 +297,26 @@ export class EpisodeRunner {
   buildPathWithSegments(fromPos, toPos) {
     const startVec = new THREE.Vector3(fromPos.x ?? 0, fromPos.y ?? 0, fromPos.z ?? 0);
     const goalVec = new THREE.Vector3(toPos.x ?? 0, toPos.y ?? 0, toPos.z ?? 0);
+
+    // Walk the baked floor of the real house. Hand-authored NAV_GRAPH hops are
+    // only a fallback: they are just numbers in space and can cross a wall.
+    const planned = planFloorRoute(
+      { x: startVec.x, y: startVec.y, z: startVec.z },
+      { x: goalVec.x, y: goalVec.y, z: goalVec.z }
+    );
+    if (planned && planned.length >= 2) {
+      const pts = [startVec.clone()];
+      for (const p of planned) {
+        const v = new THREE.Vector3(p.x, p.y, p.z);
+        if (pts[pts.length - 1].distanceTo(v) > 0.06) pts.push(v);
+      }
+      if (pts.length >= 2) {
+        return {
+          points: pts,
+          segments: pts.slice(1).map(() => ({ isJumpArc: false, arcHeight: 0 })),
+        };
+      }
+    }
 
     if (startVec.distanceTo(goalVec) < 0.05) {
       return { points: [startVec, goalVec], segments: [{ isJumpArc: false, arcHeight: 0 }] };
