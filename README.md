@@ -3,6 +3,7 @@
 A zero-build Three.js (`v0.170.0`) first-person **Granny POV Kids-Comedy 3D Cartoon Studio** set inside the Granny 1 House (`./Assets/granny-1-house/source/GrannyHouse.fbx`), featuring Mixamo-retargeted Granny & Grandpa rigs, procedural 3D comedy props & 2D thought bubbles, a Web Audio BGM/SFX mixer (`./SoundEffects`), and a deterministic GitHub Actions cloud MP4 exporter (`16:9` widescreen & `9:16` vertical Shorts).
 
 ## Built-In POV Episodes
+- **Granny's Cookie Jar Heist (15s, `16:9` POV)** — `granny_cookie_heist_15s`: sneak up to the dining table, lift the cookie jar while Grandpa watches, get caught red-handed when Granny storms in through the doorway, then survive the jumpscare. Also the reference episode for the staging gate (0 errors, 0 warnings, world-aware).
 - **Grandpa Loses His Key & Granny's Mystery Box (44s, `16:9` POV)** — 3-skit first-person adventure: meet Grandpa in the living room, sneak past Granny and crouch-hide beside the bed, grab the glowing Golden Key from the kitchen, unlock the Mystery Chest, and survive Granny's rage chase!
 - **Granny & Grandpa: Jump, Run, Walk (6s, `9:16` Short)** — quick jump, sprint, and stroll showcase.
 
@@ -19,17 +20,17 @@ Every script is validated **before** it renders — spawn standoffs, prop suppor
 ```bash
 npm run validate:episode -- --preset grandpa_key_pov_44s   # human report + fixes
 npm run validate:episode -- --file my-episode.json --out fixed.json
-npm test                                                   # 12 geometry/rule tests
+npm test                                                   # 13 geometry/rule tests
 ```
 
 - `src/stagingSafety.js` — actor capsules, camera standoffs, prop surface snapping, wall-aware routing (pure JS, testable in Node).
-- `src/episodeSafety.js` — 14 linter codes with deterministic auto-repair; `EpisodeRunner.loadEpisode()` runs it automatically and keeps the report on `runner.staging`.
+- `src/episodeSafety.js` — 15 linter codes with deterministic auto-repair; `EpisodeRunner.loadEpisode()` runs it automatically and keeps the report on `runner.staging`.
 - The export workflow runs the same gate and writes the results into `export-summary.json`.
 
 ## Cloud Video Rendering (No Local Encoding Required)
 Trigger **Actions → Export POV Episode (Cloud Render)** (`.github/workflows/export-video.yml`) or run:
 ```bash
-gh workflow run export-video.yml --ref main -f preset=grandpa_key_pov_44s -f fps=30 -f sfx_pacer=true -f format=mp4
+gh workflow run export-video.yml --ref main -f preset=granny_cookie_heist_15s -f fps=30 -f sfx_pacer=true -f format=mp4
 ```
 The rendered `.mp4` is automatically published to the `latest-export` GitHub Release.
 
