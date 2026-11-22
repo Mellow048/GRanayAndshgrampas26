@@ -693,12 +693,29 @@ export function validateEpisode(episode, options = {}) {
         );
       }
 
-      // Does the straight leg pass through a performer standing on it?
+      // Does any leg of the route pass through a performer standing on it?
+      // Test the real via chain, not the straight line from start to finish —
+      // a doorway detour is exactly how you avoid walking through somebody.
+      const legs = [];
+      {
+        let prev = startPos;
+        for (const name of Array.isArray(beat.via) ? beat.via : []) {
+          const wp = resolved(name);
+          if (!wp) continue;
+          legs.push([prev, wp]);
+          prev = wp;
+        }
+        legs.push([prev, endWp]);
+      }
       for (const [id, state] of actorState) {
         if (id === beat.actor) continue;
         if (Math.abs((state.y ?? 0) - (startPos.y ?? 0)) > 1.2) continue;
-        const d = pointSegmentDistance2D(state, startPos, endWp);
-        if (d < BODY.radius + 0.12 && Math.hypot(endWp.x - startPos.x, endWp.z - startPos.z) > 0.3) {
+        const d = legs.reduce(
+          (min, [a, b]) => Math.min(min, pointSegmentDistance2D(state, a, b)),
+          Number.POSITIVE_INFINITY
+        );
+        const travelled = legs.some(([a, b]) => Math.hypot(b.x - a.x, b.z - a.z) > 0.3);
+        if (d < BODY.radius + 0.12 && travelled) {
           issues.push(
             issue(
               "CAMERA_CLIPS_ACTOR",

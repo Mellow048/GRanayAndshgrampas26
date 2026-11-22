@@ -615,6 +615,25 @@ export function createPropMesh(propType) {
       break;
     }
 
+    case "shelf": {
+      group.userData.seat = false;
+      // A small wooden shelf that sits *inside* an existing piece of house
+      // furniture (the kitchen fridge), so a prop can rest on something real
+      // instead of floating in front of a door.
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0xb98a4b, roughness: 0.75 });
+      const bracketMat = new THREE.MeshStandardMaterial({ color: 0x8a5f2b, roughness: 0.7 });
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.035, 0.34), woodMat);
+      plank.name = "ShelfPlank";
+      plank.position.y = 0.0175;
+      group.add(plank);
+      for (const sx of [-0.18, 0.18]) {
+        const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.12, 0.3), bracketMat);
+        bracket.position.set(sx, -0.06, 0);
+        group.add(bracket);
+      }
+      break;
+    }
+
     case "cookie_jar": {
       const jarMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.3 });
       const lidMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, roughness: 0.35 });

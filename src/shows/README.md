@@ -111,6 +111,28 @@ Studio previews:
 | `sfx { sound, volume }` | 28 clips; movement, pans and bubbles are automatic |
 | `fade { to, duration }` | fades are for story beats, CUTs are for scene changes |
 
+## Use the house you already have
+
+The house FBX is merged geometry, so there are no named "bed" or "fridge"
+objects — but they are there. Find them by scanning, not by guessing:
+
+```bash
+# surface-height map of a room (b = low platform / bed, t = table, H = tall unit)
+node /tmp/fwtest/heat2.mjs          # drop a ray grid, read the ASCII map
+```
+
+Facts already established (don't re-invent them):
+
+| Thing | Where | Height |
+| --- | --- | --- |
+| Bed (upstairs) | x -8.2..-6.8, z -3.9..-0.9 | mattress top **3.56** (`up_bed_mattress`) |
+| Table (upstairs) | x -6.0..-4.2, z -1.8..-1.0 | top **3.83** (`up_bed_top_west`) — this is the table, not the bed |
+| Fridge (kitchen) | x -6.9..-5.1, z -0.6..-0.1 | tall unit on the north wall (`kitchen_fridge`) |
+| Counter (kitchen) | x -8.2..-7.1, z 0.2..1.3 | top **1.1** |
+
+Never build a second bed or a second fridge — put your prop on the real thing
+(the `shelf` prop exists exactly for that: a plank inside the existing fridge).
+
 ## The six rules that keep a 6-minute show clean
 
 1. **One room cluster per scene.** A scene may cross one doorway; if it crosses
@@ -126,6 +148,10 @@ Studio previews:
    them at each other with `targetActor`.
 5. **Argue, don't fight.** `argueBeats()` (`sceneKit.js`) stages two people
    bickering with bubbles and mumble SFX — kid-safe, no punches, no terrified.
-6. **Run the gate per scene while writing** (`--scene <id>`), then the whole show
+6. **Camera never stares at blank geometry.** The upstairs has a decorative
+   shelf near the ceiling that reads as floating when you look straight up, so
+   `player_pose lie` uses a shallow roll (`roll: -0.75`, `pitch: 0.12`) instead
+   of pointing at the ceiling.
+7. **Run the gate per scene while writing** (`--scene <id>`), then the whole show
    once before rendering. A `SCENE_START_MISMATCH` warning means you left a gap
    between two scenes; fix it before it becomes a visible jump.

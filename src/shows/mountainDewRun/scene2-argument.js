@@ -59,12 +59,13 @@ export default defineScene({
     { at: 10.7, type: "char_face", actor: "grandpa", followPlayer: false },
     ...argueBeats({ from: 11.0, until: 20.0, a: "grandpa", b: "granny", interval: 1.3 }),
 
-    // Into the kitchen — scene 3 starts on this exact doorway.
-    { at: 12.4, type: "player_look", target: "kitchen_lane", duration: 0.45 },
+    // Out along the north side of the room — we do NOT walk between the two of
+    // them; they stay behind our left shoulder.
+    { at: 12.4, type: "player_look", target: "doorway_dining", duration: 0.45 },
     {
       at: 13.4,
       type: "player_walk",
-      via: ["dining_corner", "dining_lane", "dining_center", "kitchen_lane"],
+      via: ["dining_lane", "doorway_dining", "kitchen_lane"],
       to: "kitchen_fridge_front",
       duration: 9.4,
       speed: 2.0,
