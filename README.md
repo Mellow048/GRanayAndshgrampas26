@@ -13,6 +13,19 @@ A zero-build Three.js (`v0.170.0`) first-person **Granny POV Kids-Comedy 3D Cart
 - **Episode Production Guide (`EPISODE_PRODUCTION_GUIDE.md`)**: Complete playbook for generating high-retention Shorts & POV episodes (3-second pacing rules, doorway routing, BGM/SFX table, and copy-paste JSON template).
 - **Waypoints & Live Skit Editor (`src/studioUI.js`)**: Click any indoor `SET_MAP` waypoint to teleport, scout new coordinates with `WASD + Q/E`, test animations/bubbles/SFX, or edit & play multi-skit JSON scripts live.
 
+## Staging Safety Gate (no more clipping renders)
+Every script is validated **before** it renders — spawn standoffs, prop support, doorway routing, camera sightlines, reaction facing, dead air and framing:
+
+```bash
+npm run validate:episode -- --preset grandpa_key_pov_44s   # human report + fixes
+npm run validate:episode -- --file my-episode.json --out fixed.json
+npm test                                                   # 12 geometry/rule tests
+```
+
+- `src/stagingSafety.js` — actor capsules, camera standoffs, prop surface snapping, wall-aware routing (pure JS, testable in Node).
+- `src/episodeSafety.js` — 14 linter codes with deterministic auto-repair; `EpisodeRunner.loadEpisode()` runs it automatically and keeps the report on `runner.staging`.
+- The export workflow runs the same gate and writes the results into `export-summary.json`.
+
 ## Cloud Video Rendering (No Local Encoding Required)
 Trigger **Actions → Export POV Episode (Cloud Render)** (`.github/workflows/export-video.yml`) or run:
 ```bash

@@ -6,8 +6,9 @@ on:
       preset:
         description: "Episode preset to render"
         type: choice
-        default: "grandpa_key_pov_44s"
+        default: "granny_cookie_heist_15s"
         options:
+          - granny_cookie_heist_15s
           - grandpa_key_pov_44s
           - floor_is_lava_4m
           - jump_run_walk_6s
@@ -67,6 +68,20 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
+
+      - name: Run staging tests (no render)
+        run: node --test tests/*.test.mjs
+
+      - name: Staging gate — validate the episode before rendering
+        env:
+          EPISODE_JSON: ${{ inputs.episode_json }}
+        run: |
+          if [ -n "$EPISODE_JSON" ]; then
+            printf '%s' "$EPISODE_JSON" > /tmp/episode.json
+            node scripts/validate-episode.mjs --file /tmp/episode.json
+          else
+            node scripts/validate-episode.mjs --preset "${{ inputs.preset }}"
+          fi
 
       - name: Cache Playwright Chromium
         id: playwright-cache

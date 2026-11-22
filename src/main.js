@@ -186,6 +186,16 @@ async function bootstrap() {
   function loadEpisode(epObj) {
     const info = runner.loadEpisode(epObj);
     resizeRenderer(playerCamera.aspectKey);
+
+    // Surface the staging gate: the script is validated & repaired before it plays.
+    const staging = info?.staging;
+    if (staging && (staging.errorsAfter > 0 || staging.fixed > 0)) {
+      const message =
+        staging.errorsAfter > 0
+          ? `Staging: ${staging.errorsAfter} unfixable issue(s) — check the console.`
+          : `Staging: ${staging.fixed} auto-fix(es) applied (${staging.errorsBefore} error(s) caught).`;
+      ui?.toast(message, staging.errorsAfter > 0);
+    }
     ui?.setEpisodeJson(epObj);
     ui?.syncButtons();
     ui?.syncState({
@@ -349,8 +359,13 @@ async function bootstrap() {
         aspectKey: playerCamera.aspectKey,
         width: renderer.domElement.width,
         height: renderer.domElement.height,
+        staging: runner.staging?.stats || null,
+        stagingIssues: (runner.staging?.issues || []).map(({ code, severity, at, message, applied }) => ({
+          code, severity, at, message, applied: Boolean(applied),
+        })),
       };
     },
+    getStagingReport: () => runner.staging || null,
     advanceExportFrames: async (frameCount, dt) => {
       if (frameCount > 0 && dt > 0) {
         const subSteps = Math.max(1, Math.round(dt / CONFIG.fixedDt));

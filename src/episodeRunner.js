@@ -1,6 +1,15 @@
 import * as THREE from "three";
 import { CONFIG, SET_MAP, NAV_GRAPH } from "./config.js";
 import { findTaggedObject, getObjectBounds } from "./assetLoader.js";
+import { validateAndRepair, formatStagingReport } from "./episodeSafety.js";
+import {
+  BODY,
+  makeCapsule,
+  pushOutOfCapsules,
+  segmentClear,
+  dist3D,
+  dist2D,
+} from "./stagingSafety.js";
 
 const LOCOMOTION_ANIMS = new Set(["walk", "run", "run2", "sneak", "granny_walk", "jump"]);
 const PLAYER_PERSONAL_SPACE = 1.3;
@@ -63,6 +72,9 @@ export class EpisodeRunner {
 
     this.episode = null;
     this.events = [];
+    this.staging = null;
+    this._routeRepairs = 0;
+    this._detourCache = new Map();
     this.activeCharMoves = [];
     this.nextMoveId = 1;
 
@@ -89,11 +101,45 @@ export class EpisodeRunner {
       getWaypoint: (id) => (typeof id === "string" ? SET_MAP[id] || null : id),
       getScene: () => this.playerCamera?.scene || this.comedyProps?.scene || null,
     };
+
+    this._installStaging();
   }
 
   setHouse(house) {
     this.house = house;
     this.playerCamera?.setHouse(house);
+    this._installStaging();
+  }
+
+  /**
+   * Hands the house geometry to the camera and the prop manager, and gives the
+   * camera a live view of the cast so it can keep the lens out of their bodies.
+   */
+  _installStaging() {
+    const world = this.house?.stagingWorld || null;
+    const actorProvider = () => Object.values(this.characters || {});
+    if (this.playerCamera) {
+      this.playerCamera.actorProvider = actorProvider;
+      if (this.playerCamera.house == null && this.house) this.playerCamera.setHouse(this.house);
+    }
+    this.comedyProps?.setStaging(world, actorProvider);
+  }
+
+  /** Capsules for every visible performer except `excludeId`. */
+  _actorCapsules(excludeId = null) {
+    const out = [];
+    for (const actor of Object.values(this.characters || {})) {
+      if (!actor?.root || actor.root.visible === false) continue;
+      if (excludeId && actor.id === excludeId) continue;
+      out.push(
+        makeCapsule({
+          id: actor.id,
+          position: actor.root.position,
+          height: actor.spec?.targetHeight ?? BODY.height,
+        })
+      );
+    }
+    return out;
   }
 
   resolveWaypoint(target) {
@@ -278,7 +324,59 @@ export class EpisodeRunner {
       });
     }
 
-    return this._finalizeChain(chain);
+    return this._finalizeChain(this._refineChainGeometry(chain));
+  }
+
+  /**
+   * Re-checks every straight leg of a compiled path against the actual house
+   * geometry and, where a leg clips a wall or a doorframe, replaces it with the
+   * 0.4m grid A* detour. This is what stops performers gliding through walls
+   * even when the authored `via` chain is wrong or missing.
+   */
+  /** Grid detours are expensive; a preset compiles the same legs repeatedly. */
+  _cachedDetour(world, a, b) {
+    const key = `${a.x.toFixed(2)},${a.y.toFixed(2)},${a.z.toFixed(2)}|${b.x.toFixed(2)},${b.y.toFixed(2)},${b.z.toFixed(2)}`;
+    if (this._detourCache.has(key)) return this._detourCache.get(key);
+    const detour = world.findPath(a, b);
+    this._detourCache.set(key, detour);
+    if (this._detourCache.size > 256) {
+      const first = this._detourCache.keys().next().value;
+      this._detourCache.delete(first);
+    }
+    return detour;
+  }
+
+  _refineChainGeometry(chain) {
+    const world = this.house?.stagingWorld;
+    if (!world || !chain || chain.length < 2) return chain;
+
+    const out = [chain[0]];
+    for (let i = 1; i < chain.length; i += 1) {
+      const next = chain[i];
+      const prev = out[out.length - 1];
+      const a = prev.pt;
+      const b = next.pt;
+
+      const elevated = Boolean(next.isJumpArc) || Boolean(prev.isJumpArc) || Math.abs(a.y - b.y) > 0.3;
+      if (elevated || segmentClear(world, a, b, { radius: 0.16, heights: [0.45, 1.15] })) {
+        out.push(next);
+        continue;
+      }
+
+      const detour = this._cachedDetour(world, a, b);
+      if (!detour || detour.length < 2) {
+        out.push(next);
+        continue;
+      }
+      this._routeRepairs += 1;
+      for (let k = 1; k < detour.length; k += 1) {
+        const p = detour[k];
+        const last = out[out.length - 1].pt;
+        if (dist3D(last, p) < 0.06) continue;
+        out.push({ pt: p.clone(), isJumpArc: false, arcHeight: 0, rerouted: true });
+      }
+    }
+    return out;
   }
 
   _finalizeChain(chain) {
@@ -546,8 +644,25 @@ export class EpisodeRunner {
   }
 
   loadEpisode(episodeJson) {
-    const episode =
+    const raw =
       typeof episodeJson === "string" ? JSON.parse(episodeJson) : episodeJson;
+
+    // Staging gate: validate the script, auto-repair what is deterministic, and
+    // keep the report on the instance so the UI / exporter can show it.
+    const autoRepair = CONFIG.staging?.autoRepair !== false;
+    const report = validateAndRepair(raw, {
+      setMap: SET_MAP,
+      navGraph: NAV_GRAPH,
+      autoFix: autoRepair,
+      world: this.house?.stagingWorld || null,
+    });
+    this.staging = report;
+    if (report.issues.length > 0) {
+      const line = formatStagingReport(report);
+      if (report.stats.errorsAfter > 0) console.warn(`[staging]\n${line}`);
+      else console.info(`[staging]\n${line}`);
+    }
+    const episode = autoRepair ? report.episode : raw;
 
     this.episode = episode;
     this.reset();
@@ -557,6 +672,8 @@ export class EpisodeRunner {
       title: episode.title ?? "Untitled Episode",
       duration: this.duration,
       eventCount: this.events.length,
+      staging: report.stats,
+      issues: report.issues,
     };
   }
 
@@ -879,7 +996,9 @@ export class EpisodeRunner {
       for (let j = i + 1; j < visibleActors.length; j += 1) {
         const actorA = visibleActors[i];
         const actorB = visibleActors[j];
-        if (movingActorSet.has(actorA) || movingActorSet.has(actorB)) continue;
+        const aMoving = movingActorSet.has(actorA);
+        const bMoving = movingActorSet.has(actorB);
+        if (aMoving && bMoving) continue;
         const a = actorA.root.position;
         const b = actorB.root.position;
         if (Math.abs(a.y - b.y) > 0.55) continue;
@@ -895,11 +1014,11 @@ export class EpisodeRunner {
           const az = a.z - nz * push;
           const bx = b.x + nx * push;
           const bz = b.z + nz * push;
-          if (!this.house || a.y >= 0.4 || this.house.isPointInsideWalkable(ax, az)) {
+          if (!aMoving && (!this.house || a.y >= 0.4 || this.house.isPointInsideWalkable(ax, az))) {
             a.x = ax;
             a.z = az;
           }
-          if (!this.house || b.y >= 0.4 || this.house.isPointInsideWalkable(bx, bz)) {
+          if (!bMoving && (!this.house || b.y >= 0.4 || this.house.isPointInsideWalkable(bx, bz))) {
             b.x = bx;
             b.z = bz;
           }
@@ -1105,6 +1224,17 @@ export class EpisodeRunner {
             z: actor.root.position.z,
           };
       const stops = [...(ev.via || []), ev.to];
+      const caps = this._actorCapsules(ev.actor);
+      if (caps.length && stops.length) {
+        const dest = this.resolveWaypoint(stops[stops.length - 1]);
+        const nudged = pushOutOfCapsules(dest, caps, {
+          pad: 0.5,
+          world: this.house?.stagingWorld || null,
+        });
+        if (nudged.dodged.length || dist2D(nudged.pos, dest) > 0.02) {
+          stops[stops.length - 1] = { x: nudged.pos.x, y: nudged.pos.y, z: nudged.pos.z };
+        }
+      }
       const { points, segments } = this._buildFullStopChain(from, stops);
 
       const requestedAnim = ev.anim || "walk";
@@ -1161,6 +1291,7 @@ export class EpisodeRunner {
       }
       if (ev.target === "player" && this.playerCamera) {
         actor.faceTarget(this.playerCamera.camera.position, speed);
+        if (ev.persist !== false) actor.lookAtPlayer(true);
       } else if (ev.target) {
         actor.faceTarget(this.resolveWaypoint(ev.target), speed);
       }

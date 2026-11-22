@@ -3,6 +3,8 @@
  * and built-in POV & Shorts episode presets.
  */
 
+import { GRANNY_COOKIE_HEIST_15S } from "./episodes/cookieHeist15s.js";
+
 export const CONFIG = {
   threeVersion: "0.170.0",
   fixedStepHz: 60,
@@ -27,6 +29,15 @@ export const CONFIG = {
   house: {
     scale: 0.42,
     groundFloorRawY: 13.32,
+  },
+  /** Body-aware staging guard rails (see src/stagingSafety.js & episodeSafety.js). */
+  staging: {
+    autoRepair: true,
+    castSeparation: 1.05,
+    playerStandoff: 1.15,
+    cameraStandoff: 1.15,
+    maxDeadAir: 2.5,
+    reportToConsole: true,
   },
   sfxPacer: {
     enabledByDefault: true,
@@ -744,6 +755,7 @@ export const FLOOR_IS_LAVA_4M = {
 };
 
 export const EPISODE_PRESETS = {
+  granny_cookie_heist_15s: GRANNY_COOKIE_HEIST_15S,
   grandpa_key_pov_44s: GRANDPA_KEY_POV_44S,
   floor_is_lava_4m: FLOOR_IS_LAVA_4M,
   jump_run_walk_6s: JUMP_RUN_WALK_EPISODE,

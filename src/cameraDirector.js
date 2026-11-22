@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CONFIG } from "./config.js";
+import { BODY, makeCapsule, pushOutOfCapsules } from "./stagingSafety.js";
 
 function clamp01(v) {
   return v < 0 ? 0 : v > 1 ? 1 : v;
@@ -51,6 +52,7 @@ export class CameraDirector {
 
     this.shakeIntensity = 0;
     this.shakePhase = 0;
+    this.actorProvider = null;
 
     // Reusable scratch vectors
     this._desiredPos = new THREE.Vector3();
@@ -267,9 +269,42 @@ export class CameraDirector {
       }
     }
 
+    // Keep a real standoff from the subject: a "closeup" must never put the
+    // lens inside the head it is framing.
+    const headVec = new THREE.Vector3(this._targetPos.x, this._targetPos.y + headY, this._targetPos.z);
+    const toSubject = new THREE.Vector3().subVectors(outPos, headVec);
+    const minStandoff = this.shot.mode === "closeup" ? BODY.radius + 0.8 : 0.7;
+    if (toSubject.length() < minStandoff) {
+      toSubject.setLength(minStandoff);
+      outPos.copy(headVec).add(toSubject);
+    }
+
     // Never allow walls, furniture, ceiling, or exterior geometry to block camera sightlines
     if (this.house && typeof this.house.clampCameraPosition === "function") {
       outPos.copy(this.house.clampCameraPosition(outLook, outPos, 0.8));
+    }
+
+    // ... and never let the lens sit inside another performer either.
+    if (this.actorProvider) {
+      const caps = [];
+      for (const actor of this.actorProvider()) {
+        if (!actor?.root || actor.root.visible === false) continue;
+        if (isActor && this.shot.target && actor.id === this.shot.target) continue;
+        caps.push(
+          makeCapsule({
+            id: actor.id,
+            position: actor.root.position,
+            height: actor.spec?.targetHeight ?? BODY.height,
+          })
+        );
+      }
+      if (caps.length) {
+        const pushed = pushOutOfCapsules(outPos, caps, {
+          pad: 0.28,
+          world: this.house?.stagingWorld || null,
+        });
+        if (pushed.dodged.length) outPos.copy(pushed.pos);
+      }
     }
   }
 
