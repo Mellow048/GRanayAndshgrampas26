@@ -32,6 +32,7 @@ When asked to make a new episode (15 seconds, 5 minutes, or 40+ minutes):
 - `src/stagingSafety.js` — dependency-free staging geometry: actor capsules (`makeCapsule`, `pushOutOfCapsules`), camera placement (`findSafeCameraSpot`), prop support (`resolvePropPlacement`), route validity (`findBlockedLeg`, `ensureRoute`).
 - `src/episodeSafety.js` — script linter + deterministic auto-repair (`validateEpisode`, `validateAndRepair`) for spawn collisions, floating/overlapping props, wall-cutting routes, tight standoffs, action-less SFX, weapons left in hand, reactions facing away, dead air and framing.
 - `scripts/validate-episode.mjs` — `npm run validate:episode`, exits non-zero when an error survives repair (the export workflow runs it before rendering).
+- `src/shows/` — long-form show registry (`SHOWS`, `buildShow`, `sceneKit.defineScene`); one file per scene, welded with CUTs and a `sceneMap`.
 - `src/studioUI.js` & `src/main.js` — Director controls, 28-clip Soundboard, Waypoint Calibrator (`WASD + Q/E`), Live Multi-Skit JSON Editor, and `window.__GRANNY_STUDIO__` headless export hooks.
 - `scripts/export-video.mjs` & `.github/workflows/export-video.yml` — Headless Playwright (SwiftShader WebGL) + FFmpeg video/BGM/ducking/SFX pipeline auto-publishing `.mp4`/`.webm` + `export-summary.json` to the `latest-export` GitHub Release.
 
@@ -45,6 +46,14 @@ When asked to make a new episode (15 seconds, 5 minutes, or 40+ minutes):
 
 ---
 
+
+## Scene Architecture (Must Preserve)
+
+1. **One scene = one file.** `src/shows/<show>/sceneN-*.js`, 10–20s of story, 4–5 beats, local `at` timings. A 5–6 minute show is 20–24 of them. Never grow a single 900-line timeline again.
+2. **Scene boundaries are CUTs.** `buildShow()` (`src/shows/index.js` → `src/episodeBuilder.js`) emits fade → `char_cut` → prop reset → `cut` → fade. Don't hand-author a 40s walk between scenes.
+3. **Scene-scoped gate.** `node scripts/validate-episode.mjs --show <id> [--scene <id>]`. Every issue carries `scene` / `sceneIndex`; `formatStagingReport()` groups by scene. Fix the scene, not the timestamp.
+4. **Props belong to a scene.** They are re-seated on the real surface at every cut (`prop_action reset`), and `prop_action { action: "place", waypoint }` can move one mid-show.
+5. **Face the lens.** `char_face { followPlayer: true }` turns the body; `setHeadTrack()` (assetLoader) keeps the **head** on the camera through any clip, clamped to ±54°/±24°. Reactions enable it automatically — never ship a taunt played to the wall.
 
 ## Anti-Patterns (NEVER DO THIS)
 

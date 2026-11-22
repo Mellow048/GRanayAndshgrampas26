@@ -552,6 +552,24 @@ export function createPropMesh(propType) {
       break;
     }
 
+    case "soda_can": {
+      // A chunky cartoon energy-drink can (the "Mountain Dew" beat).
+      const canMat = new THREE.MeshStandardMaterial({ color: 0x65e02a, roughness: 0.35, metalness: 0.15 });
+      const bandMat = new THREE.MeshStandardMaterial({ color: 0x0b7a3b, roughness: 0.4 });
+      const topMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.25, metalness: 0.7 });
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.24, 18), canMat);
+      body.position.y = 0.12;
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0765, 0.0765, 0.08, 18), bandMat);
+      band.position.y = 0.15;
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.075, 0.025, 18), topMat);
+      top.position.y = 0.2525;
+      const tab = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.007, 6, 12), topMat);
+      tab.position.set(0.02, 0.266, 0);
+      tab.rotation.x = Math.PI / 2;
+      group.add(body, band, top, tab);
+      break;
+    }
+
     case "cookie_jar":
     default: {
       const jarMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.3 });
@@ -606,6 +624,18 @@ export class ComedyPropManager {
     return out;
   }
 
+  /** World boxes of every visible prop, for body-vs-prop avoidance. */
+  getObstacleBoxes() {
+    const out = [];
+    for (const p of this.props.values()) {
+      if (p.mesh.visible === false) continue;
+      const box = new THREE.Box3().setFromObject(p.mesh);
+      if (box.isEmpty()) continue;
+      out.push({ id: p.id, min: box.min.clone(), max: box.max.clone() });
+    }
+    return out;
+  }
+
   /**
    * Seats a prop's origin so its mesh rests on the surface underneath and does
    * not intersect another prop. Returns the final position (origin space).
@@ -613,10 +643,13 @@ export class ComedyPropManager {
   seatProp(mesh, desiredOrigin, exceptId = null) {
     if (!this.world || !mesh) return desiredOrigin.clone();
 
+    mesh.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(mesh);
     if (box.isEmpty()) return desiredOrigin.clone();
     const size = box.getSize(new THREE.Vector3());
-    const centerOffsetY = (box.min.y + box.max.y) / 2;
+    // Distance from the mesh ORIGIN to the centre of its bounding box. Using the
+    // world centre here (the old bug) lifted every table prop by its own height.
+    const centerOffsetY = (box.min.y + box.max.y) / 2 - mesh.position.y;
     const half = {
       x: Math.max(0.03, size.x / 2),
       y: Math.max(0.03, size.y / 2),
@@ -867,6 +900,27 @@ export class ComedyPropManager {
         mesh.visible = true;
         state.bounce = true;
         break;
+      case "place": {
+        // Put the prop down where the story says: on a waypoint, seated on the
+        // real surface under it (never floating, never inside furniture).
+        const wpRef = params.at || params.waypoint;
+        const wp = typeof wpRef === "string" ? this.waypoints[wpRef] : wpRef;
+        if (wp) {
+          basePos.set(wp.x + (params.spawnOffset?.x || 0), wp.y, wp.z + (params.spawnOffset?.z || 0));
+          mesh.position.copy(basePos);
+          mesh.rotation.set(0, params.rotationY ?? entry.initial.rotationY, 0);
+          const seated = this.seatProp(mesh, basePos, propId);
+          mesh.position.copy(seated);
+          basePos.copy(seated);
+        }
+        mesh.visible = true;
+        state.bounce = false;
+        state.popOut = false;
+        state.popEndPos = null;
+        state.spin = Boolean(params.spin);
+        state.float = Boolean(params.float);
+        break;
+      }
       case "stop":
         state.bounce = false;
         state.spin = false;

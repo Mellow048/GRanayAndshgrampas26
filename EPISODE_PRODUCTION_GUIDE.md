@@ -255,10 +255,128 @@ It will **not** invent story: anything it cannot repair deterministically stays 
 
 ---
 
-## 8. Pre-Render Checklist & Cloud Rendering
+## 8. Long-Form (5–6 min): Build It In Scenes
+
+A 15-second gag fits in one file. A 6-minute POV short **does not**: it is
+20–24 scenes, and every scene must be small enough to fix on its own.
+
+### The rule
+
+> **One scene = one file = one room cluster = 10–20 seconds = 4–5 beats.**
+
+Never author a 900-line timeline with global timestamps. When something looks
+wrong at `4:12` you should be able to open `scene17-hallway.js`, see the floating
+prop in 40 lines, and re-render **that scene** — not hunt a wall of JSON.
+
+```
+src/shows/<show>/
+  index.js            storyboard: the scene order + show title/aspect
+  scene1-wake.js      14s  bedroom
+  scene2-argument.js  15s  dining
+  scene3-fridge.js    20s  kitchen
+  scene4-bed.js       12s  bedroom
+```
+
+Scenes use **local** timings (`at: 0` = scene start) and are welded together by
+`buildShow()` (`src/shows/index.js` → `buildEpisode()`), which inserts, at every
+scene boundary:
+
+1. `fade { to: 1 }` — 0.2s black,
+2. `char_cut` for each of the scene's actors — teleport + pose + prop reset,
+3. `prop_action { reset }` for the scene's props (re-seated on the real surface),
+4. `cut` — teleports the player to the scene's `playerSpawn` and snaps the view,
+5. `fade { to: 0 }` — back in.
+
+Nothing leaks across a cut: props are hidden if the next scene doesn't own them,
+held FPS items are cleared, and actors are re-posed.
+
+### Writing one scene
+
+```js
+import { defineScene } from "../sceneKit.js";
+
+export default defineScene({
+  id: "fridge",
+  title: "The Cold One",
+  room: "kitchen",
+  duration: 20,
+  playerSpawn: "dining_center",
+  playerFacing: "kitchen",
+  cast: { granny: { spawn: "living_room", facing: "living_room_left" } },
+  props: [{ id: "soda_can", type: "soda_can", spawn: "kitchen_table_top" }],
+  beats: [
+    { at: 0.0, type: "fade", to: 0, duration: 0.5 },
+    { at: 0.2, type: "player_walk", via: ["kitchen_lane"], to: "kitchen", duration: 3.2 },
+    { at: 4.8, type: "prop_action", prop: "soda_can", action: "pickup" },
+    { at: 4.8, type: "player_hold", prop: "soda_can" },
+  ],
+});
+```
+
+`sceneKit.defineScene()` rejects a scene with a bad id, a zero duration, no
+`playerSpawn`, or a beat scheduled past `duration`.
+
+### Scene-scoped gate
+
+```bash
+node scripts/validate-episode.mjs --list-shows                  # storyboard
+node scripts/validate-episode.mjs --show mountain_dew_run       # full show, grouped by scene
+node scripts/validate-episode.mjs --show mountain_dew_run --scene bed
+```
+
+The report is grouped per scene, and every issue carries `scene` / `sceneIndex`:
+
+```
+Staging report — 0 error(s), 0 warning(s) remaining · 2 auto-fix(es)
+Scene 4 — Back To Bed
+! [1:01] CAMERA_CLIPS_ACTOR: granny's route passes within 0.28m of grandpa …
+```
+
+### Reference storyboard: `mountain_dew_run` (61s, 4 scenes)
+
+| # | id | title | room | s | beats |
+| - | -- | ----- | ---- | - | ----- |
+| 1 | `wake` | Wake Up | bedroom | 14 | crouch→stand, look around, walk out to the stairs |
+| 2 | `argument` | The Argument | dining | 15 | Granny & Grandpa bicker, both glare at the lens, we sigh |
+| 3 | `fridge` | The Cold One | kitchen | 20 | grab the soda can, haul it back and up the stairs |
+| 4 | `bed` | Back To Bed | bedroom | 12 | `prop_action place` on the nightstand, collapse |
+
+Scale it: 20–24 scenes × 15s = 5–6 minutes.
+
+### Head tracking (the "look at me" mechanic)
+
+A taunt that plays to the wall is the single most damaging framing bug in these
+shorts. Two layers fix prospecting:
+
+1. **Body turn** — `char_face { followPlayer: true }` (reacts/animations do it
+   automatically unless `facePlayer: false`).
+2. **Head aim** — `setHeadTrack()` in `src/assetLoader.js` rotates the head bone
+   toward the live camera **on top of whatever clip is playing**, clamped to
+   ±54° yaw / ±24° pitch (tunable per beat with `maxHeadYaw` / `maxHeadPitch`) so
+   the neck never snaps. The maths lives in `headAimAngles()`
+   (`src/stagingSafety.js`) and is unit-tested.
+
+Emitted automatically when a reaction plays (`laugh`, `punch`, `terrified`,
+`panic`, `hit`, `jump`) or when a `char_face` beat fires. Clear it with
+`char_face { followPlayer: false }`.
+
+### Props on surfaces (no floating, no phasing)
+
+- `ComedyPropManager.seatProp()` measures the mesh's **own** bounding box, drops
+  a ray under it and rests the origin on the hit — the old code used the world
+  centre, which floated every table prop by its own half-height.
+- `prop_action { action: "place", waypoint: "up_bed_top_west" }` re-seats a prop
+  wherever the story needs it (nightstand, counter, bed).
+- Performers cannot walk through visible props: `char_move` destinations are
+  pushed out of prop boxes (`pushOutOfBoxes`), and the gate reports
+  `CAMERA_CLIPS_ACTOR` when a route sweeps a body.
+
+---
+
+## 9. Pre-Render Checklist & Cloud Rendering
 
 Before rendering a new episode JSON:
-0. **Run the gate:** `npm run validate:episode -- --file my-episode.json` — fix everything under `Remaining:`.
+0. **Run the gate:** `npm run validate:episode -- --file my-episode.json` (or `--show <id>` for a long-form show) — fix everything under `Remaining:` before rendering.
 1. **No dead air > 2.5s:** Scan `beats` timestamps — every `2.5s` window should have movement, camera change, prop flight/pickup, or character action.
 2. **Doorway-centered paths:** Every cross-room `player_walk` or `char_move` includes `doorway_living` / `doorway_dining` in `via`. Prefer `cut` / `char_cut` over long commutes.
 3. **Close-range cause-and-effect:** Any `punch` / `hit` happens within `1.4m` of its target or right after a prop impact.

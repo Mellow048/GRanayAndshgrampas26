@@ -3,6 +3,7 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { ASSET_MANIFEST, CONFIG, SEMANTIC_MESH_TAGS, SEMANTIC_OBJECT_REGIONS } from "./config.js";
 import { createPropMesh, ThoughtBubbleCache } from "./comedyProps.js";
+import { headAimAngles } from "./stagingSafety.js";
 
 const sharedBubbleCache = new ThoughtBubbleCache();
 
@@ -993,12 +994,25 @@ export function instantiateCharacter(id, template, animationClips) {
   let faceTargetGoal = null;
   let faceTurnSpeed = 12;
 
+  // Head-tracking ("look at me") state: the head aims at the lens independently
+  // of the animation clip, clamped so the neck never breaks.
+  let headTrack = { enabled: false, weight: 1, maxYaw: 0.95, maxPitch: 0.42 };
+  let headTrackYaw = 0;
+  let headTrackPitch = 0;
+
   let currentActionEntry = null;
   let currentAnimName = null;
   let speaking = false;
   let speakPhase = 0;
   let jumpOffsetY = 0;
   const lookTargetVec = new THREE.Vector3();
+  const tmpHeadPos = new THREE.Vector3();
+  const tmpHeadQuat = new THREE.Quaternion();
+  const tmpHeadQuatB = new THREE.Quaternion();
+  const tmpParentQuat = new THREE.Quaternion();
+  const tmpLocalQuat = new THREE.Quaternion();
+  const WORLD_UP = new THREE.Vector3(0, 1, 0);
+  const WORLD_RIGHT = new THREE.Vector3(1, 0, 0);
   const tmpHandWorldScale = new THREE.Vector3();
   const tmpBubbleWorld = new THREE.Vector3();
   const tmpBubbleNdc = new THREE.Vector3();
@@ -1086,6 +1100,48 @@ export function instantiateCharacter(id, template, animationClips) {
     if (lookAtPlayerEnabled) {
       faceTargetGoal = null;
     }
+  }
+
+  /**
+   * Keeps the head pointed at the lens while any animation plays, so a
+   * taunt/laugh never plays to the back of the room.
+   */
+  function setHeadTrack(enabled, opts = {}) {
+    headTrack = {
+      ...headTrack,
+      ...opts,
+      enabled: Boolean(enabled),
+    };
+    if (!headTrack.enabled) {
+      headTrackYaw = 0;
+      headTrackPitch = 0;
+    }
+  }
+
+  /** Applies the clamped world-space head turn on top of the clip pose. */
+  function applyHeadAim(targetPos, dt) {
+    if (!headBone || !targetPos) return;
+    const headPos = headBone.getWorldPosition(tmpHeadPos);
+    const aim = headAimAngles(headPos, targetPos, root.rotation.y, {
+      maxYaw: headTrack.maxYaw,
+      maxPitch: headTrack.maxPitch,
+    });
+    const weight = Math.max(0, Math.min(1, headTrack.weight ?? 1));
+    const rate = Math.min(1, Math.max(dt, 1 / 120) * 9);
+    headTrackYaw += (aim.yaw * weight - headTrackYaw) * rate;
+    headTrackPitch += (aim.pitch * weight - headTrackPitch) * rate;
+    if (Math.abs(headTrackYaw) < 1e-4 && Math.abs(headTrackPitch) < 1e-4) return;
+
+    tmpHeadQuat
+      .setFromAxisAngle(WORLD_UP, headTrackYaw)
+      .multiply(tmpHeadQuatB.setFromAxisAngle(WORLD_RIGHT, headTrackPitch));
+    headBone.parent.getWorldQuaternion(tmpParentQuat);
+    tmpLocalQuat
+      .copy(tmpParentQuat)
+      .invert()
+      .multiply(tmpHeadQuat)
+      .multiply(tmpParentQuat);
+    headBone.quaternion.premultiply(tmpLocalQuat);
   }
 
   function showBubble(iconName, duration = 2.0) {
@@ -1186,6 +1242,11 @@ export function instantiateCharacter(id, template, animationClips) {
       }
     }
 
+    // Head-only aim on top of whatever the clip is doing (taunts, laughs, idle).
+    if (headTrack.enabled && playerCameraPos) {
+      applyHeadAim(playerCameraPos, dt);
+    }
+
     // Subtle cartoon squash/bounce + head accent while speaking
     let speakBounceY = 0;
     let speakNod = 0;
@@ -1260,6 +1321,7 @@ export function instantiateCharacter(id, template, animationClips) {
     jumpOffsetY = 0;
     lookAtPlayerEnabled = false;
     faceTargetGoal = null;
+    setHeadTrack(false);
     bubbleTimer = 0;
     bubbleSprite.visible = false;
     setProp(null);
@@ -1305,6 +1367,10 @@ export function instantiateCharacter(id, template, animationClips) {
     faceTarget,
     lookAt,
     lookAtPlayer,
+    setHeadTrack,
+    get headTracking() {
+      return { ...headTrack };
+    },
     showBubble,
     hideBubble: () => showBubble(null),
     setProp,

@@ -8,8 +8,9 @@ import { THE_GREAT_ESCAPE_68S } from "./episodes/greatEscape75.js";
 import { ZOMBIE_FORT_5M } from "./episodes/zombieFort5m.js";
 import { COOKIE_CAPER_30S } from "./episodes/cookieCaper30.js";
 import { COMEDY_VARIETY_1M, COOKIE_HEIST_15S, ROCKET_BALL_TEST, ROCKET_BALL_x3 } from "./episodes.js";
+import { SHOWS, buildShow } from "./shows/index.js";
 
-export { COMEDY_VARIETY_1M, COOKIE_HEIST_15S, ZOMBIE_FORT_5M, COOKIE_CAPER_30S, ROCKET_BALL_TEST, ROCKET_BALL_x3 };
+export { COMEDY_VARIETY_1M, COOKIE_HEIST_15S, ZOMBIE_FORT_5M, COOKIE_CAPER_30S, ROCKET_BALL_TEST, ROCKET_BALL_x3, SHOWS };
 
 export const CONFIG = {
   threeVersion: "0.170.0",
@@ -2196,6 +2197,8 @@ export const THE_GREAT_ESCAPE_5M = {
 
 export const EPISODE_PRESETS = {
   granny_cookie_heist_15s: GRANNY_COOKIE_HEIST_15S,
+  // Long-form, scene-built shows (each scene is its own file under src/shows/).
+  mountain_dew_run: buildShow("mountain_dew_run"),
   comedy_variety_1m: COMEDY_VARIETY_1M,
   cookie_heist_15s: COOKIE_HEIST_15S,
   rocket_ball_test: ROCKET_BALL_TEST,

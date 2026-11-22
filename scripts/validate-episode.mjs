@@ -15,6 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { EPISODE_PRESETS, SET_MAP, NAV_GRAPH } from "../src/config.js";
+import { buildShow, listShows } from "../src/shows/index.js";
 import { validateAndRepair, formatStagingReport } from "../src/episodeSafety.js";
 
 const argv = process.argv.slice(2);
@@ -29,9 +30,32 @@ const autoFix = !has("--no-fix");
 const outPath = value("--out");
 const filePath = value("--file");
 const presetName = value("--preset");
+const showId = value("--show");
+const sceneId = value("--scene");
+
+if (has("--list-shows") || has("--scenes")) {
+  const shows = listShows();
+  for (const show of shows) {
+    console.log(`\n${show.id} — ${show.title} (${show.duration.toFixed(1)}s, ${show.scenes.length} scenes)`);
+    for (const [i, sc] of show.scenes.entries()) {
+      console.log(`  ${String(i + 1).padStart(2)}. ${sc.id.padEnd(12)} ${String(sc.duration).padStart(5)}s  ${sc.room || ""}  ${sc.title}`);
+    }
+  }
+  process.exit(0);
+}
 
 let targets = [];
-if (filePath) {
+if (showId || sceneId) {
+  const id = showId || presetName || "mountain_dew_run";
+  let ep;
+  try {
+    ep = buildShow(id, { onlyScene: sceneId || null });
+  } catch (err) {
+    console.error(err.message);
+    process.exit(2);
+  }
+  targets = [{ name: sceneId ? `${id}.${sceneId}` : id, episode: ep }];
+} else if (filePath) {
   const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
   targets = [{ name: path.basename(filePath), episode: raw }];
 } else if (presetName) {
@@ -66,8 +90,9 @@ if (asJson) {
       results.map((r) => ({
         preset: r.name,
         stats: r.stats,
-        issues: r.issues.map(({ code, severity, at, message, fix, applied }) => ({
-          code, severity, at, message, fix, applied,
+        scenes: r.episode?.sceneMap || [],
+        issues: r.issues.map(({ code, severity, at, message, fix, applied, scene, sceneTitle }) => ({
+          code, severity, at, message, fix, applied, scene, sceneTitle,
         })),
       })),
       null,

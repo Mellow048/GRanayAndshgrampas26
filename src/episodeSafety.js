@@ -48,6 +48,7 @@ export const STAGING_RULES = Object.freeze({
 /** Prop footprints (metres, half extents) used for overlap checks. */
 export const PROP_FOOTPRINTS = Object.freeze({
   cookie_jar: { x: 0.11, y: 0.13, z: 0.11 },
+  soda_can: { x: 0.08, y: 0.12, z: 0.08 },
   golden_key: { x: 0.13, y: 0.03, z: 0.06 },
   padlock: { x: 0.09, y: 0.11, z: 0.05 },
   treasure_chest: { x: 0.36, y: 0.28, z: 0.28 },
@@ -338,6 +339,9 @@ export function validateEpisode(episode, options = {}) {
   if (playerSpawnWp) {
     const eye = { x: playerSpawnWp.x, y: (playerSpawnWp.y ?? 0) + BODY.height * BODY.eyeFraction, z: playerSpawnWp.z };
     for (const s of spawns) {
+      // Different floor = different room: an XZ-only distance is meaningless
+      // (the upstairs bedroom sits directly above the dining table).
+      if (Math.abs((s.y ?? 0) - (playerSpawnWp.y ?? 0)) > 1.2) continue;
       const gap = Math.hypot(s.x - eye.x, s.z - eye.z);
       const hardHit = gap < BODY.radius + 0.14;
       if (gap < rules.playerStandoff) {
@@ -385,6 +389,7 @@ export function validateEpisode(episode, options = {}) {
 
   for (let i = 0; i < spawns.length; i += 1) {
     for (let j = i + 1; j < spawns.length; j += 1) {
+      if (Math.abs((spawns[i].y ?? 0) - (spawns[j].y ?? 0)) > 1.2) continue;
       const gap = Math.hypot(spawns[i].x - spawns[j].x, spawns[i].z - spawns[j].z);
       if (gap < rules.castSeparation) {
         issues.push(
@@ -469,10 +474,9 @@ export function validateEpisode(episode, options = {}) {
         isSpotFree: (pos, h) => !isEmbedded(world, pos, h),
       });
       finalPos = snap.pos;
-      if (autoFix && snap.snapped && !floorLevel && Math.abs(snap.pos.y - baseY) <= 0.25) {
-        // Remember the real surface height so the re-validation pass agrees.
-        def.yOffset = round(snap.pos.y - baseY, 3);
-      }
+      // NOTE: never write the snapped height back into `yOffset` — comedyProps
+      // treats position.y as the mesh ORIGIN, while this pass works in centre
+      // space, so persisting it lifted every table prop by its own half-height.
       if (autoFix && snap.nudged) {
         def.spawnOffset = {
           x: round(snap.pos.x - wp.x, 3),
@@ -568,6 +572,20 @@ export function validateEpisode(episode, options = {}) {
   const movesByActor = new Map();
   for (const beat of beats) {
     const type = beat.type;
+
+    // Scene cuts teleport performers/player — keep the tracked positions honest
+    // so later route checks do not compare against a room they already left.
+    if (type === "char_cut" && beat.actor) {
+      const wp = resolved(beat.to || beat.target);
+      if (wp) actorState.set(beat.actor, { x: wp.x, y: wp.y ?? 0, z: wp.z });
+      continue;
+    }
+    if (type === "cut" || type === "player_cut") {
+      const wp = resolved(beat.to || beat.target || beat.spawn);
+      if (wp) playerState = { x: wp.x, y: wp.y ?? 0, z: wp.z };
+      continue;
+    }
+
     const isMove = type === "char_move" || type === "move";
     const isWalk = type === "player_walk";
     if (!isMove && !isWalk) continue;
@@ -675,6 +693,7 @@ export function validateEpisode(episode, options = {}) {
       // Does the straight leg pass through a performer standing on it?
       for (const [id, state] of actorState) {
         if (id === beat.actor) continue;
+        if (Math.abs((state.y ?? 0) - (startPos.y ?? 0)) > 1.2) continue;
         const d = pointSegmentDistance2D(state, startPos, endWp);
         if (d < BODY.radius + 0.12 && Math.hypot(endWp.x - startPos.x, endWp.z - startPos.z) > 0.3) {
           issues.push(
@@ -800,7 +819,14 @@ export function validateEpisode(episode, options = {}) {
       let appliedNote = null;
       const candidates = (rule.anims || []).filter((a) => AVAILABLE_ANIMS.includes(a));
       const actorId = lastPerformingActor(beat.at);
-      if (autoFix && candidates.length && actorId) {
+      const beatScene = (ep.sceneMap || []).find(
+        (m) => beat.at >= m.start - 1e-6 && beat.at < m.end
+      );
+      const sceneCast = beatScene ? ep.sceneCasts?.[beatScene.id] : null;
+      const actorOnScreen =
+        (ep.cast?.some((c) => c.id === actorId) ?? false) &&
+        (!sceneCast || sceneCast.includes(actorId));
+      if (autoFix && candidates.length && actorId && actorOnScreen) {
         // A reaction we invent ourselves must also be sold to the lens.
         if (PLAYER_FACING_REACTIONS.has(candidates[0])) {
           insertAfter(beat, {
@@ -824,9 +850,13 @@ export function validateEpisode(episode, options = {}) {
       issues.push(
         issue(
           "SOUND_WITHOUT_ANIM",
-          "error",
+          // A cue for someone in another room is legitimate (you hear them
+          // arguing downstairs) — only an on-screen promise must be visible.
+          actorOnScreen ? "error" : "info",
           beat.at,
-          `SFX "${beat.sound}" promises ${rule.label} but no matching animation or prop fires around it.`,
+          actorOnScreen
+            ? `SFX "${beat.sound}" promises ${rule.label} but no matching animation or prop fires around it.`
+            : `SFX "${beat.sound}" is off-screen (${actorId || "the cast"} is not in this scene) — audio only.`,
           {
             ...fixNote(
               applied,
@@ -943,6 +973,22 @@ export function validateEpisode(episode, options = {}) {
 
   /* ---------------- Report ---------------- */
 
+  // Tag each issue with the scene it belongs to, so a 5-minute show reports
+  // "scene 12 — fridge" instead of a timestamp nobody can place.
+  const sceneMap = Array.isArray(ep.sceneMap) ? ep.sceneMap : [];
+  if (sceneMap.length) {
+    for (const item of issues) {
+      const scene =
+        sceneMap.find((m) => item.at >= m.start - 1e-6 && item.at < m.end) ||
+        sceneMap[sceneMap.length - 1];
+      if (scene) {
+        item.scene = scene.id;
+        item.sceneTitle = scene.title;
+        item.sceneIndex = scene.index;
+      }
+    }
+  }
+
   const errors = issues.filter((i) => i.severity === "error").length;
   const warnings = issues.filter((i) => i.severity === "warn").length;
   const fixed = issues.filter((i) => i.applied).length;
@@ -950,7 +996,14 @@ export function validateEpisode(episode, options = {}) {
   return {
     issues: issues.sort((a, b) => a.at - b.at || (a.severity === "error" ? -1 : 1)),
     episode: ep,
-    stats: { errors, warnings, fixed, beats: beats.length, duration: round(episodeEnd, 2) },
+    stats: {
+      errors,
+      warnings,
+      fixed,
+      beats: beats.length,
+      scenes: sceneMap.length,
+      duration: round(episodeEnd, 2),
+    },
   };
 }
 
@@ -997,6 +1050,7 @@ export function validateAndRepair(episode, options = {}) {
 /** Human-readable report used by the CLI, the studio toast and CI. */
 export function formatStagingReport(result) {
   const { issues, stats } = result;
+  const grouped = issues.some((i) => i.sceneIndex !== undefined);
   const lines = [];
   const fixedCount = stats.fixed ?? issues.filter((i) => i.applied).length;
   const errors = stats.errorsAfter ?? issues.filter((i) => !i.applied && i.severity === "error").length;
@@ -1016,21 +1070,40 @@ export function formatStagingReport(result) {
     return lines.join("\n");
   }
 
+  const sceneLabel = (i) =>
+    i.sceneIndex !== undefined
+      ? `Scene ${i.sceneIndex + 1}${i.sceneTitle ? ` — ${i.sceneTitle}` : i.scene ? ` — ${i.scene}` : ""}`
+      : "Whole episode";
+
+  const emit = (list, formatter) => {
+    let currentScene = null;
+    for (const i of list) {
+      if (grouped) {
+        const label = sceneLabel(i);
+        if (label !== currentScene) {
+          currentScene = label;
+          lines.push(`\n${label}`);
+        }
+      }
+      formatter(i);
+    }
+  };
+
   if (remaining.length) {
     lines.push("Remaining:");
-    for (const i of remaining) {
+    emit(remaining, (i) => {
       lines.push(`${icon[i.severity] || "·"} [${i.time}] ${i.code}: ${i.message}`);
       if (i.fix) lines.push(`    fix: ${i.fix}`);
-    }
+    });
   } else {
     lines.push("✓ Nothing left to fix.");
   }
 
   if (applied.length) {
-    lines.push("Auto-fixed:");
-    for (const i of applied) {
+    lines.push("\nAuto-fixed:");
+    emit(applied, (i) => {
       lines.push(`✔ [${i.time}] ${i.code}: ${i.fix || i.message}`);
-    }
+    });
   }
   return lines.join("\n");
 }
