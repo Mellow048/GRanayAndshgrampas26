@@ -644,7 +644,10 @@ export function validateEpisode(episode, options = {}) {
         chain && chain.length > 2 && graphLen > straight * 1.12 && viaNames.length === 0;
 
       if (missingDoorway) {
-        const needed = chain.slice(1, -1).filter((n) => isDoorway(n));
+        // Prefer the doorway-named stops (readable `via`), but fall back to the
+        // whole inter-room chain when the path never passes a named doorway.
+        const doorwayStops = chain.slice(1, -1).filter((n) => isDoorway(n));
+        const needed = doorwayStops.length ? doorwayStops : chain.slice(1, -1);
         let applied = false;
         if (autoFix && needed.length) {
           patchBeat(beat, { via: needed });
@@ -788,6 +791,8 @@ export function validateEpisode(episode, options = {}) {
       if (b.type === "char_anim" && (rule.anyAnim || rule.anims?.includes(b.anim))) return true;
       if (b.type === "char_prop" && rule.props?.includes(b.prop)) return true;
       if (b.type === "player_hold" && rule.props?.includes(b.prop)) return true;
+      // A meme sting can land on a prop slap or a camera gesture just as well as an anim.
+      if (rule.anyAnim && (b.type === "prop_action" || b.type === "player_gesture")) return true;
       return false;
     });
     if (!matched) {
@@ -796,6 +801,16 @@ export function validateEpisode(episode, options = {}) {
       const candidates = (rule.anims || []).filter((a) => AVAILABLE_ANIMS.includes(a));
       const actorId = lastPerformingActor(beat.at);
       if (autoFix && candidates.length && actorId) {
+        // A reaction we invent ourselves must also be sold to the lens.
+        if (PLAYER_FACING_REACTIONS.has(candidates[0])) {
+          insertAfter(beat, {
+            at: Math.round((beat.at + 0.01) * 100) / 100,
+            type: "char_face",
+            actor: actorId,
+            followPlayer: true,
+            instant: true,
+          });
+        }
         applied = insertAfter(beat, {
           at: Math.round((beat.at + 0.02) * 100) / 100,
           type: "char_anim",

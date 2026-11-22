@@ -520,16 +520,7 @@ function buildIndoorNavigation(houseRoot, allHouseMeshes) {
   };
 }
 
-/**
- * Loads and normalizes the Granny 1 House FBX so its Main Ground Floor sits at y = 0.
- */
-export async function loadHouse() {
-  const spec = ASSET_MANIFEST.house;
-  const rawHouse = await loadFbxWithTextures(
-    spec.fbxPath,
-    spec.textureDir,
-    spec.textureAliases
-  );
+export function setupHouseFromRaw(rawHouse) {
   removeEmbeddedCamerasAndLights(rawHouse);
   configureMaterialsAndShadows(rawHouse, {
     doubleSided: true,
@@ -568,6 +559,19 @@ export async function loadHouse() {
     ...nav,
     dispose: () => disposeObject3D(houseRoot),
   };
+}
+
+/**
+ * Loads and normalizes the Granny 1 House FBX so its Main Ground Floor sits at y = 0.
+ */
+export async function loadHouse() {
+  const spec = ASSET_MANIFEST.house;
+  const rawHouse = await loadFbxWithTextures(
+    spec.fbxPath,
+    spec.textureDir,
+    spec.textureAliases
+  );
+  return setupHouseFromRaw(rawHouse);
 }
 
 export function toSemanticTag(rawName = "") {

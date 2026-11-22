@@ -5,7 +5,7 @@ const BUBBLE_ICONS = {
   key: { symbol: "KEY", bg: "#fef08a", accent: "#ca8a04", draw: "key" },
   question: { symbol: "?", bg: "#e0f2fe", accent: "#0284c7", draw: "text" },
   exclamation: { symbol: "!", bg: "#fee2e2", accent: "#dc2626", draw: "text" },
-  zzz: { symbol: "ZZZ", bg: "#ede9fe", accent: "#6d28d9", draw: "text" },
+  zzz: { symbol: "Zzz", bg: "#ede9fe", accent: "#6d28d9", draw: "zzz" },
   angry: { symbol: "GRR!", bg: "#fecaca", accent: "#b91c1c", draw: "angry" },
   laugh: { symbol: "HAHA", bg: "#fef9c3", accent: "#ea580c", draw: "laugh" },
   food: { symbol: "COOKIE", bg: "#ffedd5", accent: "#c2410c", draw: "cookie" },
@@ -136,6 +136,25 @@ function drawComicBubbleTexture(iconName) {
       ctx.beginPath();
       ctx.arc(cx, cy, 5, 0, Math.PI * 2);
       ctx.fill();
+    }
+  } else if (spec.draw === "zzz") {
+    ctx.strokeStyle = "#0f172a";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (const [tx, ty, size, rot, col] of [
+      [-34, 14, 40, -0.14, "#7c3aed"],
+      [0, -4, 52, 0.08, "#6d28d9"],
+      [38, -22, 62, -0.1, "#5b21b6"],
+    ]) {
+      ctx.save();
+      ctx.translate(tx, ty);
+      ctx.rotate(rot);
+      ctx.font = `900 ${size}px ui-sans-serif, system-ui, sans-serif`;
+      ctx.lineWidth = 7;
+      ctx.fillStyle = col;
+      ctx.strokeText("Z", 0, 0);
+      ctx.fillText("Z", 0, 0);
+      ctx.restore();
     }
   } else if (spec.draw === "heart") {
     ctx.fillStyle = "#ec4899";
@@ -650,7 +669,8 @@ export class ComedyPropManager {
         child.userData.semanticLabel = propLabel;
         child.userData.aliases = mesh.userData.aliases;
       });
-      const wp = this.waypoints[def.spawn];
+      const wpName = def.spawn || def.waypoint;
+      const wp = typeof wpName === "string" ? this.waypoints[wpName] : wpName;
       const spawnOff = def.spawnOffset || null;
       const basePos = wp
         ? new THREE.Vector3(
@@ -676,6 +696,14 @@ export class ComedyPropManager {
         type: def.type,
         mesh,
         basePos: basePos.clone(),
+        initial: {
+          basePos: basePos.clone(),
+          rotationY: def.rotationY || 0,
+          scale: def.scale || 1,
+          visible: def.visible !== false,
+          spin: Boolean(def.spin),
+          float: Boolean(def.float),
+        },
         state: {
           spin: Boolean(def.spin),
           float: Boolean(def.float),
@@ -698,12 +726,63 @@ export class ComedyPropManager {
     return this.props.get(id) || null;
   }
 
+  resetProp(propId, params = {}) {
+    const entry = this.props.get(propId);
+    if (!entry) return;
+    const { mesh, state, basePos, initial } = entry;
+
+    const wpRef = params.at || params.waypoint;
+    if (wpRef && this.waypoints[wpRef]) {
+      const wp = this.waypoints[wpRef];
+      basePos.set(wp.x, wp.y + (params.yOffset ?? 0), wp.z);
+    } else {
+      basePos.copy(initial.basePos);
+      if (params.yOffset !== undefined) {
+        basePos.y += params.yOffset;
+      }
+    }
+
+    mesh.position.copy(basePos);
+    mesh.rotation.set(0, params.rotationY ?? initial.rotationY, 0);
+    mesh.scale.setScalar(params.scale ?? initial.scale);
+    mesh.visible = params.visible !== undefined ? Boolean(params.visible) : initial.visible;
+
+    state.spin = params.spin !== undefined ? Boolean(params.spin) : initial.spin;
+    state.float = params.float !== undefined ? Boolean(params.float) : initial.float;
+    state.bounce = false;
+    state.popOut = false;
+    state.popEndPos = null;
+    state.lidOpen = false;
+    state.pressed = false;
+    state.riseActive = false;
+    state.riseStartY = basePos.y;
+    state.riseTargetY = basePos.y;
+    state.riseElapsed = 0;
+    state.phase = 0;
+
+    const glow = mesh.getObjectByName("ChestGlow");
+    if (glow) glow.visible = false;
+    const sparkles = mesh.getObjectByName("ChestSparkles");
+    if (sparkles) sparkles.visible = false;
+    const lid = mesh.getObjectByName("ChestLid");
+    if (lid) lid.rotation.x = 0;
+    const flapL = mesh.getObjectByName("BoxFlapL");
+    if (flapL) flapL.rotation.z = 0;
+    const flapR = mesh.getObjectByName("BoxFlapR");
+    if (flapR) flapR.rotation.z = 0;
+    const btnCap = mesh.getObjectByName("ButtonCap");
+    if (btnCap) btnCap.position.y = 0.155;
+  }
+
   performAction(propId, action, params = {}) {
     const entry = this.props.get(propId);
     if (!entry) return;
     const { mesh, state, basePos } = entry;
 
     switch (action) {
+      case "reset":
+        this.resetProp(propId, params);
+        break;
       case "show":
         mesh.visible = true;
         state.bounce = false;
