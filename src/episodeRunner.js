@@ -1277,6 +1277,32 @@ export class EpisodeRunner {
       });
     }
 
+    if (type === "player_pose" && this.playerCamera) {
+      // Whole-body POV poses: stand back up, or lie on a real surface (bed).
+      let surfaceY = ev.surfaceY ?? null;
+      let surfaceX = null;
+      let surfaceZ = null;
+      const ref = ev.surface || ev.at;
+      if (typeof ref === "string") {
+        const wp = this.resolveWaypoint(ref);
+        if (wp) {
+          if (!Number.isFinite(surfaceY)) surfaceY = wp.y;
+          surfaceX = wp.x;
+          surfaceZ = wp.z;
+        }
+      }
+      return this.playerCamera.setPose({
+        pose: ev.pose || "stand",
+        surfaceY,
+        surfaceX,
+        surfaceZ,
+        lift: ev.lift ?? 0.3,
+        roll: ev.roll ?? -1.15,
+        pitch: ev.pitch ?? 0.22,
+        duration: ev.duration ?? 0.9,
+      });
+    }
+
     if (type === "player_hold" && this.playerCamera) {
       if (ev.prop !== undefined && ev.prop !== this.playerCamera.heldPropType) {
         this.playerCamera.holdProp(ev.prop ?? null);
@@ -1450,7 +1476,10 @@ export class EpisodeRunner {
           actor.lookAt(eyePos);
         }
       }
-      if (ev.target === "player" && this.playerCamera) {
+      if (ev.targetActor) {
+        const other = this.characters[ev.targetActor];
+        if (other) actor.faceTarget(other.root.position, speed);
+      } else if (ev.target === "player" && this.playerCamera) {
         const eyePos = this.playerCamera.getEyeWorldPosition
           ? this.playerCamera.getEyeWorldPosition()
           : this.playerCamera.camera.position;

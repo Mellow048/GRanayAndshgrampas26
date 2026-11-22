@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildShow, listShows, SHOWS, findScene } from "../src/shows/index.js";
-import { defineScene, describeScene } from "../src/shows/sceneKit.js";
+import { defineScene, describeScene, argueBeats } from "../src/shows/sceneKit.js";
 import { buildEpisode } from "../src/episodeBuilder.js";
-import { validateAndRepair, formatStagingReport } from "../src/episodeSafety.js";
+import { validateAndRepair, formatStagingReport, checkSceneContinuity } from "../src/episodeSafety.js";
 import { SET_MAP, NAV_GRAPH } from "../src/config.js";
 import {
   headAimAngles,
@@ -163,4 +163,80 @@ test("head aim cannot spin: bounded step, eased out when the lens is in your fac
   assert.equal(headAimWeight(1.6), 1);
   assert.equal(headAimWeight(0.2), 0);
   assert.ok(headAimWeight(0.6) > 0.3 && headAimWeight(0.6) < 0.7);
+});
+
+test("continuous scenes: nothing happens at the boundary", () => {
+  const a = defineScene({
+    id: "a",
+    title: "First",
+    duration: 4,
+    playerSpawn: "dining_center",
+    cast: { granny: { spawn: "dining_argue_west" } },
+    props: [{ id: "can", type: "soda_can", spawn: "kitchen_fridge_shelf", seat: false }],
+    beats: [{ at: 0.5, type: "player_walk", to: "kitchen_lane", duration: 2 }],
+  });
+  const b = defineScene({
+    id: "b",
+    title: "Second",
+    duration: 5,
+    playerSpawn: "kitchen_lane",
+    // no spawn: she is still where scene A left her
+    cast: { granny: {} },
+    beats: [
+      { at: 1.0, type: "player_look", target: "kitchen" },
+      // The show ends here, so this scene owns the closing fade.
+      { at: 4.6, type: "fade", to: 1, duration: 0.4 },
+    ],
+  });
+  const ep = buildEpisode({ title: "T", scenes: [a, b], requireCast: false, transitions: "continuous" });
+
+  const boundaries = ep.skits[1].beats.filter(
+    (x) =>
+      (x.type === "fade" && x.at < ep.sceneMap[1].end - 1) ||
+      x.type === "cut" ||
+      x.type === "char_cut" ||
+      x.type === "prop_action"
+  );
+  assert.deepEqual(boundaries, [], "a continuous boundary must not fade, cut, teleport or reset props");
+  assert.equal(ep.transitions, "continuous");
+  // The very first frame is not black: the show starts on the action.
+  assert.equal(ep.skits[0].beats.filter((x) => x.type === "fade" && x.to === 0).length, 0);
+  // The prop declared in scene A is seated exactly where the author put it.
+  assert.equal(ep.props[0].seat, false);
+  // Introducing an actor without a spawn is allowed; introducing them *first* is not.
+  assert.throws(
+    () =>
+      buildEpisode({
+        title: "T",
+        scenes: [defineScene({ id: "solo", title: "Solo", duration: 2, playerSpawn: "kitchen", cast: { granny: {} }, beats: [] })],
+        requireCast: false,
+        transitions: "continuous",
+      }),
+    /without a `spawn`/
+  );
+});
+
+test("the continuity guard catches a scene that starts somewhere else", () => {
+  const ep = buildShow("mountain_dew_run");
+  assert.equal(checkSceneContinuity(ep, { setMap: SET_MAP }).length, 0, "the reference show is continuous");
+
+  const broken = buildShow("mountain_dew_run");
+  broken.sceneMap[3].playerSpawn = "up_bed_north_side";
+  const issues = checkSceneContinuity(broken, { setMap: SET_MAP });
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].code, "SCENE_START_MISMATCH");
+  assert.equal(issues[0].scene, "bed");
+});
+
+test("argue staging is bubbles, not punches", () => {
+  const beats = argueBeats({ from: 2, until: 6, a: "granny", b: "grandpa", interval: 1 });
+  assert.ok(beats.length >= 6);
+  const types = new Set(beats.map((b) => b.type));
+  assert.ok(!types.has("char_anim"), "arguing must not play an attack animation");
+  const bubbles = beats.filter((b) => b.type === "char_bubble");
+  assert.deepEqual([...new Set(bubbles.map((b) => b.actor))].sort(), ["grandpa", "granny"]);
+  assert.ok(bubbles.every((b) => b.facePlayer === false), "they argue with each other, not the lens");
+  const faces = beats.filter((b) => b.type === "char_face");
+  assert.ok(faces.every((f) => f.targetActor === "granny" || f.targetActor === "grandpa"));
+  assert.ok(beats.every((b) => b.at >= 2 && b.at <= 6));
 });

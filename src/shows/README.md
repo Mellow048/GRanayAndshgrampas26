@@ -2,9 +2,13 @@
 
 A **show** is a list of **scenes**. A scene is a self-contained chunk of story with
 local timings (`at` starts at `0`) that you can write, preview, validate and fix
-on its own. `buildShow()` welds the scenes together with 0.4s black CUTs that
-teleport the player, reset the cast and re-seat every prop — so nothing leaks
-from scene 3 into scene 4.
+on its own.
+
+Shows are **continuous**: a scene boundary changes *nothing* on screen. The
+player keeps their exact position, facing and held prop, the cast stays where
+they were standing, and every prop stays where it was put. There is no fade, no
+cut, no teleport and no reset — the boundary is an authoring/validation seam,
+not an edit.
 
 ```
 src/shows/
@@ -26,6 +30,22 @@ src/shows/
 | fixing scene 4 re-renders the whole risky timeline | preview scene 4 alone in 2s |
 | 900 lines to diff | ~40 lines per file |
 | a typo at 3:12 breaks the whole render | the gate names the scene and the beat |
+
+### The continuity rule (this is the important one)
+
+> **Scene N+1 starts on the exact frame scene N ended on.**
+
+- `playerSpawn` of a scene must be where the previous scene's last walk ends.
+  `checkSceneContinuity()` walks the route and warns when it isn't
+  (`SCENE_START_MISMATCH`).
+- A scene's `cast: { granny: {} }` (no `spawn`) means "she is still here, where
+  you left her". Only the first scene that shows an actor gives them a `spawn`.
+- Props are declared **once**, in the scene where they enter the story (the can
+  is declared inside the fridge in scene 3) and simply persist afterwards.
+- Held items persist: pick the can up in scene 3, it is still in your hand in
+  scene 4.
+- No `fade`, `cut` or `char_cut` beats between scenes. The only fade in a show
+  is the last one.
 
 A 5–6 minute episode is **20–24 scenes**, not one 900-line blob. Target 10–20s per
 scene (4–5 story beats).
@@ -79,27 +99,33 @@ Studio previews:
 | `player_walk { to, via, duration, speed }` | POV movement; `via` is the doorway spine |
 | `player_look { target, duration, track }` | whip-pan; `track: true` follows a moving actor/prop |
 | `player_gesture { gesture }` | `nod_yes`, `shake_no`, `shake_panic`, `peek_lean` |
-| `player_crouch { crouched }` | lie down / get up / peek over furniture |
+| `player_crouch { crouched }` | get low / peek over furniture |
+| `player_pose { pose: "lie", surface: "up_bed_top_west" }` | lie on a real surface (bed): eye drops to the mattress, lens rolls |
 | `player_hold { prop }` | bottom-right held item (`"none"` stows it) |
 | `char_face { actor, followPlayer, instant }` | turns the body **and** heads the lens — always use before a taunt |
+| `char_face { actor, targetActor }` | turns an actor toward **another actor** (arguments, conversations) |
 | `char_anim { actor, anim, loop }` | `idle walk run run2 sneak jump laugh punch sit terrified panic` |
 | `char_move { actor, to, via, anim, duration }` | staged walking, auto-detoured around walls, bodies and props |
 | `char_bubble { actor, icon, duration }` | `key question exclamation zzz angry laugh food heart` |
-| `prop_action { prop, action }` | `show hide pickup place open close bounce pop_out stop` |
+| `prop_action { prop, action }` | `show hide pickup place open close bounce pop_out stop` — `open/close` swings a `fridge` door |
 | `sfx { sound, volume }` | 28 clips; movement, pans and bubbles are automatic |
 | `fade { to, duration }` | fades are for story beats, CUTs are for scene changes |
 
-## The five rules that keep a 6-minute show clean
+## The six rules that keep a 6-minute show clean
 
 1. **One room cluster per scene.** A scene may cross one doorway; if it crosses
    three rooms, split it.
-2. **CUT, never walk, between scenes.** The builder does it for you — don't
-   author a 40s "walk to the kitchen" transition.
-3. **Every prop belongs to exactly one scene.** It is re-seated on the real
-   surface at every cut, so scene 4 can put the can on the nightstand and scene 5
-   can find it there.
+2. **Never teleport.** If the story needs to move, *write the walk* — across the
+   boundary if necessary. Scene 2 of `mountain_dew_run` starts walking down the
+   stairs scene 1 stopped on.
+3. **Props enter once and persist.** Declare them where they appear in the
+   story; use `seat: false` when a prop rests on something that is not house
+   geometry (a fridge shelf) so staging does not drop it on the floor.
 4. **`char_face { followPlayer: true }` before any taunt.** The head-tracking
-   layer then keeps the face on the lens even mid-laugh.
-5. **Run the gate per scene while writing** (`--scene <id>`), then the whole show
-   once before rendering. `:58 DEAD_AIR` in scene 7 is a two-second fix, not a
-   twenty-minute re-render.
+   layer then keeps the face on the lens even mid-laugh. For conversations, aim
+   them at each other with `targetActor`.
+5. **Argue, don't fight.** `argueBeats()` (`sceneKit.js`) stages two people
+   bickering with bubbles and mumble SFX — kid-safe, no punches, no terrified.
+6. **Run the gate per scene while writing** (`--scene <id>`), then the whole show
+   once before rendering. A `SCENE_START_MISMATCH` warning means you left a gap
+   between two scenes; fix it before it becomes a visible jump.

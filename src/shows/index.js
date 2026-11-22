@@ -38,6 +38,10 @@ export function buildShow(showId, { onlyScene = null } = {}) {
     id: onlyScene ? `${show.id}.${onlyScene}` : show.id,
     title: onlyScene ? `${show.title} — ${scenes[0].title}` : show.title,
     aspect: show.aspect || "16:9",
+    // Long-form shows are CONTINUOUS by default: a scene boundary changes
+    // nothing — no fade, no cut, no teleport, no prop/cast reset. Scenes are
+    // authoring + validation units, not transitions.
+    transitions: onlyScene ? "cut" : show.transitions ?? "continuous",
     scenes,
     requireCast: false,
   });

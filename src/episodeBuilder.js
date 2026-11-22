@@ -16,6 +16,17 @@ export function validateGag(gag, index = 0, { requireCast = true } = {}) {
   if (requireCast && (!gag.cast || Object.keys(gag.cast).length === 0)) {
     throw new Error(`[episodeBuilder] Gag "${gag.name}" needs at least one actor in \`cast\`.`);
   }
+  for (const [actorId, entry] of Object.entries(gag.cast || {})) {
+    if (!entry || typeof entry !== "object") {
+      throw new Error(`[episodeBuilder] Gag "${gag.name}" cast entry "${actorId}" must be an object.`);
+    }
+    // `spawn` is optional: a scene that picks up where the last one left off
+    // simply says the actor is here (continuous shows never re-seat anyone).
+    if (entry.spawn !== undefined && typeof entry.spawn !== "string") {
+      throw new Error(`[episodeBuilder] Gag "${gag.name}" cast "${actorId}.spawn" must be a waypoint name.`);
+    }
+  }
+
   for (const [bi, b] of (gag.beats || []).entries()) {
     if (typeof b.at !== "number" || b.at < 0) {
       throw new Error(`[episodeBuilder] Gag "${gag.name}" beat #${bi} (${b.type}) must use numeric \`at >= 0\`.`);
@@ -41,7 +52,13 @@ export function buildEpisode({
   scenes = [],
   id = undefined,
   requireCast = true,
+  // "cut"         — legacy: fade to black, teleport everyone, reset props.
+  // "continuous"  — long-form: nothing happens at the boundary. The player, the
+  //                 cast and every prop simply carry on from where the last
+  //                 scene left them, so a scene change is invisible.
+  transitions = "cut",
 }) {
+  const continuous = transitions === "continuous";
   // `scenes` is the long-form name for a gag: a self-contained chunk of story
   // with local `at` timings. Both are chained identically.
   const blocks = scenes.length ? scenes : gags;
@@ -77,7 +94,7 @@ export function buildEpisode({
       return { ...p, id };
     });
 
-    if (i > 0) {
+    if (i > 0 && !continuous) {
       // Fade to black -> reset actors, player, held items & props -> fade back in
       beats.push({ at: +t.toFixed(3), type: "fade", to: 1, duration: CUT / 2 });
       const cutAt = +(t + CUT / 2).toFixed(3);
@@ -129,6 +146,11 @@ export function buildEpisode({
 
     for (const [id, c] of Object.entries(g.cast)) {
       if (!cast.has(id)) {
+        if (continuous && c.spawn === undefined) {
+          throw new Error(
+            `[episodeBuilder] Scene "${g.name}" introduces "${id}" without a \`spawn\` — the first scene that shows an actor must seat them.`
+          );
+        }
         cast.set(id, {
           id,
           asset: c.asset || id,
@@ -166,6 +188,13 @@ export function buildEpisode({
       room: g.room || null,
       start: +sceneStart.toFixed(3),
       end: +t.toFixed(3),
+      // What the scene says should be true when it opens. In continuous mode
+      // these are only used for solo previews and for the continuity check.
+      playerSpawn: g.playerSpawn ?? null,
+      castSpawns: Object.fromEntries(
+        Object.entries(g.cast || {}).map(([id, c]) => [id, c.spawn ?? null])
+      ),
+      transitions: continuous ? "continuous" : "cut",
     });
   });
 
@@ -192,6 +221,7 @@ export function buildEpisode({
     sceneMap,
     sceneCasts: Object.fromEntries(sceneMap.map((m, i) => [m.id, skits[i]?.castIds || []])),
   };
+  episode.transitions = continuous ? "continuous" : "cut";
   if (id) episode.showId = id;
   if (maxLookDuration !== undefined) episode.maxLookDuration = maxLookDuration;
   if (allowSlowScans !== undefined) episode.allowSlowScans = allowSlowScans;

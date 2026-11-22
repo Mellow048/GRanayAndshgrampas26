@@ -50,10 +50,11 @@ When asked to make a new episode (15 seconds, 5 minutes, or 40+ minutes):
 ## Scene Architecture (Must Preserve)
 
 1. **One scene = one file.** `src/shows/<show>/sceneN-*.js`, 10–20s of story, 4–5 beats, local `at` timings. A 5–6 minute show is 20–24 of them. Never grow a single 900-line timeline again.
-2. **Scene boundaries are CUTs.** `buildShow()` (`src/shows/index.js` → `src/episodeBuilder.js`) emits fade → `char_cut` → prop reset → `cut` → fade. Don't hand-author a 40s walk between scenes.
+2. **Scene boundaries are invisible.** Shows are `transitions: "continuous"`: a boundary emits no fade, no cut, no teleport and no prop/cast reset. Scene N+1 must open on the exact frame scene N closed on (same spot, same held prop, same cast positions); `checkSceneContinuity()` warns (`SCENE_START_MISMATCH`) when it does not. Never "hide" a scene change with a black fade — write the walk instead.
 3. **Scene-scoped gate.** `node scripts/validate-episode.mjs --show <id> [--scene <id>]`. Every issue carries `scene` / `sceneIndex`; `formatStagingReport()` groups by scene. Fix the scene, not the timestamp.
-4. **Props belong to a scene.** They are re-seated on the real surface at every cut (`prop_action reset`), and `prop_action { action: "place", waypoint }` can move one mid-show.
-5. **Face the lens.** `char_face { followPlayer: true }` turns the body; `setHeadTrack()` (assetLoader) keeps the **head** on the camera through any clip, clamped to ±54°/±24°. Reactions enable it automatically — never ship a taunt played to the wall.
+4. **Props enter once and persist.** Declare a prop in the scene where it enters the story; it is never re-spawned. `prop_action { action: "place", waypoint }` moves it, `seat: false` means "its height is authored, do not ray-cast it onto the floor" (fridge shelf, hands).
+5. **Face the lens.** `char_face { followPlayer: true }` turns the body; `setHeadTrack()` (assetLoader) keeps the **head** on the camera through any clip, rebuilt from the bind pose each frame (never accumulated — that spins the head), clamped to ±54°/±24° and rate-limited to 4 rad/s. Reactions enable it automatically; conversations use `char_face { targetActor }`.
+6. **Kids' show, not a fight club.** Arguments are staged with `argueBeats()` (bubbles + facing each other + mumble SFX). Never `punch`, never `terrified`, and never a reaction with nothing on screen to react to.
 
 ## Anti-Patterns (NEVER DO THIS)
 

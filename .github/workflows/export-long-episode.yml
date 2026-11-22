@@ -12,6 +12,8 @@ on:
           - rocket_ball_x3
           - the_great_escape_68s
           - zombie_fort_5m
+          - mountain_dew_run
+          - granny_cookie_heist_15s
           - custom_json
       episode_json:
         description: "Custom Episode JSON (overrides preset if provided)"

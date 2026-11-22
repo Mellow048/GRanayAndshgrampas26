@@ -110,6 +110,12 @@ export class PlayerCamera {
     // Look yaw/pitch state
     this.yaw = 0;
     this.pitch = 0;
+    // Set by an explicit `player_look`/teleport: the walk look-ahead must never
+    // drag a deliberate look back to the horizon ("look down, snap to middle").
+    this.pitchAuthored = false;
+    // Whole-body poses (e.g. lying in bed): eye height + lens roll/pitch bias.
+    this.pose = { active: false, eyeY: null, roll: 0, pitch: 0, x: 0, z: 0 };
+    this.poseTarget = { active: false, eyeY: null, roll: 0, pitch: 0, x: 0, z: 0 };
     this.lookStartYaw = 0;
     this.lookStartPitch = 0;
     this.lookTargetYaw = 0;
@@ -249,10 +255,14 @@ export class PlayerCamera {
       const { yaw, pitch } = this._computeYawPitchTo(lookAtPos);
       this.yaw = yaw;
       this.pitch = pitch;
+      this.pitchAuthored = true;
     } else {
       this.yaw = 0;
       this.pitch = -0.04;
+      this.pitchAuthored = false;
     }
+    this.pose = { active: false, eyeY: null, roll: 0, pitch: 0, x: 0, z: 0 };
+    this.poseTarget = { active: false, eyeY: null, roll: 0, pitch: 0, x: 0, z: 0 };
     this.prevYaw = this.yaw;
     this.lookStartYaw = this.yaw;
     this.lookTargetYaw = this.yaw;
@@ -698,6 +708,7 @@ export class PlayerCamera {
     this.lookStartPitch = this.pitch;
     this.lookTargetYaw = this.yaw + wrapAngleDiff(yaw, this.yaw);
     this.lookTargetPitch = pitch;
+    this.pitchAuthored = true;
     this.lookElapsed = 0;
     // Framework guardrail: default to a short whip-pan; episodes may pass a
     // larger `maxDuration` (or Infinity for intentional slow scans).
@@ -769,6 +780,10 @@ export class PlayerCamera {
   }
 
   holdProp(propType = null) {
+    // "none" / "empty" / "" mean *nothing in hand* — never a fallback mesh.
+    if (typeof propType === "string" && /^(none|null|empty|nothing)$/i.test(propType.trim())) {
+      propType = null;
+    }
     if (this.heldPropMesh) {
       this.heldItemMount.remove(this.heldPropMesh);
       this.heldPropMesh.traverse((n) => {
@@ -800,6 +815,35 @@ export class PlayerCamera {
     this.heldItemMount.add(mesh);
     this.heldPropMesh = mesh;
     this.heldEquipPop = 0;
+  }
+
+  /**
+   * Whole-body pose for POV beats that are not standing: `lie` drops the eye to
+   * a surface (bed, floor) and rolls the lens so the frame reads as lying down.
+   */
+  setPose({
+    pose = "stand",
+    surfaceY = null,
+    surfaceX = null,
+    surfaceZ = null,
+    lift = 0.3,
+    roll = -1.15,
+    pitch = 0.22,
+    duration = 0.9,
+  } = {}) {
+    const lying = pose === "lie" || pose === "lie_back";
+    this.poseTarget = {
+      active: lying,
+      eyeY: lying && Number.isFinite(surfaceY) ? surfaceY + lift : null,
+      roll: lying ? roll : 0,
+      pitch: lying ? pitch : 0,
+      // Slide the eye onto the surface (bed) instead of just dropping it, so
+      // getting up does not teleport the camera sideways.
+      x: lying && Number.isFinite(surfaceX) ? surfaceX - this.playerPos.x : 0,
+      z: lying && Number.isFinite(surfaceZ) ? surfaceZ - this.playerPos.z : 0,
+    };
+    this.poseDuration = Math.max(0.05, duration);
+    return Promise.resolve();
   }
 
   useHeldProp() {
@@ -943,10 +987,18 @@ export class PlayerCamera {
             const desiredYaw = Math.atan2(-dx, -dz);
             this.yaw += wrapAngleDiff(desiredYaw, this.yaw) * Math.min(1, dt * 5.2);
           }
-          const desiredPitch = meta.isStair
-            ? clamp(Math.atan2(pB.y - pA.y, Math.max(0.4, Math.hypot(pB.x - pA.x, pB.z - pA.z))) * 0.42, -0.26, 0.22)
-            : -0.04;
-          this.pitch += (desiredPitch - this.pitch) * Math.min(1, dt * 4.5);
+          // Stairs get a small tilt; otherwise the walk only recentres the pitch
+          // if the author never aimed the camera (see pitchAuthored).
+          if (!this.pitchAuthored) {
+            const desiredPitch = meta.isStair
+              ? clamp(
+                  Math.atan2(pB.y - pA.y, Math.max(0.4, Math.hypot(pB.x - pA.x, pB.z - pA.z))) * 0.42,
+                  -0.26,
+                  0.22
+                )
+              : -0.04;
+            this.pitch += (desiredPitch - this.pitch) * Math.min(1, dt * 4.5);
+          }
         }
       }
 
@@ -1080,15 +1132,35 @@ export class PlayerCamera {
       this.shakeIntensity = 0;
     }
 
+    // Ease the body pose (standing <-> lying) and apply it to the lens.
+    const poseEase = Math.min(1, (dt / Math.max(1e-3, this.poseDuration ?? 0.9)) * 3.2);
+    this.pose.active = this.poseTarget.active;
+    this.pose.roll += (this.poseTarget.roll - this.pose.roll) * poseEase;
+    this.pose.pitch += (this.poseTarget.pitch - this.pose.pitch) * poseEase;
+    this.pose.x += ((this.poseTarget.x ?? 0) - this.pose.x) * poseEase;
+    this.pose.z += ((this.poseTarget.z ?? 0) - this.pose.z) * poseEase;
+    if (this.poseTarget.eyeY === null) {
+      this.pose.eyeY = null;
+    } else {
+      this.pose.eyeY =
+        this.pose.eyeY === null
+          ? this.poseTarget.eyeY
+          : this.pose.eyeY + (this.poseTarget.eyeY - this.pose.eyeY) * poseEase;
+    }
+
     const finalYaw = this.yaw + gestureYaw;
-    const finalPitch = clamp(this.pitch + gesturePitch + idleBreathPitch, MIN_CAMERA_PITCH, MAX_CAMERA_PITCH);
+    const finalPitch = clamp(
+      this.pitch + gesturePitch + idleBreathPitch + this.pose.pitch,
+      MIN_CAMERA_PITCH,
+      MAX_CAMERA_PITCH
+    );
     const rightX = Math.cos(finalYaw);
     const rightZ = -Math.sin(finalYaw);
 
     this._tmpEyePos.set(
-      this.playerPos.x,
-      this.playerPos.y + this.baseEyeHeight,
-      this.playerPos.z
+      this.playerPos.x + this.pose.x,
+      this.pose.eyeY ?? this.playerPos.y + this.baseEyeHeight,
+      this.playerPos.z + this.pose.z
     );
     this._tmpFinalPos.set(
       this._tmpEyePos.x + rightX * (bobX + gestureLeanX + shakeX),
@@ -1118,8 +1190,12 @@ export class PlayerCamera {
       }
     }
 
-    this.camera.rotation.set(finalPitch, finalYaw, gestureRoll + shakeRoll, "YXZ");
-    this.camera.rotation.set(finalPitch, finalYaw, gestureRoll + shakeRoll + this.turnRoll, "YXZ");
+    this.camera.rotation.set(
+      finalPitch,
+      finalYaw,
+      gestureRoll + shakeRoll + this.turnRoll + this.pose.roll,
+      "YXZ"
+    );
 
     // Animate bottom-right FPS held prop (deterministic viewmodel pass)
     if (this.heldPropMesh) {

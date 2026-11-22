@@ -52,3 +52,55 @@ export function describeScene(scene) {
   const props = (scene.props || []).map((p) => p.id).join(", ") || "—";
   return `${scene.id} · ${scene.title} · ${scene.duration}s · ${scene.room || "?"} · cast: ${actors} · props: ${props}`;
 }
+
+/**
+ * Staging for a kids'-show argument: two people bicker at each other with angry
+ * thought bubbles and mumble SFX. It is deliberately NOT a fight — no punch, no
+ * terrified reactions, nobody gets hit.
+ *
+ * Returns beats with LOCAL `at` times starting at `from`.
+ *
+ *   ...argueBeats({ from: 2, until: 8, a: "granny", b: "grandpa" })
+ */
+export function argueBeats({
+  from = 0,
+  until = 6,
+  a,
+  b,
+  interval = 1.15,
+  sfx = ["discord", "bonk"],
+  bubbles = ["angry", "exclamation", "question"],
+} = {}) {
+  const beats = [];
+  const speakers = [a, b].filter(Boolean);
+  if (!speakers.length) return beats;
+  let t = from;
+  let i = 0;
+  while (t < until) {
+    const who = speakers[i % speakers.length];
+    const other = speakers[(i + 1) % speakers.length];
+    beats.push({
+      at: +t.toFixed(3),
+      type: "char_bubble",
+      actor: who,
+      icon: bubbles[i % bubbles.length],
+      duration: Math.min(1.6, Math.max(0.8, interval)),
+      facePlayer: false,
+    });
+    // They keep talking to each other, not to us.
+    if (other) {
+      beats.push({ at: +t.toFixed(3), type: "char_face", actor: who, targetActor: other, duration: 0.25 });
+    }
+    if (i % 2 === 1) {
+      beats.push({
+        at: +(t + 0.1).toFixed(3),
+        type: "sfx",
+        sound: sfx[(i >> 1) % sfx.length],
+        volume: 0.42,
+      });
+    }
+    t += interval;
+    i += 1;
+  }
+  return beats;
+}

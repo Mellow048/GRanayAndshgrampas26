@@ -1,48 +1,46 @@
 import { defineScene } from "../sceneKit.js";
 
 /**
- * Scene 1 — Wake Up (14s)
+ * Scene 1 — Wake Up (13s)
  *
- * POV: we are lying in the upstairs bedroom. We sit up, stretch, notice the
- * clock and head for the stairs. No cast on screen, so the scene proves the
- * builder handles a solo player scene.
+ * POV: lying in bed upstairs. We sit up, swing out of bed, and walk out to the
+ * top of the stairs. The scene ENDS at `stairs_top`, exactly where scene 2
+ * starts its first step — continuous shows never teleport, so the last frame of
+ * this scene and the first frame of the next one are the same moment.
  */
 export default defineScene({
   id: "wake",
   title: "Wake Up",
   room: "bedroom",
-  duration: 14,
-  playerSpawn: "bedroom",
-  playerFacing: "upstairs_west_room",
-  notes: "Start crouched (lying down) and stand up before walking.",
+  duration: 13,
+  playerSpawn: "up_bed_north_side",
+  playerFacing: "up_bed_north",
+  notes: "Starts lying on the bed (player_pose lie) and stands up before walking.",
   beats: [
-    { at: 0.0, type: "bgm", sound: "granny_ambience", volume: 0.2 },
-    { at: 0.0, type: "fade", to: 0, duration: 0.6 },
-    { at: 0.1, type: "player_crouch", crouched: true, duration: 0.1 },
-    { at: 0.4, type: "sfx", sound: "aww", volume: 0.45 },
+    { at: 0.0, type: "bgm", sound: "granny_ambience", volume: 0.18 },
+    // In bed, looking at the ceiling, then at the clock.
+    { at: 0.0, type: "player_pose", pose: "lie", surface: "up_bed_top_west", lift: 0.34, duration: 0.01 },
+    { at: 0.3, type: "player_look", target: "up_bed_north", duration: 0.9 },
+    { at: 1.6, type: "player_look", target: "up_bed_top_west", duration: 0.8 },
+    { at: 2.4, type: "sfx", sound: "aww", volume: 0.35 },
 
-    // Sit up, stretch, take in the room.
-    { at: 1.8, type: "player_crouch", crouched: false, duration: 0.9 },
-    { at: 2.2, type: "player_look", target: "up_bed_top_west", duration: 0.3, track: false },
-    { at: 3.4, type: "player_gesture", gesture: "nod_yes", duration: 0.7 },
-    { at: 3.8, type: "player_look", target: "upstairs_west_room", duration: 0.3, track: false },
+    // Up on the feet.
+    { at: 3.0, type: "player_pose", pose: "stand", duration: 1.0 },
+    { at: 3.2, type: "player_gesture", gesture: "nod_yes", duration: 0.8 },
+    { at: 4.1, type: "player_look", target: "upstairs_west_room", duration: 0.5 },
 
-    // Trudge out of the bedroom and down the hall.
+    // Out of the bedroom, down the landing, to the top of the stairs.
     {
-      at: 4.4,
+      at: 4.6,
       type: "player_walk",
       via: ["upstairs_west_room", "upstairs_hall_center", "upstairs_landing"],
       to: "stairs_top",
-      duration: 6.2,
-      speed: 2.6,
+      duration: 6.4,
+      speed: 2.3,
     },
-    { at: 6.4, type: "player_look", target: "up_hall_north_door", duration: 0.28, track: false },
-    { at: 8.6, type: "player_look", target: "stairs_middle", duration: 0.3, track: false },
-
-    // Someone downstairs is already shouting.
-    { at: 10.8, type: "sfx", sound: "granny_laugh", volume: 0.4 },
-    { at: 11.0, type: "player_gesture", gesture: "shake_no", duration: 0.9 },
-    { at: 12.2, type: "player_look", target: "stairs_middle", duration: 0.3, track: false },
-    { at: 12.8, type: "sfx", sound: "aww", volume: 0.5 },
+    { at: 7.4, type: "player_look", target: "up_hall_north_door", duration: 0.35 },
+    // Stop at the top of the stairs and look down them — scene 2 picks this up.
+    { at: 11.2, type: "player_look", target: "stairs_middle", duration: 0.55 },
+    { at: 12.2, type: "sfx", sound: "swoosh", volume: 0.32 },
   ],
 });

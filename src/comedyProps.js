@@ -570,8 +570,52 @@ export function createPropMesh(propType) {
       break;
     }
 
-    case "cookie_jar":
-    default: {
+    case "fridge": {
+      // A real fridge, built as an open shell: the door is a pivot on the left
+      // edge so `open`/`close` swings it, the inside is visible when it opens,
+      // and a soda can can sit on the shelf (hidden while the door is shut).
+      const shellMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.55 });
+      const trimMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.4, metalness: 0.35 });
+      const innerMat = new THREE.MeshStandardMaterial({ color: 0xdbeafe, roughness: 0.85 });
+      const handleMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.3, metalness: 0.8 });
+
+      const W = 0.78;
+      const H = 1.75;
+      const D = 0.7;
+
+      const addBox = (w, h, d, x, y, z, mat = shellMat, name = "") => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+        m.position.set(x, y, z);
+        if (name) m.name = name;
+        group.add(m);
+        return m;
+      };
+
+      addBox(W, H, 0.05, 0, H / 2, D / 2 - 0.025, innerMat, "FridgeBack");
+      addBox(0.05, H, D, -W / 2 + 0.025, H / 2, 0, shellMat, "FridgeLeft");
+      addBox(0.05, H, D, W / 2 - 0.025, H / 2, 0, shellMat, "FridgeRight");
+      addBox(W, 0.05, D, 0, H - 0.025, 0, shellMat, "FridgeTop");
+      addBox(W, 0.06, D, 0, 0.03, 0, shellMat, "FridgeBase");
+      addBox(W - 0.1, 0.035, D - 0.08, 0, 0.52, 0.02, trimMat, "FridgeShelfLow");
+      addBox(W - 0.1, 0.035, D - 0.08, 0, 1.06, 0.02, trimMat, "FridgeShelf");
+
+      const doorPivot = new THREE.Group();
+      doorPivot.name = "FridgeDoor";
+      doorPivot.position.set(-W / 2, 0, -D / 2);
+      const door = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.05), shellMat);
+      door.position.set(W / 2, H / 2, 0);
+      const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.55, 10), handleMat);
+      handle.position.set(W - 0.09, 1.1, -0.07);
+      const handleArm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.06), handleMat);
+      handleArm.position.set(W - 0.09, 1.1, -0.03);
+      const seam = new THREE.Mesh(new THREE.BoxGeometry(W, 0.02, 0.055), trimMat);
+      seam.position.set(W / 2, H - 0.44, 0);
+      doorPivot.add(door, handle, handleArm, seam);
+      group.add(doorPivot);
+      break;
+    }
+
+    case "cookie_jar": {
       const jarMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.3 });
       const lidMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, roughness: 0.35 });
       const body = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.32, 16), jarMat);
@@ -581,6 +625,19 @@ export function createPropMesh(propType) {
       const knob = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), lidMat);
       knob.position.y = 0.39;
       group.add(body, lid, knob);
+      break;
+    }
+
+    default: {
+      // An unknown prop type used to render a cookie jar, which showed up in
+      // people's hands out of nowhere. Fail loudly and visibly instead.
+      console.warn(`[comedyProps] unknown prop type "${propType}" — rendering a placeholder.`);
+      const mat = new THREE.MeshStandardMaterial({ color: 0xff2d55, roughness: 0.6 });
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), mat);
+      box.position.y = 0.1;
+      box.name = `UnknownProp_${propType}`;
+      group.add(box);
+      group.userData.unknownPropType = String(propType);
       break;
     }
   }
@@ -642,6 +699,10 @@ export class ComedyPropManager {
    */
   seatProp(mesh, desiredOrigin, exceptId = null) {
     if (!this.world || !mesh) return desiredOrigin.clone();
+    // `seat: false` — the author placed this prop on something that is not part
+    // of the house (a fridge shelf, a performer's hand, a moving platform).
+    const owner = exceptId ? this.props.get(exceptId) : null;
+    if (owner && owner.initial?.seat === false) return desiredOrigin.clone();
 
     mesh.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(mesh);
@@ -734,6 +795,9 @@ export class ComedyPropManager {
           rotationY: def.rotationY || 0,
           scale: def.scale || 1,
           visible: def.visible !== false,
+          // `seat: false` keeps the authored height (fridge shelf, hands, props
+          // standing on other props) instead of ray-casting onto the floor.
+          seat: def.seat !== false,
           spin: Boolean(def.spin),
           float: Boolean(def.float),
         },
@@ -993,6 +1057,12 @@ export class ComedyPropManager {
       if (lid) {
         const targetAngle = state.lidOpen ? -1.95 : 0;
         lid.rotation.x += (targetAngle - lid.rotation.x) * Math.min(1, dt * 12);
+      }
+
+      const fridgeDoor = mesh.getObjectByName("FridgeDoor");
+      if (fridgeDoor) {
+        const targetAngle = state.lidOpen ? -1.75 : 0;
+        fridgeDoor.rotation.y += (targetAngle - fridgeDoor.rotation.y) * Math.min(1, dt * 9);
       }
 
       const flapL = mesh.getObjectByName("BoxFlapL");

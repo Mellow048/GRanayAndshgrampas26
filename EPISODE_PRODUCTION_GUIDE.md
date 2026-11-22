@@ -277,18 +277,28 @@ src/shows/<show>/
   scene4-bed.js       12s  bedroom
 ```
 
-Scenes use **local** timings (`at: 0` = scene start) and are welded together by
-`buildShow()` (`src/shows/index.js` → `buildEpisode()`), which inserts, at every
-scene boundary:
+Scenes use **local** timings (`at: 0` = scene start). Shows are **continuous**
+(`transitions: "continuous"`, the default for `buildShow()`): a boundary emits
+**no beats at all**. No fade, no `cut`, no `char_cut`, no prop reset. The player
+keeps their exact spot/facing/held item, the cast stays put, props stay where
+they were.
 
-1. `fade { to: 1 }` — 0.2s black,
-2. `char_cut` for each of the scene's actors — teleport + pose + prop reset,
-3. `prop_action { reset }` for the scene's props (re-seated on the real surface),
-4. `cut` — teleports the player to the scene's `playerSpawn` and snaps the view,
-5. `fade { to: 0 }` — back in.
+That is a hard rule, not a preference: a fade-to-black between scenes tells the
+audience "we cheated", and a teleport tells them "you are somewhere else now".
+Continuous shows hide the seam by *not having one*.
 
-Nothing leaks across a cut: props are hidden if the next scene doesn't own them,
-held FPS items are cleared, and actors are re-posed.
+### The continuity contract
+
+* A scene's `playerSpawn` must be where the previous scene's last walk ends.
+  `checkSceneContinuity()` walks the timeline and raises
+  **`SCENE_START_MISMATCH`** when it is not.
+* `cast: { granny: {} }` (no `spawn`) = "she is still where you left her". The
+  first scene that shows an actor must give a `spawn` (the builder throws
+  otherwise).
+* Props are declared once, in the scene where they enter the story, then persist
+  (`seat: false` for props resting on non-house geometry, e.g. a fridge shelf).
+* Held items persist across boundaries.
+* The only `fade` allowed is the last one of the show.
 
 ### Writing one scene
 
@@ -342,6 +352,20 @@ Scene 4 — Back To Bed
 | 4 | `bed` | Back To Bed | bedroom | 12 | `prop_action place` on the nightstand, collapse |
 
 Scale it: 20–24 scenes × 15s = 5–6 minutes.
+
+### Beat vocabulary added for continuity
+
+| Beat | Why |
+| --- | --- |
+| `player_pose { pose: "lie", surface: "up_bed_top_west" }` | lie on a real surface: eye drops to the mattress and the lens rolls, so "in bed" reads as in bed — not as crouching on the floor |
+| `char_face { actor, targetActor }` | aim an actor at another actor (arguments, conversations) instead of at the lens |
+| `argueBeats({ from, until, a, b })` (`sceneKit.js`) | kid-safe bickering: alternating angry bubbles + they face each other + mumble SFX. No punches, no `terrified` |
+| `prop_action { prop, action: "open" / "close" }` | swings a real `fridge` door (the `fridge` prop is an open shell with a hinged door, so the inside is visible when it opens) |
+| `seat: false` on a prop | keeps the authored height: the can rests on the fridge shelf instead of being dropped to the floor |
+
+A deliberate look now **holds**: the walk look-ahead used to drag the pitch back
+to the horizon about a second later ("look down, snap to the middle"). `pitchAuthored`
+makes an authored pitch stick until the next look.
 
 Because each scene is exactly one `skit`, `scripts/chunk-episode.mjs` and
 `.github/workflows/export-long-episode.yml` split long shows **on scene

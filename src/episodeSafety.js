@@ -463,6 +463,9 @@ export function validateEpisode(episode, options = {}) {
       z: wp.z + (Number(def.spawnOffset?.z) || 0),
     };
     let finalPos = desired;
+    // `seat: false` props sit on something that is not house geometry (a fridge
+    // shelf, a held hand) — their height is authored, do not probe the floor.
+    if (def.seat === false) continue;
 
     if (world && !isLava) {
       // Second opinion with real geometry: the runtime pass is authoritative.
@@ -808,6 +811,9 @@ export function validateEpisode(episode, options = {}) {
     const matched = beats.some((b) => {
       if (b.at < windowStart || b.at > windowEnd) return false;
       if (b.type === "char_anim" && (rule.anyAnim || rule.anims?.includes(b.anim))) return true;
+      // A thought bubble is a visible reaction in its own right (this is a
+      // kids' show: angry/exclamation bubbles *are* how people emote).
+      if (b.type === "char_bubble") return true;
       if (b.type === "char_prop" && rule.props?.includes(b.prop)) return true;
       if (b.type === "player_hold" && rule.props?.includes(b.prop)) return true;
       // A meme sting can land on a prop slap or a camera gesture just as well as an anim.
@@ -876,7 +882,7 @@ export function validateEpisode(episode, options = {}) {
   const activity = [];
   for (const beat of beats) {
     const moves = beat.type === "char_move" || beat.type === "move" || beat.type === "player_walk";
-    const acts = ["char_anim", "anim", "player_look", "player_gesture", "char_bubble", "prop_action", "player_hold", "char_face", "fade", "sfx", "char_prop"].includes(beat.type);
+    const acts = ["char_anim", "anim", "player_look", "player_gesture", "char_bubble", "prop_action", "player_hold", "player_pose", "char_face", "fade", "sfx", "char_prop"].includes(beat.type);
     if (moves || acts) activity.push({ at: beat.at, end: beat.at + Math.max(0.15, beat.duration || 0), type: beat.type, beat });
   }
   activity.sort((a, b) => a.at - b.at);
@@ -1018,13 +1024,75 @@ function aabbFromSafe(pos, half) {
  * Validate, repair, then validate again so the report reflects the episode that
  * will actually render (not the broken input plus a pile of promises).
  */
+/**
+ * Long-form shows are continuous: a scene must open exactly where the previous
+ * one closed. This walks the player route and flags any scene whose declared
+ * start does not match the position the story actually arrives at — the author
+ * "teleport" that the viewer would feel even without a fade.
+ */
+export function checkSceneContinuity(episode, { setMap } = {}) {
+  const issues = [];
+  const scenes = episode?.sceneMap || [];
+  if (!setMap || scenes.length < 2 || episode.transitions !== "continuous") return issues;
+
+  const where = { x: 0, z: 0 };
+  const start = setMap[episode.playerSpawn];
+  if (start) {
+    where.x = start.x;
+    where.z = start.z;
+  }
+
+  // Position of the player at any time, from walks and hops.
+  const timeline = [];
+  for (const beat of (episode.skits || []).flatMap((s) => s.beats || [])) {
+    if (beat.type === "player_walk" || beat.type === "cut") {
+      const ref = beat.to || beat.target || beat.spawn;
+      const wp = typeof ref === "string" ? setMap[ref] : null;
+      if (wp) timeline.push({ at: beat.at + Math.max(0, beat.duration || 0), x: wp.x, z: wp.z });
+    }
+  }
+  timeline.sort((a, b) => a.at - b.at);
+  let cursor = 0;
+
+  for (let i = 1; i < scenes.length; i += 1) {
+    const scene = scenes[i];
+    while (cursor < timeline.length && timeline[cursor].at <= scene.start + 1e-6) {
+      where.x = timeline[cursor].x;
+      where.z = timeline[cursor].z;
+      cursor += 1;
+    }
+    const declared = scene.playerSpawn ? setMap[scene.playerSpawn] : null;
+    if (!declared) continue;
+    const drift = Math.hypot(declared.x - where.x, declared.z - where.z);
+    if (drift > 0.9) {
+      issues.push({
+        code: "SCENE_START_MISMATCH",
+        severity: "warn",
+        at: scene.start,
+        scene: scene.id,
+        sceneIndex: scene.index,
+        sceneTitle: scene.title,
+        message: `Scene "${scene.id}" says it starts at "${scene.playerSpawn}" but the previous scene leaves the player ${drift.toFixed(
+          1
+        )}m away — write the walk that closes the gap (or fix the spawn).`,
+        fix: "End the previous scene on the waypoint this scene starts on.",
+      });
+    }
+  }
+  return issues;
+}
+
 export function validateAndRepair(episode, options = {}) {
+  const continuity = checkSceneContinuity(episode, { setMap: options.setMap });
+  if (continuity.length) episode.__continuityIssues = continuity;
   const first = validateEpisode(episode, { ...options, autoFix: options.autoFix !== false });
   const second = validateEpisode(first.episode, { ...options, autoFix: false });
   const applied = first.issues.filter((i) => i.applied);
   const stillOpen = second.issues;
   const seen = new Set();
-  const issues = [...stillOpen, ...applied].filter((i) => {
+  const continuityIssues = episode.__continuityIssues || [];
+  delete episode.__continuityIssues;
+  const issues = [...stillOpen, ...applied, ...continuityIssues].filter((i) => {
     const key = `${i.code}|${round(i.at, 2)}|${i.prop ?? i.actor ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
