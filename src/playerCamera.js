@@ -527,7 +527,14 @@ export class PlayerCamera {
     const dx = targetPos.x - this.playerPos.x;
     const dy = targetPos.y - eyeY;
     const dz = targetPos.z - this.playerPos.z;
-    const horizDist = Math.max(1e-4, Math.hypot(dx, dz));
+    const flat = Math.hypot(dx, dz);
+    // Aiming at a point under our own feet is degenerate: atan2(dy, ~0) slams the
+    // pitch to the down-clamp and the camera stares at the floorboards. Hold the
+    // current aim instead of snapping.
+    if (flat < 0.3) {
+      return { yaw: this.yaw, pitch: this.pitch };
+    }
+    const horizDist = flat;
     // Three.js camera looks down -Z; yaw = atan2(-dx, -dz)
     const yaw = Math.atan2(-dx, -dz);
     const pitch = clamp(Math.atan2(dy, horizDist), MIN_CAMERA_PITCH, MAX_CAMERA_PITCH);

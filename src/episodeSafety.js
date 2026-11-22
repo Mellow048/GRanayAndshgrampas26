@@ -613,7 +613,7 @@ export function validateEpisode(episode, options = {}) {
     const toName = typeof beat.to === "string" ? beat.to : null;
     const startPos = resolved(fromName) || (isWalk ? playerState : actorState.get(beat.actor));
     let plannedRoute = null;
-    const endWp = toName ? resolved(toName) : null;
+    let endWp = toName ? resolved(toName) : null;
 
     if (toName && !endWp && !actorState.has(toName)) {
       issues.push(
@@ -649,6 +649,38 @@ export function validateEpisode(episode, options = {}) {
           )
         );
       }
+    }
+
+    // Aiming a *walk* at furniture you are supposed to stand next to (a counter top,
+    // a table top) can never succeed: there is no floor up there. Retarget the move
+    // to the surface's authored `approach` waypoint instead of failing the episode.
+    if (isWalk && endWp && endWp.elevated && endWp.approach && resolved(endWp.approach)) {
+      const approachName = endWp.approach;
+      const approachWp = resolved(approachName);
+      let applied = false;
+      if (autoFix) {
+        patchBeat(beat, { to: approachName });
+        applied = true;
+        endWp = approachWp;
+      }
+      issues.push(
+        issue(
+          "SURFACE_NOT_WALKABLE",
+          "error",
+          beat.at,
+          `${beat.actor || "Player"} is told to walk onto "${toName}", which is ${endWp.elevated ? "elevated furniture" : "not floor"} — nobody can stand there.`,
+          {
+            actor: beat.actor,
+            ...fixNote(
+              applied,
+              applied
+                ? `Walk target retargeted to its approach waypoint "${approachName}".`
+                : `Walk to "${approachName}" and reach for the surface instead.`
+            ),
+            applied,
+          }
+        )
+      );
     }
 
     if (startPos && endWp) {

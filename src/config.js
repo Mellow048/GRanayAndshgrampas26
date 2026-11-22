@@ -735,8 +735,7 @@ export const JUMP_RUN_WALK_EPISODE = {
     {
       name: "Jump, Run & Walk",
       beats: [
-        { at: 0.0, type: "player_walk", to: "doorway_living", duration: 0.1 },
-        { at: 0.0, type: "player_look", target: "back_hall", duration: 0.1, track: false },
+        { at: 0.0, type: "player_look", target: "granny", duration: 0.22, track: true },
         { at: 0.0, type: "char_anim", actor: "granny", anim: "jump", speed: 0.95, loop: false },
         { at: 0.0, type: "char_anim", actor: "grandpa", anim: "jump", speed: 0.95, loop: false },
         { at: 2.0, type: "char_move", actor: "granny", to: "back_room_east", anim: "run", duration: 2.5 },
@@ -744,7 +743,7 @@ export const JUMP_RUN_WALK_EPISODE = {
         { at: 2.0, type: "player_look", target: "grandpa", duration: 0.25, track: true },
         { at: 4.5, type: "char_move", actor: "granny", to: "living_room_left", anim: "walk", duration: 1.5 },
         { at: 4.5, type: "char_move", actor: "grandpa", to: "living_room_right", anim: "walk", duration: 1.5 },
-        { at: 4.5, type: "player_walk", to: "living_room", duration: 1.4 },
+        { at: 4.5, type: "player_walk", to: "living_room", duration: 3.4 },
       ],
     },
   ],

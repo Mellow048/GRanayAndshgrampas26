@@ -89,15 +89,84 @@ function startStaticServer(rootDir) {
   });
 }
 
+// One resolved binary for every encode call.
+let FFMPEG_BIN = process.env.FFMPEG_PATH || "ffmpeg";
+
+/**
+ * Prefer ffmpeg on PATH, but fall back to the pure-npm `@ffmpeg-installer` build so the
+ * exporter still works where the GitHub static binary cannot be downloaded.
+ */
+async function resolveFfmpeg() {
+  if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH;
+  if (spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0) return "ffmpeg";
+  try {
+    const mod = await import("@ffmpeg-installer/ffmpeg");
+    const install = mod.default || mod;
+    if (install?.path && fs.existsSync(install.path)) {
+      console.log(`[Export] ffmpeg not on PATH, using ${install.path}`);
+      return install.path;
+    }
+  } catch {
+    /* not installed */
+  }
+  return "ffmpeg";
+}
+
+/** amix gained `normalize` in ffmpeg 4.4; older builds always divide by the input count. */
+let AMIX_NORMALIZE = null;
+function amixSupportsNormalize() {
+  if (AMIX_NORMALIZE !== null) return AMIX_NORMALIZE;
+  const res = spawnSync(FFMPEG_BIN, ["-hide_banner", "-h", "filter=amix"], { encoding: "utf8" });
+  const text = `${res.stdout || ""}${res.stderr || ""}`;
+  // Only trust a real filter listing; if the probe fails, assume the modern option.
+  AMIX_NORMALIZE = res.status === 0 ? /\bnormalize\b/.test(text) : true;
+  return AMIX_NORMALIZE;
+}
+
+/**
+ * Build an `amix` that keeps the original loudness on old *and* new ffmpeg.
+ * Pass outLabel = null to leave the chain open for further filters.
+ */
+function amixChain(labels, outLabel) {
+  const n = labels.length;
+  const head = `${labels.join("")}amix=inputs=${n}:duration=first:dropout_transition=0`;
+  const tail = amixSupportsNormalize() ? ":normalize=0" : `,volume=${n}`;
+  return outLabel ? `${head}${tail}[${outLabel}]` : `${head}${tail}`;
+}
+
 function runFfmpeg(args) {
-  const res = spawnSync("ffmpeg", args, { stdio: "inherit" });
+  const res = spawnSync(FFMPEG_BIN, args, { stdio: "inherit" });
   if (res.status !== 0) {
     throw new Error(`ffmpeg exited with code ${res.status}`);
   }
 }
 
+/**
+ * Pick a Chromium to drive.
+ * CHROMIUM_EXECUTABLE_PATH → `@sparticuz/chromium` (bundled in the npm tarball, so it
+ * works where the Playwright browser CDN is unreachable) → Playwright's own download.
+ */
+async function resolveBrowserRuntime() {
+  if (process.env.CHROMIUM_EXECUTABLE_PATH) {
+    return { executablePath: process.env.CHROMIUM_EXECUTABLE_PATH, extraArgs: [] };
+  }
+  try {
+    const mod = await import("@sparticuz/chromium");
+    const sparticuz = mod.default || mod;
+    const executablePath = await sparticuz.executablePath();
+    if (executablePath && fs.existsSync(executablePath)) {
+      console.log(`[Export] Using bundled Chromium at ${executablePath}`);
+      return { executablePath, extraArgs: Array.isArray(sparticuz.args) ? sparticuz.args : [] };
+    }
+  } catch {
+    /* fall back to Playwright's own browser */
+  }
+  return { executablePath: null, extraArgs: [] };
+}
+
 async function openStudioSession({
   chromium,
+  browserRuntime,
   port,
   localThreeDir,
   hasLocalThree,
@@ -107,7 +176,9 @@ async function openStudioSession({
 }) {
   const browser = await chromium.launch({
     headless: true,
+    ...(browserRuntime?.executablePath ? { executablePath: browserRuntime.executablePath } : {}),
     args: [
+      ...(browserRuntime?.extraArgs || []),
       "--use-gl=angle",
       "--use-angle=swiftshader",
       "--enable-webgl",
@@ -251,7 +322,7 @@ function preMixSfxBatches(sfxEvents, duration, framesDir, batchSize = 40) {
     });
 
     filters.push(
-      `${labels.join("")}amix=inputs=${labels.length}:duration=first:dropout_transition=0:normalize=0[bout]`
+      amixChain(labels, "bout")
     );
 
     runFfmpeg([
@@ -334,7 +405,9 @@ async function main() {
     return;
   }
 
-  const { chromium } = await import("playwright");
+  const { chromium } = await import("playwright").catch(() => import("playwright-core"));
+  const browserRuntime = await resolveBrowserRuntime();
+  FFMPEG_BIN = await resolveFfmpeg();
   const { EPISODE_PRESETS } = await import(path.join(REPO_ROOT, "src/config.js"));
 
   let episode = null;
@@ -365,6 +438,7 @@ async function main() {
     console.log(`[Export] Launching primary studio on http://127.0.0.1:${port}/?headless=1`);
     const primary = await openStudioSession({
       chromium,
+      browserRuntime,
       port,
       localThreeDir,
       hasLocalThree,
@@ -401,6 +475,7 @@ async function main() {
         existingSession ||
         (await openStudioSession({
           chromium,
+          browserRuntime,
           port,
           localThreeDir,
           hasLocalThree,
@@ -564,7 +639,7 @@ async function main() {
     }
 
     filterParts.push(
-      `${mixLabels.join("")}amix=inputs=${mixLabels.length}:duration=first:dropout_transition=0:normalize=0,` +
+      `${amixChain(mixLabels, null)},` +
         `acompressor=threshold=-10dB:ratio=4:attack=5:release=120,alimiter=limit=0.95[aout]`
     );
 
