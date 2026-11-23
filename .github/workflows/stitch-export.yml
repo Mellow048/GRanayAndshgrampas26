@@ -1,0 +1,93 @@
+name: Stitch An Already-Rendered Export
+
+# Re-joins the chunk artifacts of a finished render and publishes the result to
+# the `latest-export` release. Rendering is the expensive part (a 2:30 episode is
+# ~4500 SwiftShader frames); if only the stitch step failed, this re-uses the
+# finished chunks instead of re-rendering them.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Run id whose chunk-video-<run_id>-* artifacts should be stitched"
+        required: true
+        type: string
+      out_name:
+        description: "Output file name (no extension)"
+        required: true
+        default: "episode-full"
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  stitch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -version | head -1
+
+      - name: Download rendered chunks from run ${{ inputs.run_id }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: chunk-video-${{ inputs.run_id }}-*
+          path: rendered_chunks
+          merge-multiple: true
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Concat chunks
+        run: |
+          echo "== downloaded chunks =="
+          find rendered_chunks -type f -printf '  %p  %s bytes\n' | head -40
+          mkdir -p output
+          node scripts/export-video.mjs --concat rendered_chunks --out-name "${{ inputs.out_name }}" --out-dir output \
+            || node scripts/export-video.mjs --concat rendered_chunks --reencode --out-name "${{ inputs.out_name }}" --out-dir output \
+            || true
+          if ! ls output/*.mp4 >/dev/null 2>&1; then
+            single=$(find rendered_chunks -type f -name '*.mp4' | head -1)
+            if [ -n "$single" ]; then
+              echo "Single-chunk render, copying $single"
+              cp "$single" "output/${{ inputs.out_name }}.mp4"
+            fi
+          fi
+          echo "== stitched output =="
+          ls -la output
+          ls output/*.mp4 >/dev/null 2>&1 || { echo "::error::no stitched video produced"; exit 1; }
+
+      - name: Report the result
+        run: |
+          for f in output/*.mp4; do
+            size=$(du -m "$f" | cut -f1)
+            probe=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$f")
+            echo "::notice::$(basename "$f") — ${size} MB, ${probe}s"
+          done
+
+      - name: Publish to latest-export release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-export
+          name: Latest export
+          body: "Stitched from the chunk artifacts of run ${{ inputs.run_id }}."
+          files: output/*.mp4
+          fail_on_unmatched_files: true
+
+      - name: Upload stitched artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stitched-${{ inputs.out_name }}-${{ github.run_number }}
+          path: output/*.mp4
+          if-no-files-found: error
