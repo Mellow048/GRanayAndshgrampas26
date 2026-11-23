@@ -399,6 +399,9 @@ function concatRenderedChunks(concatDir, outDir, outName = "", { reencode = fals
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.concatDir) {
+    // The concat path used to return before resolving the ffmpeg binary, so a
+    // cloud stitch job died with "spawn undefined". Resolve it first.
+    FFMPEG_BIN = await resolveFfmpeg();
     concatRenderedChunks(opts.concatDir, opts.outDir, opts.outName || opts.preset, {
       reencode: Boolean(opts.reencode),
     });

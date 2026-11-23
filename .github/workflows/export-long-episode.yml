@@ -173,6 +173,18 @@ jobs:
             --out-name "${{ inputs.preset }}-full" \
             --out-dir output
 
+      # A release asset gives the video a stable public URL instead of an
+      # artifact that only people signed in to GitHub can download.
+      - name: Publish to latest-export release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-export
+          name: Latest export
+          body: "${{ inputs.preset }} — stitched from ${{ inputs.max_chunk_sec }}s parallel chunks."
+          files: output/${{ inputs.preset }}-full.mp4
+          fail_on_unmatched_files: false
+
       - name: Upload Full Stitched Episode
         uses: actions/upload-artifact@v4
         with:
