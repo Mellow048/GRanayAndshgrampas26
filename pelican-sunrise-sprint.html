@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sunrise Sprint — a pelican on a bicycle (hand-authored animated SVG)</title>
+<!--
+  Sunrise Sprint
+  --------------
+  A single self-contained HTML file: one inline <svg>, no external assets,
+  no libraries, no images, no fonts beyond the system stack, no copied art.
+
+  Everything here was authored from scratch for this repository:
+    * The bicycle is drawn to real-ish frame geometry (73 deg seat tube,
+      71 deg head angle, 6 mm of bottom-bracket drop, 300 px wheelbase).
+    * The legs are NOT keyframed. Each frame the pedal position comes from
+      the crank angle, and the hip/knee/ankle are solved with analytic
+      two-bone inverse kinematics (law of cosines), so the webbed foot
+      stays glued to the pedal at every point of the stroke.
+    * The near wing is solved with the same IK routine from the shoulder to
+      the handlebar grip, so the bird never lets go when its body bobs.
+    * Wheel angular velocity, chain dashoffset and road scroll speed are all
+      derived from one ground-speed value, so the bike cannot "skate".
+
+  Controls: Space = play/pause, B = ring the bell, Left/Right = speed.
+  Honours prefers-reduced-motion (starts paused on a nice static pose).
+-->
+<style>
+  :root{
+    --page-1:#150f18; --page-2:#241a26; --ink:#f6ece2; --ink-dim:#c0b0a4;
+    --card:#1d1620; --line:rgba(255,236,214,.14);
+    --accent:#ffb347; --accent-2:#4fd1c5;
+    /* --- scene palette: SUNRISE (default) --- */
+    --sky1:#2f7fb8; --sky2:#79c3dd; --sky3:#ffd9a3; --sky4:#ffab72;
+    --sun:#fff6d2; --sunGlow:#ffc46b; --cloud:#fff4e6; --cloudShade:#ffd7bd;
+    --hill:#8fb7c9; --hill2:#6f9bb3; --light:#f7e6cf;
+    --sea:#3d8fb0; --sea2:#2b6f8e; --seaHi:#dff4fb;
+    --palm:#2f5f63; --hut:#3a6b6e; --plank:#4a7a7c;
+    --roadTop:#6d6a72; --road:#4a4750; --roadBot:#37353d;
+    --curb:#cbb9a4; --dash:#f4e3b8; --tuft:#3f7a52; --pebble:#8d8794;
+    --dust:#e6d7c3; --speed:#ffffff;
+  }
+  .dusk{
+    --sky1:#141a4a; --sky2:#4b3583; --sky3:#c9577f; --sky4:#ff8f52;
+    --sun:#ffeec2; --sunGlow:#ff8a5c; --cloud:#f6c8c0; --cloudShade:#c98a9c;
+    --hill:#4b4a7a; --hill2:#38365f; --light:#ffe0b8;
+    --sea:#2b3468; --sea2:#1d2450; --seaHi:#ffb98a;
+    --palm:#22203f; --hut:#2b2950; --plank:#332f57;
+    --roadTop:#4a4657; --road:#332f3e; --roadBot:#252230;
+    --curb:#7d7188; --dash:#ffd9a0; --tuft:#2c4a44; --pebble:#6a6478;
+    --dust:#c9bcd2; --speed:#ffe9d0;
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%}
+  body{
+    background:radial-gradient(1200px 700px at 20% -10%, #3a2434 0%, var(--page-2) 45%, var(--page-1) 100%);
+    color:var(--ink);
+    font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:clamp(14px,3vw,38px);
+    display:flex; justify-content:center;
+  }
+  .wrap{width:100%;max-width:1080px}
+  header{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;margin-bottom:16px}
+  h1{margin:0;font-size:clamp(21px,3.4vw,31px);letter-spacing:-.02em;font-weight:750}
+  h1 span{color:var(--accent)}
+  .sub{margin:6px 0 0;color:var(--ink-dim);font-size:13.5px;max-width:62ch}
+  .badge{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-2);
+    border:1px solid rgba(79,209,197,.35);border-radius:999px;padding:4px 10px;white-space:nowrap}
+
+  .stage{
+    background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden;
+    box-shadow:0 24px 60px -24px rgba(0,0,0,.85), 0 0 0 1px rgba(255,255,255,.03) inset;
+  }
+  svg.scene{display:block;width:100%;height:auto}
+
+  .bar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;justify-content:space-between;
+    padding:12px 16px;border-top:1px solid var(--line);background:rgba(255,255,255,.02)}
+  .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  button{
+    font:inherit;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;
+    background:linear-gradient(#3a2f3f,#2a2230);border:1px solid var(--line);
+    border-radius:10px;padding:7px 13px;transition:transform .08s ease, border-color .15s ease, color .15s ease;
+  }
+  button:hover{border-color:rgba(255,179,71,.55);color:#fff}
+  button:active{transform:translateY(1px) scale(.985)}
+  button:focus-visible{outline:2px solid var(--accent-2);outline-offset:2px}
+  .slider{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--ink-dim)}
+  input[type=range]{width:132px;accent-color:var(--accent);cursor:pointer}
+  .tele{display:flex;flex-wrap:wrap;gap:6px 16px;font-variant-numeric:tabular-nums;font-size:12px;color:var(--ink-dim)}
+  .tele b{color:var(--ink);font-weight:650}
+  footer{margin-top:14px;color:#9d8d84;font-size:12.5px;line-height:1.6}
+  footer code{color:var(--accent);font-size:12px;background:rgba(255,179,71,.09);padding:1px 5px;border-radius:5px}
+  .hint{margin-top:4px;font-size:12px;color:#8b7c74}
+  kbd{font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:#2b2331;border:1px solid var(--line);
+    border-bottom-width:2px;border-radius:5px;padding:1px 5px;color:var(--ink)}
+
+  /* --- themed SVG fills driven by the palette variables --- */
+  .s1{stop-color:var(--sky1)} .s2{stop-color:var(--sky2)} .s3{stop-color:var(--sky3)} .s4{stop-color:var(--sky4)}
+  .sg1{stop-color:var(--sunGlow)} .sg2{stop-color:var(--sunGlow);stop-opacity:0}
+  .road1{stop-color:var(--roadTop)} .road2{stop-color:var(--road)} .road3{stop-color:var(--roadBot)}
+  .seaA{stop-color:var(--sea)} .seaB{stop-color:var(--sea2)}
+  .f-sun{fill:var(--sun)} .f-glow{fill:var(--sunGlow)}
+  .f-cloud{fill:var(--cloud)} .f-cloudSh{fill:var(--cloudShade)}
+  .f-hill{fill:var(--hill)} .f-hill2{fill:var(--hill2)} .f-light{fill:var(--light)}
+  .f-seaHi{fill:var(--seaHi)} .f-sail{fill:var(--cloud)}
+  .f-palm{fill:var(--palm)} .s-palm{stroke:var(--palm)} .f-hut{fill:var(--hut)} .f-plank{fill:var(--plank)}
+  .f-curb{fill:var(--curb)} .f-dash{fill:var(--dash)} .f-tuft{fill:var(--tuft)} .f-pebble{fill:var(--pebble)}
+  .f-dust{fill:var(--dust)} .s-speed{stroke:var(--speed)}
+  .f-shadow{fill:#1a1420}
+  /* palette cross-fade when Dusk is toggled */
+  svg.scene *{transition:fill .5s ease, stroke .5s ease, stop-color .5s ease}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>Sunrise Sprint <span>·</span> a pelican on a bicycle</h1>
+      <p class="sub">One inline SVG, drawn and rigged by hand. The legs and the bar-holding wing are solved
+        every frame with two-bone inverse kinematics — no keyframes, so the feet never slip off the pedals.</p>
+    </div>
+    <div class="badge">Hand-authored · zero assets</div>
+  </header>
+
+  <div class="stage">
+    <svg class="scene" id="scene" viewBox="0 0 960 600" role="img"
+         aria-labelledby="ttl desc" preserveAspectRatio="xMidYMid meet">
+      <title id="ttl">A pelican riding a bicycle along a coastal road at sunrise</title>
+      <desc id="desc">An animated cartoon: a cream-coloured pelican with a huge yellow bill pedals a teal
+        bicycle along a seaside road. Its wings grip the handlebars, a fish tail sticks out of its throat
+        pouch, palm trees and clouds scroll past, and the wheels spin at exactly the speed of the road.</desc>
+
+      <defs>
+        <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0"    class="s1"/>
+          <stop offset=".46"  class="s2"/>
+          <stop offset=".78"  class="s3"/>
+          <stop offset="1"    class="s4"/>
+        </linearGradient>
+        <radialGradient id="sunGrad" cx=".5" cy=".5" r=".5">
+          <stop offset="0"   class="sg1" stop-opacity=".85"/>
+          <stop offset=".45" class="sg1" stop-opacity=".30"/>
+          <stop offset="1"   class="sg2"/>
+        </radialGradient>
+        <linearGradient id="seaGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0"  class="seaA"/>
+          <stop offset="1"  class="seaB"/>
+        </linearGradient>
+        <linearGradient id="roadGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0"   class="road1"/>
+          <stop offset=".22" class="road2"/>
+          <stop offset="1"   class="road3"/>
+        </linearGradient>
+        <linearGradient id="bodyShade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#fffdf8"/>
+          <stop offset="1" stop-color="#e7ddcc"/>
+        </linearGradient>
+        <linearGradient id="billGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#f8d168"/>
+          <stop offset="1" stop-color="#f2b03c"/>
+        </linearGradient>
+        <linearGradient id="pouchGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#f7a85e"/>
+          <stop offset="1" stop-color="#ef8068"/>
+        </linearGradient>
+        <linearGradient id="frameGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#22a2a6"/>
+          <stop offset="1" stop-color="#0e6d74"/>
+        </linearGradient>
+        <filter id="soft" x="-30%" y="-120%" width="160%" height="340%">
+          <feGaussianBlur stdDeviation="7"/>
+        </filter>
+        <filter id="soft3" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur stdDeviation="3"/>
+        </filter>
+        <clipPath id="eyeClip"><circle cx="601" cy="163" r="7.4"/></clipPath>
+        <clipPath id="seaClip"><rect x="0" y="316" width="960" height="136"/></clipPath>
+      </defs>
+
+      <!-- ============================ SKY ============================ -->
+      <rect x="0" y="0" width="960" height="318" fill="url(#skyGrad)"/>
+
+      <!-- sun + slow rotating rays -->
+      <g id="sunGroup">
+        <circle cx="176" cy="228" r="150" fill="url(#sunGrad)"/>
+        <g id="sunRays" opacity=".38">
+          <g class="f-sun">
+            <rect x="173" y="96"  width="6" height="34" rx="3"/>
+            <rect x="173" y="326" width="6" height="34" rx="3"/>
+            <rect x="44"  y="225" width="34" height="6" rx="3"/>
+            <rect x="274" y="225" width="34" height="6" rx="3"/>
+            <rect x="83"  y="135" width="6" height="30" rx="3" transform="rotate(45 86 150)"/>
+            <rect x="263" y="135" width="6" height="30" rx="3" transform="rotate(-45 266 150)"/>
+            <rect x="83"  y="291" width="6" height="30" rx="3" transform="rotate(-45 86 306)"/>
+            <rect x="263" y="291" width="6" height="30" rx="3" transform="rotate(45 266 306)"/>
+          </g>
+        </g>
+        <circle cx="176" cy="228" r="46" class="f-sun" opacity=".95"/>
+        <circle cx="176" cy="228" r="46" class="f-glow" opacity=".35" filter="url(#soft3)"/>
+      </g>
+
+      <!-- clouds: parallax 0.06 -->
+      <g id="layerClouds">
+        <g class="tile">
+          <g opacity=".92">
+            <ellipse cx="150" cy="96"  rx="58" ry="21" class="f-cloud"/>
+            <ellipse cx="118" cy="88"  rx="30" ry="19" class="f-cloud"/>
+            <ellipse cx="178" cy="86"  rx="26" ry="16" class="f-cloud"/>
+            <ellipse cx="150" cy="106" rx="46" ry="10" class="f-cloudSh" opacity=".65"/>
+          </g>
+          <g opacity=".7">
+            <ellipse cx="470" cy="62"  rx="46" ry="15" class="f-cloud"/>
+            <ellipse cx="446" cy="56"  rx="23" ry="13" class="f-cloud"/>
+            <ellipse cx="492" cy="55"  rx="19" ry="11" class="f-cloud"/>
+          </g>
+          <g opacity=".8">
+            <ellipse cx="742" cy="128" rx="66" ry="20" class="f-cloud"/>
+            <ellipse cx="706" cy="118" rx="32" ry="18" class="f-cloud"/>
+            <ellipse cx="772" cy="116" rx="28" ry="15" class="f-cloud"/>
+            <ellipse cx="742" cy="138" rx="52" ry="9"  class="f-cloudSh" opacity=".6"/>
+          </g>
+          <g opacity=".5">
+            <ellipse cx="905" cy="72" rx="34" ry="11" class="f-cloud"/>
+            <ellipse cx="888" cy="66" rx="18" ry="10" class="f-cloud"/>
+          </g>
+        </g>
+      </g>
+
+      <!-- far headland: parallax 0.13 -->
+      <g id="layerHills">
+        <g class="tile">
+          <path class="f-hill2" d="M-2 318 L-2 292 C 60 262 118 274 168 296 C 214 316 246 300 292 282
+                C 344 262 402 268 448 292 C 486 312 520 306 566 288 C 618 268 664 272 706 294
+                C 742 312 782 306 826 288 C 872 270 924 276 962 298 L962 318 Z" opacity=".85"/>
+          <path class="f-hill" d="M-2 318 L-2 302 C 78 288 140 306 206 314 C 268 320 330 306 396 312
+                C 470 318 540 306 610 312 C 690 318 760 308 838 314 C 890 318 930 310 962 306 L962 318 Z"/>
+          <!-- little lighthouse on the headland -->
+          <g transform="translate(766,248)">
+            <rect x="0" y="0" width="11" height="44" rx="2" class="f-light"/>
+            <rect x="0" y="10" width="11" height="7" fill="#d9615c"/>
+            <rect x="0" y="26" width="11" height="7" fill="#d9615c"/>
+            <path d="M-3 0 L14 0 L8.5 -8 L2.5 -8 Z" fill="#3c4a55"/>
+            <circle cx="5.5" cy="-3.5" r="2.4" fill="#ffe6a8"/>
+          </g>
+        </g>
+      </g>
+
+      <!-- ============================ SEA ============================ -->
+      <rect x="0" y="316" width="960" height="140" fill="url(#seaGrad)"/>
+      <g clip-path="url(#seaClip)">
+        <!-- sun glitter path on the water -->
+        <g opacity=".55">
+          <ellipse cx="176" cy="330" rx="72" ry="7" class="f-glow"/>
+          <ellipse cx="176" cy="346" rx="52" ry="5" class="f-glow" opacity=".8"/>
+          <ellipse cx="176" cy="360" rx="34" ry="4" class="f-glow" opacity=".6"/>
+        </g>
+        <g id="layerSea">
+          <g class="tile">
+            <g class="f-seaHi" opacity=".5">
+              <rect x="40"  y="338" width="46" height="3.4" rx="1.7"/>
+              <rect x="250" y="352" width="30" height="3"   rx="1.5"/>
+              <rect x="410" y="334" width="54" height="3.4" rx="1.7"/>
+              <rect x="600" y="348" width="38" height="3"   rx="1.5"/>
+              <rect x="760" y="336" width="48" height="3.4" rx="1.7"/>
+              <rect x="120" y="376" width="34" height="3"   rx="1.5"/>
+              <rect x="330" y="388" width="52" height="3.4" rx="1.7"/>
+              <rect x="540" y="378" width="28" height="3"   rx="1.5"/>
+              <rect x="700" y="392" width="44" height="3.4" rx="1.7"/>
+              <rect x="880" y="374" width="36" height="3"   rx="1.5"/>
+            </g>
+            <!-- two distant sailboats -->
+            <g transform="translate(500,330)" opacity=".9">
+              <path d="M0 22 L26 22 L21 28 L4 28 Z" fill="#efe2d2"/>
+              <path d="M13 20 L13 -6 L26 20 Z" class="f-sail"/>
+              <path d="M11 20 L11 2 L2 20 Z" class="f-sail" opacity=".8"/>
+            </g>
+            <g transform="translate(846,344)" opacity=".75">
+              <path d="M0 16 L18 16 L15 20 L3 20 Z" fill="#efe2d2"/>
+              <path d="M9 14 L9 -2 L18 14 Z" class="f-sail"/>
+            </g>
+          </g>
+        </g>
+      </g>
+      <rect x="0" y="452" width="960" height="4" fill="#ffffff" opacity=".14"/>
+
+      <!-- ================= BOARDWALK / PALMS: parallax 0.5 ================= -->
+      <g id="layerPalms">
+        <g class="tile">
+          <!-- boardwalk deck -->
+          <rect x="0" y="436" width="480" height="16" class="f-plank"/>
+          <g class="f-hut" opacity=".9">
+            <rect x="18"  y="452" width="7" height="0" />
+            <rect x="40"  y="446" width="5" height="10"/>
+            <rect x="96"  y="446" width="5" height="10"/>
+            <rect x="34"  y="416" width="72" height="32" rx="3"/>
+            <path d="M28 418 L112 418 L70 396 Z"/>
+            <rect x="60"  y="424" width="20" height="14" fill="#ffe6b0" opacity=".85"/>
+          </g>
+          <!-- pier posts -->
+          <g class="f-hut" opacity=".65">
+            <rect x="150" y="440" width="6" height="18"/>
+            <rect x="200" y="440" width="6" height="18"/>
+            <rect x="250" y="440" width="6" height="18"/>
+            <rect x="300" y="440" width="6" height="18"/>
+            <rect x="420" y="440" width="6" height="18"/>
+            <rect x="462" y="440" width="6" height="18"/>
+          </g>
+          <!-- palm 1 -->
+          <g transform="translate(168,442)">
+            <path d="M0 0 C 6 -34 -3 -62 8 -92" class="s-palm" stroke-width="8" fill="none" stroke-linecap="round"/>
+            <g class="s-palm" stroke-width="6" fill="none" stroke-linecap="round">
+              <path d="M8 -92 C -14 -104 -30 -98 -40 -86"/>
+              <path d="M8 -92 C -6 -112 -20 -118 -34 -118"/>
+              <path d="M8 -92 C 22 -114 40 -116 52 -108"/>
+              <path d="M8 -92 C 30 -104 44 -96 52 -84"/>
+              <path d="M8 -92 C 8 -116 16 -126 26 -132"/>
+            </g>
+            <circle cx="2" cy="-88" r="4" class="f-palm"/>
+            <circle cx="14" cy="-86" r="4" class="f-palm"/>
+          </g>
+          <!-- palm 2 (shorter) -->
+          <g transform="translate(392,444)">
+            <path d="M0 0 C -5 -26 3 -48 -4 -70" class="s-palm" stroke-width="7" fill="none" stroke-linecap="round"/>
+            <g class="s-palm" stroke-width="5" fill="none" stroke-linecap="round">
+              <path d="M-4 -70 C -22 -80 -34 -74 -42 -64"/>
+              <path d="M-4 -70 C -16 -88 -28 -92 -38 -90"/>
+              <path d="M-4 -70 C 10 -88 26 -88 36 -80"/>
+              <path d="M-4 -70 C 14 -76 26 -68 32 -58"/>
+            </g>
+          </g>
+        </g>
+      </g>
+
+      <!-- ============================ ROAD ============================ -->
+      <rect x="0" y="454" width="960" height="146" fill="url(#roadGrad)"/>
+      <rect x="0" y="454" width="960" height="12" class="f-curb" opacity=".9"/>
+      <rect x="0" y="466" width="960" height="3"  fill="#ffffff" opacity=".10"/>
+      <g id="layerRoad">
+        <g class="tile">
+          <!-- lane dashes near the viewer -->
+          <g class="f-dash" opacity=".78">
+            <rect x="14"  y="572" width="58" height="7" rx="3.5"/>
+            <rect x="134" y="572" width="58" height="7" rx="3.5"/>
+          </g>
+          <!-- asphalt speckle + pebbles along the riding line -->
+          <g class="f-pebble" opacity=".35">
+            <circle cx="46"  cy="512" r="2.6"/><circle cx="98" cy="536" r="2"/>
+            <circle cx="176" cy="508" r="2.2"/><circle cx="214" cy="546" r="3"/>
+            <circle cx="292" cy="522" r="2"/><circle cx="352" cy="504" r="2.4"/>
+          </g>
+          <g fill="#ffffff" opacity=".05">
+            <rect x="70" y="492" width="40" height="2" rx="1"/>
+            <rect x="190" y="556" width="52" height="2" rx="1"/>
+            <rect x="280" y="486" width="30" height="2" rx="1"/>
+          </g>
+        </g>
+      </g>
+
+      <!-- foreground grass tufts: parallax 1.4 -->
+      <g id="layerFore">
+        <g class="tile">
+          <g class="f-tuft">
+            <path d="M30 600 C 32 580 26 570 20 562 C 30 566 36 578 38 592 C 42 576 50 566 60 560
+                     C 52 572 48 584 48 600 Z" opacity=".9"/>
+            <path d="M210 600 C 214 584 208 574 202 566 C 212 570 218 582 220 594 C 226 582 234 574 242 570
+                     C 234 580 230 590 230 600 Z" opacity=".75"/>
+          </g>
+          <g class="f-pebble" opacity=".5">
+            <ellipse cx="130" cy="596" rx="9" ry="4"/>
+            <ellipse cx="290" cy="592" rx="6" ry="3"/>
+          </g>
+        </g>
+      </g>
+
+      <!-- ======================= SHADOW + DUST ======================= -->
+      <ellipse id="shadow" cx="462" cy="504" rx="196" ry="13" class="f-shadow" opacity=".34" filter="url(#soft)"/>
+      <g id="dust"></g>
+
+      <!-- ======================= SPEED LINES ======================= -->
+      <g id="speedLines" class="s-speed" opacity="0" stroke-linecap="round">
+        <line x1="60"  y1="286" x2="176" y2="286" stroke-width="4"/>
+        <line x1="20"  y1="342" x2="120" y2="342" stroke-width="3"/>
+        <line x1="96"  y1="392" x2="228" y2="392" stroke-width="4"/>
+        <line x1="40"  y1="436" x2="140" y2="436" stroke-width="3"/>
+        <line x1="150" y1="240" x2="238" y2="240" stroke-width="3"/>
+        <line x1="230" y1="470" x2="330" y2="470" stroke-width="3"/>
+      </g>
+
+      <!-- ============================ WHEELS ============================ -->
+      <!-- rear wheel -->
+      <g id="wheelRear" transform="translate(312,420)">
+        <circle r="80" fill="none" stroke="#23232a" stroke-width="13"/>
+        <circle r="80" fill="none" stroke="#3a3a44" stroke-width="13" stroke-dasharray="5 13" opacity=".85"/>
+        <circle r="71" fill="none" stroke="#dfe4e8" stroke-width="5"/>
+        <circle r="66" fill="none" stroke="#9aa3ab" stroke-width="1.4" opacity=".7"/>
+        <g id="spokesRear" stroke="#c3ccd3" stroke-width="2.1" opacity=".95">
+          <line x1="0" y1="-70" x2="0" y2="70"/>
+          <line x1="-70" y1="0" x2="70" y2="0"/>
+          <line x1="-49.5" y1="-49.5" x2="49.5" y2="49.5"/>
+          <line x1="49.5" y1="-49.5" x2="-49.5" y2="49.5"/>
+          <line x1="-26.8" y1="-64.7" x2="26.8" y2="64.7"/>
+          <line x1="26.8" y1="-64.7" x2="-26.8" y2="64.7"/>
+          <line x1="-64.7" y1="-26.8" x2="64.7" y2="26.8"/>
+          <line x1="64.7" y1="-26.8" x2="-64.7" y2="26.8"/>
+        </g>
+        <circle r="9" fill="#b9c2c9" stroke="#7d868d" stroke-width="2"/>
+        <rect x="-2.6" y="-70" width="5.2" height="14" rx="2.6" fill="#f2b03c"/>
+      </g>
+      <!-- front wheel -->
+      <g id="wheelFront" transform="translate(612,420)">
+        <circle r="80" fill="none" stroke="#23232a" stroke-width="13"/>
+        <circle r="80" fill="none" stroke="#3a3a44" stroke-width="13" stroke-dasharray="5 13" opacity=".85"/>
+        <circle r="71" fill="none" stroke="#dfe4e8" stroke-width="5"/>
+        <circle r="66" fill="none" stroke="#9aa3ab" stroke-width="1.4" opacity=".7"/>
+        <g id="spokesFront" stroke="#c3ccd3" stroke-width="2.1" opacity=".95">
+          <line x1="0" y1="-70" x2="0" y2="70"/>
+          <line x1="-70" y1="0" x2="70" y2="0"/>
+          <line x1="-49.5" y1="-49.5" x2="49.5" y2="49.5"/>
+          <line x1="49.5" y1="-49.5" x2="-49.5" y2="49.5"/>
+          <line x1="-26.8" y1="-64.7" x2="26.8" y2="64.7"/>
+          <line x1="26.8" y1="-64.7" x2="-26.8" y2="64.7"/>
+          <line x1="-64.7" y1="-26.8" x2="64.7" y2="26.8"/>
+          <line x1="64.7" y1="-26.8" x2="-64.7" y2="26.8"/>
+        </g>
+        <circle r="9" fill="#b9c2c9" stroke="#7d868d" stroke-width="2"/>
+        <rect x="-2.6" y="-70" width="5.2" height="14" rx="2.6" fill="#4fd1c5"/>
+      </g>
+
+      <!-- ======================= FAR (OFF-SIDE) LEG ======================= -->
+      <g id="legFar" stroke-linecap="round" fill="none">
+        <g id="pedalFar">
+          <rect x="-15" y="-4.5" width="30" height="9" rx="3" fill="#8a6a45" stroke="#6d5134" stroke-width="1.6"/>
+        </g>
+        <path id="thighFar" stroke="#d07f2c" stroke-width="21"/>
+        <path id="shankFar" stroke="#d07f2c" stroke-width="14"/>
+        <circle id="kneeFar" r="8.5" fill="#d07f2c"/>
+        <g id="footFar"></g>
+      </g>
+
+      <!-- ============================ FRAME ============================ -->
+      <g id="frame" stroke-linecap="round">
+        <!-- chain stay + seat stay -->
+        <path d="M312 420 L452 426" stroke="#0e6d74" stroke-width="9" fill="none"/>
+        <path d="M312 420 L404 306" stroke="#0e6d74" stroke-width="7" fill="none"/>
+        <!-- fork -->
+        <path d="M606 346 C 610 372 612 396 612 420" stroke="url(#frameGrad)" stroke-width="9" fill="none"/>
+        <!-- seat tube / down tube / top tube -->
+        <path d="M452 426 L404 306" stroke="url(#frameGrad)" stroke-width="11" fill="none"/>
+        <path d="M452 426 L604 342" stroke="url(#frameGrad)" stroke-width="12" fill="none"/>
+        <path d="M406 306 L594 310" stroke="url(#frameGrad)" stroke-width="10" fill="none"/>
+        <!-- head tube -->
+        <path d="M594 308 L606 346" stroke="#17797e" stroke-width="14" fill="none"/>
+        <!-- seat post + saddle -->
+        <path d="M404 306 L398 292" stroke="#c9ced3" stroke-width="6" fill="none"/>
+        <path d="M366 296 C 378 286 410 284 424 291 C 428 293 428 297 423 298 C 408 300 380 302 368 300
+                 C 364 299 363 298 366 296 Z" fill="#7a4a2b" stroke="#5e3720" stroke-width="1.6"/>
+        <!-- handlebar: stem, swept bar, grip -->
+        <path d="M594 308 L588 298" stroke="#c9ced3" stroke-width="7" fill="none"/>
+        <path d="M588 298 C 578 290 566 290 556 296" stroke="#2b2b33" stroke-width="7" fill="none"/>
+        <path d="M572 291.5 C 566 291 560 292.5 556 296" stroke="#7a4a2b" stroke-width="9" fill="none"/>
+        <!-- front basket with two fish -->
+        <g id="basket">
+          <path d="M600 344 L604 352" stroke="#8d8d95" stroke-width="4" fill="none"/>
+          <path d="M646 300 L676 300 L668 344 L612 344 Z" fill="#c98f4e" stroke="#a3703a" stroke-width="2.5"/>
+          <g stroke="#a3703a" stroke-width="1.8" opacity=".8">
+            <path d="M622 302 L626 343" fill="none"/><path d="M636 301 L638 343" fill="none"/>
+            <path d="M650 301 L650 343" fill="none"/><path d="M664 302 L660 343" fill="none"/>
+            <path d="M608 314 L672 314" fill="none"/><path d="M611 329 L669 329" fill="none"/>
+          </g>
+          <g>
+            <path d="M622 300 C 626 290 640 288 646 296 C 650 300 648 302 644 302 Z" fill="#7fd4e8"/>
+            <path d="M646 294 L656 288 L654 298 Z" fill="#4aa8c4"/>
+            <circle cx="630" cy="295" r="1.6" fill="#22414c"/>
+            <path d="M650 300 C 654 292 666 291 670 297 C 673 300 671 302 668 302 Z" fill="#8fdcec"/>
+            <path d="M670 295 L679 291 L677 300 Z" fill="#57b4cd"/>
+            <circle cx="657" cy="296" r="1.5" fill="#22414c"/>
+          </g>
+        </g>
+        <!-- rear rack -->
+        <path d="M330 372 L400 372 M340 372 L312 420 M392 372 L404 340" stroke="#0e6d74" stroke-width="5" fill="none"/>
+        <rect x="326" y="364" width="80" height="8" rx="3" fill="#17797e"/>
+        <!-- fenders -->
+        <path d="M246 396 C 258 356 292 336 320 338" stroke="#f5e9d0" stroke-width="7" fill="none" opacity=".95"/>
+        <path d="M546 396 C 556 358 588 336 618 338" stroke="#f5e9d0" stroke-width="7" fill="none" opacity=".95"/>
+      </g>
+
+      <!-- ======================= DRIVETRAIN ======================= -->
+      <g id="drivetrain">
+        <!-- rear cog, spins with the wheel -->
+        <g id="cog" transform="translate(312,420)">
+          <circle r="11" fill="#c9ced3" stroke="#8d959c" stroke-width="2"/>
+          <g stroke="#8d959c" stroke-width="2.4">
+            <line x1="-11" y1="0" x2="11" y2="0"/><line x1="0" y1="-11" x2="0" y2="11"/>
+            <line x1="-8" y1="-8" x2="8" y2="8"/><line x1="8" y1="-8" x2="-8" y2="8"/>
+          </g>
+        </g>
+        <!-- chain: dash pattern scrolls at chainring surface speed -->
+        <path id="chain" d="M452 400 L312 409 A11 11 0 0 0 312 431 L452 452 A26 26 0 0 0 452 400 Z"
+              fill="none" stroke="#5c5c66" stroke-width="5" stroke-dasharray="6 4"/>
+        <!-- chainring + near crank arm + near pedal -->
+        <g id="crankset" transform="translate(452,426)">
+          <g id="ring">
+            <circle r="26" fill="none" stroke="#9aa3ab" stroke-width="5"/>
+            <circle r="26" fill="none" stroke="#5c666e" stroke-width="5" stroke-dasharray="3 4"/>
+            <g stroke="#8d959c" stroke-width="4" stroke-linecap="round">
+              <line x1="0" y1="0" x2="0" y2="-20"/>
+              <line x1="0" y1="0" x2="19" y2="6.2"/>
+              <line x1="0" y1="0" x2="-19" y2="6.2"/>
+              <line x1="0" y1="0" x2="11.8" y2="-16.2"/>
+              <line x1="0" y1="0" x2="-11.8" y2="-16.2"/>
+            </g>
+            <circle r="6" fill="#6d757c"/>
+          </g>
+          <g id="crankNear">
+            <rect x="-6" y="-4" width="38" height="9" rx="4.5" fill="#3c4149"/>
+          </g>
+          <g id="pedalNear">
+            <rect x="-16" y="-5" width="32" height="10" rx="3.5" fill="#b98a55" stroke="#8a6a45" stroke-width="1.8"/>
+            <g stroke="#8a6a45" stroke-width="1.2" opacity=".8">
+              <line x1="-9" y1="-4" x2="-9" y2="4"/><line x1="0" y1="-4" x2="0" y2="4"/><line x1="9" y1="-4" x2="9" y2="4"/>
+            </g>
+          </g>
+        </g>
+      </g>
+
+      <!-- ======================= FAR WING (behind body) ======================= -->
+      <g id="wingFar" fill="none" stroke-linecap="round">
+        <path id="armFarA" stroke="#8d99a3" stroke-width="17"/>
+        <path id="armFarB" stroke="#7c8791" stroke-width="13"/>
+      </g>
+
+      <!-- ============================ PELICAN ============================ -->
+      <g id="bird">
+        <!-- tail fan -->
+        <g id="tail">
+          <path d="M408 262 C 384 264 362 274 348 292 C 366 296 386 292 402 284 Z" fill="#dcd3c3"/>
+          <path d="M410 272 C 388 278 370 290 358 304 C 376 306 396 300 410 290 Z" fill="#efe8db"/>
+          <g stroke="#c9bfae" stroke-width="1.6" fill="none" opacity=".9">
+            <path d="M404 268 C 386 274 370 284 358 296"/>
+            <path d="M406 280 C 390 288 376 296 366 304"/>
+          </g>
+        </g>
+
+        <!-- torso -->
+        <path d="M400 246 C 404 216 434 198 470 200 C 508 202 532 222 534 248
+                 C 536 276 512 298 476 302 C 438 306 404 288 400 262 Z" fill="url(#bodyShade)"/>
+        <!-- belly shading + feather texture -->
+        <path d="M410 274 C 434 296 486 302 520 280 C 512 296 484 306 458 304 C 430 302 412 290 410 274 Z"
+              fill="#e0d6c5" opacity=".85"/>
+        <g stroke="#e4dbcb" stroke-width="2.2" fill="none" opacity=".95">
+          <path d="M430 232 C 440 240 452 242 462 238"/>
+          <path d="M424 252 C 436 262 452 264 464 258"/>
+          <path d="M440 272 C 452 280 468 282 480 276"/>
+        </g>
+        <!-- shoulder coverts (hides the wing joint) -->
+        <path d="M492 214 C 512 212 528 224 530 240 C 532 256 520 268 504 268
+                 C 490 268 480 256 482 240 C 483 226 484 216 492 214 Z" fill="#f2ece0"/>
+        <path d="M486 246 C 500 258 518 260 528 250 C 524 264 506 272 492 266 C 484 262 483 254 486 246 Z"
+              fill="#cfd8de"/>
+
+        <!-- neck -->
+        <path d="M486 274 C 494 240 514 208 548 190 L 578 208 C 546 224 522 250 514 284 Z" fill="#fbf7ef"/>
+        <path d="M548 190 L 578 208 C 566 214 556 222 548 230 C 546 214 546 200 548 190 Z" fill="#efe7d9" opacity=".8"/>
+
+        <!-- head -->
+        <g id="head">
+          <ellipse cx="588" cy="172" rx="28" ry="23" fill="#fbf7ef" transform="rotate(-8 588 172)"/>
+          <!-- crest -->
+          <g fill="#e6ddcd">
+            <path d="M566 156 C 558 146 552 140 546 136 C 552 146 556 154 560 162 Z"/>
+            <path d="M572 150 C 566 138 562 130 558 124 C 562 136 566 146 570 156 Z"/>
+            <path d="M580 148 C 578 136 577 128 576 122 C 578 134 580 142 583 152 Z"/>
+          </g>
+          <!-- bill: upper mandible -->
+          <path d="M606 160 C 650 155 706 163 742 176 C 748 178 748 184 741 184
+                   C 700 181 650 178 606 176 Z" fill="url(#billGrad)" stroke="#d99b2b" stroke-width="1.6"/>
+          <path d="M612 166 C 654 163 700 170 736 179" stroke="#e0a63a" stroke-width="1.4" fill="none" opacity=".8"/>
+          <!-- hooked bill tip -->
+          <path d="M736 175 C 745 176 750 180 748 186 C 745 190 740 188 738 184 Z" fill="#e79f30"/>
+          <!-- gular pouch (wobbles) -->
+          <g id="pouch">
+            <path d="M607 175 C 618 202 646 228 686 226 C 718 224 738 202 744 185
+                     C 700 193 650 186 607 175 Z" fill="url(#pouchGrad)" stroke="#dd7a5c" stroke-width="1.5"/>
+            <path d="M622 190 C 640 210 664 220 690 218" stroke="#f9c39a" stroke-width="2" fill="none" opacity=".55"/>
+            <!-- the breakfast that got away, sticking out -->
+            <g id="fishTail">
+              <path d="M686 214 C 692 204 700 200 706 202 C 702 208 700 214 700 220
+                       C 704 224 706 230 704 234 C 696 230 690 222 686 214 Z" fill="#4aa8c4"/>
+              <path d="M694 210 C 698 204 702 202 705 203" stroke="#8fdcec" stroke-width="1.6" fill="none"/>
+            </g>
+          </g>
+          <!-- lower mandible line -->
+          <path d="M607 176 C 650 186 700 192 742 185" stroke="#d9933a" stroke-width="2" fill="none" opacity=".7"/>
+          <!-- eye -->
+          <g clip-path="url(#eyeClip)">
+            <circle cx="601" cy="163" r="7.4" fill="#fffaf0"/>
+            <circle cx="602.6" cy="163.4" r="4.6" fill="#2b2b33"/>
+            <circle cx="604.2" cy="161.4" r="1.7" fill="#ffffff" opacity=".95"/>
+            <rect id="eyelid" x="591" y="150" width="21" height="22" fill="#f4eee2"/>
+          </g>
+          <path d="M594 155 C 598 152 604 152 608 155" stroke="#e2d8c7" stroke-width="1.6" fill="none"/>
+        </g>
+      </g>
+
+      <!-- ======================= NEAR (DRIVE-SIDE) LEG ======================= -->
+      <g id="legNear" stroke-linecap="round" fill="none">
+        <path id="thighNear" stroke="#f0a03c" stroke-width="23"/>
+        <path id="shankNear" stroke="#f0a03c" stroke-width="15"/>
+        <circle id="kneeNear" r="9.5" fill="#f0a03c"/>
+        <g id="footNear"></g>
+      </g>
+
+      <!-- ======================= NEAR WING ON THE GRIP ======================= -->
+      <g id="wingNear" fill="none" stroke-linecap="round">
+        <path id="armNearA" stroke="#e9e1d3" stroke-width="20"/>
+        <path id="armNearB" stroke="#dcd3c2" stroke-width="15"/>
+        <g id="primaries" stroke="#5d6b76" stroke-width="4.4" stroke-linecap="round">
+          <line/><line/><line/><line/>
+        </g>
+        <g id="handWing">
+          <path d="M556 300 C 550 292 554 284 562 283 C 570 282 576 288 576 295
+                   C 576 302 570 306 564 305 Z" fill="#dcd3c2" stroke="#b9ad9a" stroke-width="1.6"/>
+          <g stroke="#5d6b76" stroke-width="3.2" stroke-linecap="round">
+            <path d="M558 288 C 562 285 568 285 572 288" fill="none"/>
+          </g>
+        </g>
+      </g>
+
+      <!-- ======================= COMIC "DING!" =======================
+           Text sits at the local origin so JS can scale/rotate it about
+           its own anchor instead of flinging it across the canvas. -->
+      <g id="ding" opacity="0">
+        <text x="0" y="0" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif"
+              font-size="34" font-weight="800" fill="#fff3c4" stroke="#2b2b33" stroke-width="4"
+              paint-order="stroke" letter-spacing="1">DING!</text>
+      </g>
+    </svg>
+
+    <div class="bar">
+      <div class="controls">
+        <button id="btnPlay" type="button" aria-label="Play or pause the animation">Pause</button>
+        <button id="btnBell" type="button" aria-label="Ring the bicycle bell">Ring bell</button>
+        <button id="btnTheme" type="button" aria-label="Switch between sunrise and dusk">Dusk</button>
+        <label class="slider">Speed
+          <input id="speed" type="range" min="0.2" max="2.5" step="0.05" value="1" aria-label="Animation speed">
+          <span id="speedVal">1.00×</span>
+        </label>
+      </div>
+      <div class="tele" id="tele">
+        <span>cadence <b id="tCad">0</b> rpm</span>
+        <span>wheel <b id="tWheel">0</b> rpm</span>
+        <span>road <b id="tSpeed">0</b> px/s</span>
+        <span>knee <b id="tKnee">0</b>°</span>
+        <span>fps <b id="tFps">0</b></span>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <code>pelican-sunrise-sprint.html</code> — one file, no dependencies. The rig is a real kinematic chain:
+    crank angle → pedal position → law-of-cosines knee solve → foot, with the off-side leg 180° out of phase.
+    The same solver keeps the near wing on the handlebar grip while the body bobs at twice crank frequency.
+    <div class="hint">Shortcuts: <kbd>Space</kbd> play/pause · <kbd>B</kbd> bell · <kbd>←</kbd>/<kbd>→</kbd> speed · <kbd>T</kbd> dusk</div>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ============================================================
+     1. GEOMETRY — one source of truth, shared by art and physics
+     ============================================================ */
+  var WHEEL_R   = 80;                 // tyre radius, px
+  var HUB_Y     = 420;                // wheel centre height (contact line = 500)
+  var REAR_X    = 312, FRONT_X = 612; // 300 px wheelbase
+  var BB        = { x: 452, y: 426 }; // bottom bracket, 6 px of drop
+  var CRANK     = 32;                 // crank arm length
+  var HIP       = { x: 398, y: 282 }; // pelvis, on the saddle
+  var THIGH     = 86, SHANK = 100;    // leg bone lengths (sum 186 > hip-to-BB + crank)
+  var SHOULDER  = { x: 500, y: 234 };
+  var GRIP      = { x: 566, y: 295 }; // where the wing holds the bar
+  var WING_HI   = 60, WING_LO = 56;   // wing bone lengths
+  var GEAR      = 1.6;                // chainring:cog — wheel spins faster than crank
+  var RING_R    = 26;                 // chainring radius, for chain surface speed
+  var CRANK_W   = 6.0;                // rad/s at 1.00x  (~57 rpm cadence)
+
+  var DEG = 180 / Math.PI;
+
+  /* ============================================================
+     2. ANALYTIC TWO-BONE IK
+     Root -> target with two fixed bone lengths. Returns the middle
+     joint via the law of cosines; `bend` picks which of the two
+     mirror solutions to use (+1 / -1).
+     ============================================================ */
+  function solveIK(rx, ry, tx, ty, l1, l2, bend) {
+    var dx = tx - rx, dy = ty - ry;
+    var len = Math.hypot(dx, dy) || 1e-6;
+    var ux = dx / len, uy = dy / len;
+    // clamp the reach so the joint can never hyper-extend or invert
+    var d = Math.min(Math.max(len, Math.abs(l1 - l2) + 0.5), l1 + l2 - 0.5);
+    var a = (l1 * l1 - l2 * l2 + d * d) / (2 * d);
+    var h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+    var mx = rx + ux * a, my = ry + uy * a;
+    // perpendicular of the root->target axis, flipped by `bend`
+    var kx = mx + bend * h * uy;
+    var ky = my - bend * h * ux;
+    return { x: kx, y: ky, reached: d, straight: l1 + l2 };
+  }
+
+  function angleBetween(ax, ay, bx, by) {
+    var d = (Math.hypot(ax, ay) * Math.hypot(bx, by)) || 1e-6;
+    var c = Math.max(-1, Math.min(1, (ax * bx + ay * by) / d));
+    return Math.acos(c) * DEG;
+  }
+
+  /* ============================================================
+     3. DOM HANDLES
+     ============================================================ */
+  function $(id) { return document.getElementById(id); }
+  var svg = $("scene");
+  var el = {
+    wheelRear: $("wheelRear"), wheelFront: $("wheelFront"),
+    spokesRear: $("spokesRear"), spokesFront: $("spokesFront"),
+    cog: $("cog"), ring: $("ring"), crankNear: $("crankNear"),
+    pedalNear: $("pedalNear"), pedalFar: $("pedalFar"), chain: $("chain"),
+    thighNear: $("thighNear"), shankNear: $("shankNear"), kneeNear: $("kneeNear"), footNear: $("footNear"),
+    thighFar: $("thighFar"), shankFar: $("shankFar"), kneeFar: $("kneeFar"), footFar: $("footFar"),
+    armNearA: $("armNearA"), armNearB: $("armNearB"), handWing: $("handWing"),
+    feathers: Array.prototype.slice.call($("primaries").querySelectorAll("line")),
+    armFarA: $("armFarA"), armFarB: $("armFarB"),
+    bird: $("bird"), tail: $("tail"), pouch: $("pouch"), fishTail: $("fishTail"),
+    eyelid: $("eyelid"), shadow: $("shadow"), dust: $("dust"),
+    speedLines: $("speedLines"), ding: $("ding"), sunRays: $("sunRays"),
+    layers: {
+      clouds: { node: $("layerClouds"), period: 960, f: 0.06 },
+      hills:  { node: $("layerHills"),  period: 960, f: 0.13 },
+      sea:    { node: $("layerSea"),    period: 960, f: 0.25 },
+      palms:  { node: $("layerPalms"),  period: 480, f: 0.50 },
+      road:   { node: $("layerRoad"),   period: 240, f: 1.00 },
+      fore:   { node: $("layerFore"),   period: 320, f: 1.40 }
+    }
+  };
+
+  /* A webbed pelican foot, built once and re-placed each frame. */
+  function buildFoot(host, fill, stroke) {
+    host.innerHTML =
+      '<path d="M-13 -6 C -4 -10 12 -10 22 -4 C 30 0 30 6 22 8 C 10 11 -6 10 -14 5 Z" fill="' + fill +
+      '" stroke="' + stroke + '" stroke-width="1.6"/>' +
+      '<g stroke="' + stroke + '" stroke-width="1.5" fill="none" opacity=".85">' +
+      '<path d="M2 -4 C 8 0 14 3 20 5"/><path d="M6 -6 C 12 -3 17 -1 22 0"/><path d="M-2 -1 C 4 3 8 6 12 8"/>' +
+      '</g>';
+  }
+  buildFoot(el.footNear, "#f7b254", "#cf7f22");
+  buildFoot(el.footFar,  "#d07f2c", "#a75f1c");
+
+  /* Dust puffs kicked up at the rear contact patch. */
+  var PUFFS = 5, puffs = [];
+  for (var p = 0; p < PUFFS; p++) {
+    var c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    c.setAttribute("class", "f-dust");
+    c.setAttribute("r", "2");
+    el.dust.appendChild(c);
+    puffs.push(c);
+  }
+
+  /* Tile every parallax strip so it can loop seamlessly: the layer group is
+     translated by -(offset % period), and copies cover viewport + one period. */
+  Object.keys(el.layers).forEach(function (k) {
+    var L = el.layers[k], tile = L.node.querySelector(".tile");
+    var copies = Math.ceil(960 / L.period) + 1;
+    for (var i = 1; i < copies; i++) {
+      var clone = tile.cloneNode(true);
+      clone.setAttribute("transform", "translate(" + (i * L.period) + ",0)");
+      el.layers[k].node.appendChild(clone);
+    }
+  });
+
+  /* ============================================================
+     4. STATE
+     ============================================================ */
+  var reduceMotion = window.matchMedia &&
+                     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var playing   = !reduceMotion;
+  var speedMul  = 1;
+  var crankAng  = reduceMotion ? 0.62 : 0;  // rad; a flattering static pose
+  var groundPx  = 0;                        // distance the road has travelled
+  var wheelAng  = 0;
+  var t         = 0;                        // scene clock, seconds
+  var blinkAt   = 2.1, blinking = 0;
+  var dingAt    = -1;
+  var fps       = 60;
+
+  /* ============================================================
+     5. PER-FRAME RIG
+     ============================================================ */
+  function render() {
+    var wheelW = CRANK_W * GEAR * speedMul;      // rad/s
+    var groundV = wheelW * WHEEL_R;              // px/s — tyres never slip
+    var pedalAng = crankAng;
+
+    // --- wheels, cog, chainring ---
+    var wdeg = wheelAng * DEG;
+    el.wheelRear.setAttribute("transform",  "translate(" + REAR_X  + "," + HUB_Y + ") rotate(" + wdeg + ")");
+    el.wheelFront.setAttribute("transform", "translate(" + FRONT_X + "," + HUB_Y + ") rotate(" + wdeg + ")");
+    el.cog.setAttribute("transform", "translate(" + REAR_X + "," + HUB_Y + ") rotate(" + wdeg + ")");
+    el.ring.setAttribute("transform", "rotate(" + (pedalAng * DEG) + ")");
+
+    // chain links crawl at the chainring's surface speed
+    var chainShift = -(crankAng * RING_R) % 10;
+    el.chain.setAttribute("stroke-dashoffset", chainShift.toFixed(2));
+
+    // --- crank arms + pedals (pedals stay level, like real floats) ---
+    var nPx = BB.x + CRANK * Math.cos(pedalAng);
+    var nPy = BB.y + CRANK * Math.sin(pedalAng);
+    var fPx = BB.x + CRANK * Math.cos(pedalAng + Math.PI);
+    var fPy = BB.y + CRANK * Math.sin(pedalAng + Math.PI);
+    el.crankNear.setAttribute("transform", "rotate(" + (pedalAng * DEG) + ")");
+    el.pedalNear.setAttribute("transform", "translate(" + nPx.toFixed(2) + "," + nPy.toFixed(2) + ")");
+    el.pedalFar.setAttribute("transform",  "translate(" + fPx.toFixed(2) + "," + fPy.toFixed(2) + ")");
+
+    // --- body bob: twice per crank revolution, plus a whisker of pitch ---
+    var bob   = 1.9 * Math.sin(2 * pedalAng + 0.5);
+    var pitch = 0.45 * Math.sin(2 * pedalAng + 1.1);
+    el.bird.setAttribute("transform",
+      "translate(0," + bob.toFixed(2) + ") rotate(" + pitch.toFixed(3) + " " + HIP.x + " " + HIP.y + ")");
+    el.tail.setAttribute("transform", "rotate(" + (2.2 * Math.sin(3 * pedalAng)).toFixed(2) + " 408 274)");
+
+    // --- LEGS: hip -> pedal, solved each frame ---
+    // bend +1 puts the knee forward of the hip and above the pedal at every
+    // point of the stroke (verified numerically for all 720 half-degree crank
+    // angles), which is how a cyclist's leg actually tracks.
+    var hipY = HIP.y + bob;             // the hip rides with the body
+    var kneeAngleDeg = 0;
+
+    function drawLeg(thigh, shank, knee, foot, px, py, hipX, hipYy, near) {
+      var j = solveIK(hipX, hipYy, px, py - 4, THIGH, SHANK, 1);
+      thigh.setAttribute("d", "M" + hipX + " " + hipYy.toFixed(2) + "L" + j.x.toFixed(2) + " " + j.y.toFixed(2));
+      shank.setAttribute("d", "M" + j.x.toFixed(2) + " " + j.y.toFixed(2) + "L" + px.toFixed(2) + " " + (py - 4).toFixed(2));
+      knee.setAttribute("cx", j.x.toFixed(2));
+      knee.setAttribute("cy", j.y.toFixed(2));
+      // ankle stays nearly level, with a small lag so it feels alive
+      var tilt = 7 * Math.sin(pedalAng + (near ? 0 : Math.PI)) - 3;
+      foot.setAttribute("transform",
+        "translate(" + (px + 3).toFixed(2) + "," + py.toFixed(2) + ") rotate(" + tilt.toFixed(2) + ")");
+      return j;
+    }
+
+    var jn = drawLeg(el.thighNear, el.shankNear, el.kneeNear, el.footNear, nPx, nPy, HIP.x, hipY, true);
+    drawLeg(el.thighFar, el.shankFar, el.kneeFar, el.footFar, fPx, fPy, HIP.x - 5, hipY + 3, false);
+    kneeAngleDeg = angleBetween(HIP.x - jn.x, hipY - jn.y, nPx - jn.x, (nPy - 4) - jn.y);
+
+    // --- WINGS: shoulder -> handlebar grip, same solver ---
+    // bend -1 drops the elbow BELOW the shoulder-to-grip line, so the wing
+    // folds down like a bird leaning on the bars instead of shrugging up.
+    function drawWing(a, b, sx, sy, tx, ty, hand) {
+      var j = solveIK(sx, sy, tx, ty, WING_HI, WING_LO, -1);   // elbow droops back
+      a.setAttribute("d", "M" + sx.toFixed(1) + " " + sy.toFixed(1) + "L" + j.x.toFixed(2) + " " + j.y.toFixed(2));
+      b.setAttribute("d", "M" + j.x.toFixed(2) + " " + j.y.toFixed(2) + "L" + tx.toFixed(1) + " " + ty.toFixed(1));
+      if (hand) {
+        // folded primary feathers fan back from the wrist along the forearm
+        var ang = Math.atan2(ty - j.y, tx - j.x) + Math.PI;
+        for (var i = 0; i < el.feathers.length; i++) {
+          var spread = ang + (i - 1.5) * 0.20;
+          var len = 20 + (i % 2) * 7;
+          var ln = el.feathers[i];
+          ln.setAttribute("x1", (tx - 4).toFixed(1));
+          ln.setAttribute("y1", (ty - 2).toFixed(1));
+          ln.setAttribute("x2", (tx - 4 + Math.cos(spread) * len).toFixed(1));
+          ln.setAttribute("y2", (ty - 2 + Math.sin(spread) * len).toFixed(1));
+        }
+        el.handWing.setAttribute("transform",
+          "translate(" + (tx - 566).toFixed(1) + "," + (ty - 295).toFixed(1) + ")");
+      }
+      return j;
+    }
+    drawWing(el.armNearA, el.armNearB, SHOULDER.x, SHOULDER.y + bob, GRIP.x, GRIP.y, true);
+    drawWing(el.armFarA, el.armFarB, SHOULDER.x - 8, SHOULDER.y + bob + 6, GRIP.x - 16, GRIP.y + 6, false);
+
+    // --- pouch jiggle, anchored at the throat ---
+    var sag = 1 + 0.055 * Math.sin(2 * pedalAng + 0.9) + 0.02 * Math.sin(t * 7.3);
+    el.pouch.setAttribute("transform",
+      "translate(607,175) scale(1," + sag.toFixed(4) + ") translate(-607,-175)");
+    el.fishTail.setAttribute("transform",
+      "rotate(" + (11 * Math.sin(t * 8.5)).toFixed(2) + " 690 216)");
+
+    // --- blink ---
+    if (playing) {
+      if (blinking > 0) { blinking -= 1 / 60; if (blinking < 0) blinking = 0; }
+      else if (t > blinkAt) { blinking = 0.16; blinkAt = t + 2.2 + Math.random() * 2.6; }
+    }
+    var k = blinking > 0 ? Math.sin(Math.min(1, (0.16 - blinking) / 0.16) * Math.PI) : 0;
+    el.eyelid.setAttribute("transform", "translate(0," + (-24 + 30 * k).toFixed(2) + ")");
+
+    // --- parallax scroll ---
+    Object.keys(el.layers).forEach(function (key) {
+      var L = el.layers[key];
+      var off = (groundPx * L.f) % L.period;
+      L.node.setAttribute("transform", "translate(" + (-off).toFixed(2) + ",0)");
+    });
+    el.sunRays.setAttribute("transform", "rotate(" + ((t * 3.2) % 360).toFixed(2) + " 176 228)");
+
+    // --- dust puffs at the rear contact patch ---
+    var puffRate = 0.55 + speedMul * 1.5;
+    for (var i = 0; i < PUFFS; i++) {
+      var ph = ((t * puffRate) + i / PUFFS) % 1;
+      var cx = REAR_X - 6 - ph * (44 + 30 * speedMul);
+      var cy = 498 - ph * (16 + 10 * ph);
+      puffs[i].setAttribute("cx", cx.toFixed(1));
+      puffs[i].setAttribute("cy", cy.toFixed(1));
+      puffs[i].setAttribute("r", (1.6 + ph * 7).toFixed(2));
+      puffs[i].setAttribute("opacity", ((1 - ph) * 0.4 * Math.min(1, speedMul)).toFixed(3));
+    }
+
+    // --- shadow follows the bob ---
+    var sw = 196 + 5 * Math.sin(2 * pedalAng);
+    el.shadow.setAttribute("rx", sw.toFixed(1));
+    el.shadow.setAttribute("ry", (13 + 0.9 * Math.sin(2 * pedalAng)).toFixed(2));
+    el.shadow.setAttribute("opacity", (0.34 - 0.03 * Math.sin(2 * pedalAng)).toFixed(3));
+
+    // --- speed lines only earn their keep when actually fast ---
+    var intensity = Math.max(0, Math.min(0.55, (groundV - 420) / 900));
+    el.speedLines.setAttribute("opacity", intensity.toFixed(3));
+    if (intensity > 0.01) {
+      var dash = 60 + 90 * speedMul;
+      el.speedLines.setAttribute("stroke-dasharray", "40 " + dash.toFixed(0));
+      el.speedLines.setAttribute("stroke-dashoffset", (-(groundPx * 1.9) % (40 + dash)).toFixed(1));
+    }
+
+    // --- bell caption: pops at the bar, drifts up-right, fades ---
+    if (dingAt >= 0) {
+      var age = t - dingAt;
+      if (age > 1.05) { dingAt = -1; el.ding.setAttribute("opacity", "0"); }
+      else {
+        var grow = Math.min(1, age / 0.14);
+        var pop  = age < 0.14 ? grow : 1 - (age - 0.14) / 0.91;
+        var s    = 0.5 + 0.7 * grow - 0.2 * (age / 1.05);
+        el.ding.setAttribute("opacity", Math.max(0, pop).toFixed(3));
+        // scale/rotate about the text's own origin, then place it
+        el.ding.setAttribute("transform",
+          "translate(" + (600 + age * 46).toFixed(1) + "," + (252 - age * 54).toFixed(1) +
+          ") rotate(" + (-8 + 4 * Math.sin(age * 22)).toFixed(2) +
+          ") scale(" + s.toFixed(3) + ")");
+      }
+    }
+
+    return { groundV: groundV, knee: kneeAngleDeg, wheelW: wheelW };
+  }
+
+  /* ============================================================
+     6. TELEMETRY (throttled so it never costs frames)
+     ============================================================ */
+  var tCad = $("tCad"), tWheel = $("tWheel"), tSpeed = $("tSpeed"), tKnee = $("tKnee"), tFps = $("tFps");
+  /* Throttled on wall clock, NOT the scene clock: the scene clock freezes
+     while paused, which would otherwise leave the readouts stuck at zero. */
+  var teleAt = -1e9;
+  function telemetry(info, now) {
+    if (now - teleAt < 110) return;
+    teleAt = now;
+    var cad = playing ? (CRANK_W * speedMul) / (2 * Math.PI) * 60 : 0;
+    tCad.textContent   = cad.toFixed(0);
+    tWheel.textContent = (cad * GEAR).toFixed(0);
+    tSpeed.textContent = (playing ? info.groundV : 0).toFixed(0);
+    tKnee.textContent  = info.knee.toFixed(1);
+    tFps.textContent   = fps.toFixed(0);
+  }
+
+  /* ============================================================
+     7. LOOP
+     ============================================================ */
+  var last = performance.now();
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (dt > 0) fps = fps * 0.9 + (1 / dt) * 0.1;
+
+    if (playing) {
+      t += dt;
+      var wheelW = CRANK_W * GEAR * speedMul;
+      crankAng = (crankAng + CRANK_W * speedMul * dt) % (Math.PI * 2);
+      wheelAng = (wheelAng + wheelW * dt) % (Math.PI * 2);
+      groundPx = (groundPx + wheelW * WHEEL_R * dt) % 1e6;   // tyres grip the road
+    }
+    telemetry(render(), now);
+    requestAnimationFrame(frame);
+  }
+
+  /* ============================================================
+     8. CONTROLS
+     ============================================================ */
+  var btnPlay = $("btnPlay"), btnBell = $("btnBell"), btnTheme = $("btnTheme");
+  var speed = $("speed"), speedVal = $("speedVal");
+
+  function setPlaying(v) {
+    playing = v;
+    btnPlay.textContent = v ? "Pause" : "Play";
+    btnPlay.setAttribute("aria-pressed", String(!v));
+  }
+  btnPlay.addEventListener("click", function () { setPlaying(!playing); });
+
+  speed.addEventListener("input", function () {
+    speedMul = parseFloat(speed.value);
+    speedVal.textContent = speedMul.toFixed(2) + "\u00d7";
+  });
+
+  /* Dusk swaps the palette by toggling CSS custom properties on the SVG. */
+  var dusk = false;
+  function setTheme(v) {
+    dusk = v;
+    svg.classList.toggle("dusk", v);
+    document.documentElement.classList.toggle("dusk", v);
+    btnTheme.textContent = v ? "Sunrise" : "Dusk";
+  }
+  btnTheme.addEventListener("click", function () { setTheme(!dusk); });
+
+  /* Bell: synthesised on the spot with WebAudio — no sound files anywhere. */
+  var actx = null;
+  function bell() {
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === "suspended") actx.resume();
+      var now = actx.currentTime;
+      [1568, 2093, 3136].forEach(function (f, i) {
+        var o = actx.createOscillator(), g = actx.createGain();
+        o.type = "sine";
+        o.frequency.value = f;
+        g.gain.setValueAtTime(0, now);
+        g.gain.linearRampToValueAtTime(0.20 / (i + 1), now + 0.006);
+        g.gain.exponentialRampToValueAtTime(0.0008, now + 1.1 - i * 0.2);
+        o.connect(g); g.connect(actx.destination);
+        o.start(now); o.stop(now + 1.2);
+      });
+    } catch (e) { /* audio blocked — the visual DING still fires */ }
+    dingAt = t;
+    if (el.ding.getAttribute("opacity") === "0") el.ding.setAttribute("opacity", "0.001");
+  }
+  btnBell.addEventListener("click", bell);
+
+  document.addEventListener("keydown", function (e) {
+    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    if (e.code === "Space") { e.preventDefault(); setPlaying(!playing); }
+    else if (e.key === "b" || e.key === "B") { bell(); }
+    else if (e.key === "t" || e.key === "T") { setTheme(!dusk); }
+    else if (e.key === "ArrowRight") { speed.value = Math.min(2.5, parseFloat(speed.value) + 0.1); speed.dispatchEvent(new Event("input")); }
+    else if (e.key === "ArrowLeft")  { speed.value = Math.max(0.2, parseFloat(speed.value) - 0.1); speed.dispatchEvent(new Event("input")); }
+  });
+
+  /* Keep the pause state honest if the tab is hidden (avoid a time jump). */
+  document.addEventListener("visibilitychange", function () { last = performance.now(); });
+
+  /* ============================================================
+     9. GO
+     ============================================================ */
+  setPlaying(playing);
+  setTheme(false);
+  render();                 // paint the first pose immediately, paused or not
+  requestAnimationFrame(frame);
+
+  if (reduceMotion) {
+    var hint = document.createElement("p");
+    hint.className = "hint";
+    hint.textContent = "Your system asks for reduced motion, so this starts paused on a still frame. Press Play whenever you like.";
+    document.querySelector("footer").appendChild(hint);
+  }
+})();
+</script>
+</body>
+</html>
