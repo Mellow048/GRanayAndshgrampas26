@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import { spawnSync } from "node:child_process";
+import { summarizeProbe, formatProbeReport } from "../src/probeReport.js";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -37,6 +38,7 @@ function parseArgs(argv) {
     outName: "",
     concatDir: "",
     reencode: false,
+    probe: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -51,6 +53,7 @@ function parseArgs(argv) {
     else if (a === "--out-name") opts.outName = argv[++i] || "";
     else if (a === "--concat") opts.concatDir = path.resolve(argv[++i]);
     else if (a === "--reencode") opts.reencode = true;
+    else if (a === "--probe") opts.probe = true;
   }
   return opts;
 }
@@ -455,6 +458,33 @@ async function main() {
     const fps = opts.fps;
     const totalFrames = Math.max(1, Math.ceil(meta.duration * fps));
     const stepDt = 1 / fps;
+
+    // ---------------------------------------------------------------------
+    // Geometry probe: step every frame, render nothing, measure the lens.
+    // Cheap enough to gate every export (~1 min) and it is the only way to
+    // machine-check "the camera ended up inside a table".
+    // ---------------------------------------------------------------------
+    if (opts.probe) {
+      const samples = [];
+      let last = null;
+      for (let idx = 0; idx < totalFrames; idx += 1) {
+        last = await primary.page.evaluate(
+          (dt) => window.__GRANNY_STUDIO__.probeExportFrame(dt),
+          idx === 0 ? 0 : stepDt
+        );
+        samples.push(last);
+        if ((idx + 1) % 300 === 0) {
+          const c = Number.isFinite(last.clearance) ? last.clearance.toFixed(2) : "inf";
+          console.log(`[Probe] ${idx + 1}/${totalFrames} frames · t=${last.simTime.toFixed(1)}s · clearance=${c}m`);
+        }
+      }
+      const report = summarizeProbe(samples);
+      fs.writeFileSync(path.join(opts.outDir, "probe-report.json"), JSON.stringify(report, null, 2));
+      console.log(formatProbeReport(report));
+      console.log(`[Probe] report written to ${path.join(opts.outDir, "probe-report.json")}`);
+      if (report.verdict !== "pass") process.exitCode = 1;
+      return;
+    }
 
     const autoWorkers = Math.min(4, Math.max(1, os.cpus().length));
     let workerCount = opts.workers > 0 ? opts.workers : autoWorkers;

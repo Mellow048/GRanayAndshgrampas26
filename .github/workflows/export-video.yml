@@ -115,6 +115,27 @@ jobs:
           fi
           node scripts/audit-pacing.mjs "${{ inputs.preset }}"
 
+      # Geometry pre-flight: walks the whole episode without rendering a frame
+      # and fails if the lens ends up inside furniture or on top of a performer.
+      # This is the gate that would have caught the "phased inside a table" cut.
+      - name: Lens clearance probe (no render)
+        env:
+          EPISODE_JSON: ${{ inputs.episode_json }}
+        run: |
+          node scripts/export-video.mjs \
+            --preset "${{ inputs.preset }}" \
+            --fps "${{ inputs.fps }}" \
+            --probe \
+            --out-dir probe
+
+      - name: Upload probe report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lens-probe-${{ inputs.preset }}-${{ github.run_number }}
+          path: probe/probe-report.json
+          if-no-files-found: warn
+
       - name: Render 3D POV Episode in Cloud (SwiftShader WebGL + FFmpeg)
         env:
           EPISODE_JSON: ${{ inputs.episode_json }}

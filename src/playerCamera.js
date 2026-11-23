@@ -3,6 +3,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CONFIG } from "./config.js";
 import { createPropMesh } from "./comedyProps.js";
 import { findTaggedObject, getObjectBounds } from "./assetLoader.js";
+import { LensShield } from "./lensShield.js";
 import {
   BODY,
   makeCapsule,
@@ -60,6 +61,9 @@ export class PlayerCamera {
       120
     );
     this.camera.rotation.order = "YXZ";
+
+    // Keeps the lens out of tables/walls/cabinets. See lensShield.js.
+    this.lensShield = new LensShield({ house, scene });
 
     // Dedicated Viewmodel scene + camera rendered in a second depth-cleared pass
     // so held FPS props NEVER clip into counters, walls, or doorways.
@@ -152,6 +156,7 @@ export class PlayerCamera {
 
   setHouse(house) {
     this.house = house;
+    this.lensShield?.setHouse(house);
   }
 
   setScene(scene) {
@@ -1104,18 +1109,38 @@ export class PlayerCamera {
       this.camera.position.copy(this._tmpFinalPos);
     }
 
-    // The lens itself may never sit inside a performer's body.
+    // The lens may never sit inside a performer's body — but the camera is not
+    // the thing that should move: episodeRunner pushes the cast out of the way.
+    // Here we only allow a small, capped nudge so a body that cannot step aside
+    // cannot yank the POV either (that "bump" is exactly what viewers noticed).
     if (this.actorProvider) {
       const caps = this._actorCapsules();
       if (caps.length) {
         const res = pushOutOfCapsules(this.camera.position, caps, {
-          pad: 0.3,
+          pad: 0.24,
           world: this._stagingWorld(),
         });
         if (res.dodged.length) {
-          this.camera.position.set(res.pos.x, res.pos.y, res.pos.z);
+          const dx = res.pos.x - this.camera.position.x;
+          const dz = res.pos.z - this.camera.position.z;
+          const len = Math.hypot(dx, dz);
+          const MAX_DODGE = 0.1;
+          const scale = len > MAX_DODGE ? MAX_DODGE / len : 1;
+          this.camera.position.set(
+            this.camera.position.x + dx * scale,
+            this.camera.position.y,
+            this.camera.position.z + dz * scale
+          );
         }
       }
+    }
+
+    // Geometry, not performers: sphere-cast around the finished lens position and
+    // push it out of any table/wall/cabinet it ended up inside, then fade any
+    // surface still close enough to fill the frame.
+    if (this.lensShield && this.mode === "pov") {
+      this.lensShield.resolve(this.camera);
+      this.lensShield.updateFade(this.camera);
     }
 
     this.camera.rotation.set(finalPitch, finalYaw, gestureRoll + shakeRoll, "YXZ");

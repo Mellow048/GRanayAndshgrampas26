@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { EPISODE_PRESETS, SET_MAP, NAV_GRAPH } from "../src/config.js";
 import { validateAndRepair, formatStagingReport } from "../src/episodeSafety.js";
+import { validateStorySpine, formatStoryReport } from "../src/storySpine.js";
 
 const argv = process.argv.slice(2);
 const has = (flag) => argv.includes(flag);
@@ -50,14 +51,17 @@ const results = [];
 
 for (const target of targets) {
   const result = validateAndRepair(target.episode, { setMap: SET_MAP, navGraph: NAV_GRAPH, autoFix });
-  results.push({ name: target.name, ...result });
+  const story = validateStorySpine(result.episode);
+  const storyErrors = story.errors.length;
+  results.push({ name: target.name, ...result, story });
 
   if (asJson) continue;
   console.log(`\n=== ${target.name} — ${target.episode.title || "Untitled"} ===`);
   console.log(formatStagingReport(result));
   if (result.repaired) console.log("(repaired episode is what the renderer will play)");
+  console.log(formatStoryReport(story));
 
-  worst = Math.max(worst, result.stats.errorsAfter);
+  worst = Math.max(worst, result.stats.errorsAfter + storyErrors);
 }
 
 if (asJson) {

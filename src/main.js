@@ -13,6 +13,7 @@ import { EpisodeRunner } from "./episodeRunner.js";
 import { StudioUI } from "./studioUI.js";
 import { buildEpisode } from "./episodeBuilder.js";
 import { GAG_REGISTRY } from "./gags/index.js";
+import { sampleClearance, LENS_CLEARANCE, LENS_PROBE_DISTANCE } from "./lensClearance.js";
 
 const urlParams = new URLSearchParams(window.location.search);
 const isHeadless = urlParams.get("headless") === "1";
@@ -419,6 +420,57 @@ async function bootstrap() {
         simTime: runner.simTime,
         isFinished: runner.isFinished,
         dataUrl: renderer.domElement.toDataURL("image/jpeg", 0.90),
+      };
+    },
+    /**
+     * One frame of the geometry probe: steps the episode exactly like a render
+     * frame but measures the lens instead of screenshotting it. Used by
+     * `export-video.mjs --probe` and by the export workflow's pre-flight gate.
+     */
+    probeExportFrame: async (dt) => {
+      if (dt > 0) {
+        const subSteps = Math.max(1, Math.round(dt / CONFIG.fixedDt));
+        const subDt = dt / subSteps;
+        for (let i = 0; i < subSteps; i += 1) {
+          await runner.stepAsync(subDt);
+        }
+      }
+      const cam = playerCamera.camera;
+      const shield = playerCamera.lensShield;
+      const sample = sampleClearance(
+        (o, d, far) => {
+          const hit = runner.house?.stagingWorld?.castRay?.(o, d, far);
+          if (!hit) return null;
+          return { distance: hit.distance, name: hit.object?.name || hit.object?.uuid || "" };
+        },
+        { x: cam.position.x, y: cam.position.y, z: cam.position.z },
+        { maxDist: LENS_PROBE_DISTANCE }
+      );
+      let minActorDist = Number.POSITIVE_INFINITY;
+      let nearestActor = "";
+      for (const actor of Object.values(runner.characters || {})) {
+        if (!actor?.root || actor.root.visible === false) continue;
+        const d = Math.hypot(
+          actor.root.position.x - cam.position.x,
+          actor.root.position.z - cam.position.z
+        );
+        if (d < minActorDist) {
+          minActorDist = d;
+          nearestActor = actor.id;
+        }
+      }
+      return {
+        simTime: runner.simTime,
+        isFinished: runner.isFinished,
+        cam: { x: cam.position.x, y: cam.position.y, z: cam.position.z },
+        clearance: sample.minDist,
+        nearestSurface: sample.nearest?.name || "",
+        minActorDist,
+        nearestActor,
+        shieldCorrections: shield?.last?.corrections ?? 0,
+        shieldMoved: shield?.last?.moved ?? 0,
+        faded: shield?.last?.faded ?? [],
+        lensClearanceTarget: LENS_CLEARANCE,
       };
     },
     finishHeadlessExport: () => {
