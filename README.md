@@ -39,29 +39,6 @@ Instead of hand-coding massive fragile scripts, you write **one short gag functi
 
 ---
 
-## Long-Form Shows (5–6 minutes = 20–24 scenes)
-
-A show is a folder of **one-scene-per-file** modules welded together with CUTs, so a 6-minute episode stays debuggable ("scene 4, the can floats"):
-
-```
-src/shows/mountainDewRun/
-  index.js            storyboard
-  scene1-wake.js      14s bedroom
-  scene2-argument.js  15s dining
-  scene3-fridge.js    20s kitchen
-  scene4-bed.js       12s bedroom      → ?show=mountain_dew_run&scene=bed
-```
-
-```bash
-node scripts/validate-episode.mjs --list-shows
-node scripts/validate-episode.mjs --show mountain_dew_run            # report grouped per scene
-node scripts/validate-episode.mjs --show mountain_dew_run --scene bed
-gh workflow run export-video.yml -f preset=mountain_dew_run -f fps=30
-```
-
-See [`src/shows/README.md`](src/shows/README.md) for the contract and
-`EPISODE_PRODUCTION_GUIDE.md` §8 for the long-form playbook.
-
 ## Staging Safety Gate (no more clipping renders)
 
 Every script is validated **before** it renders — spawn standoffs, prop support, doorway routing, camera sightlines, reaction facing, dead air and framing:

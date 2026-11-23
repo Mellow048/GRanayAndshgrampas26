@@ -12,8 +12,6 @@ on:
           - rocket_ball_x3
           - the_great_escape_68s
           - zombie_fort_5m
-          - mountain_dew_run
-          - granny_cookie_heist_15s
           - custom_json
       episode_json:
         description: "Custom Episode JSON (overrides preset if provided)"
@@ -167,44 +165,12 @@ jobs:
           path: rendered_chunks
           merge-multiple: true
 
-      - name: Stitch Chunks (lossless, re-encode fallback)
+      - name: Lossless FFmpeg Stitch
         run: |
-          set -o pipefail
-          if ! node scripts/export-video.mjs \
-              --concat rendered_chunks \
-              --out-name "${{ inputs.preset }}-full" \
-              --out-dir output; then
-            echo "::warning::lossless concat failed — re-encoding the stitched timeline"
-            ls -la rendered_chunks
-            for f in rendered_chunks/*.mp4; do
-              echo "== $f"
-              ffprobe -v error -show_entries stream=index,codec_name,codec_type,width,height,r_frame_rate,sample_rate,channels -of compact "$f" || true
-            done
-            rm -f output/*.mp4
-            node scripts/export-video.mjs \
-              --concat rendered_chunks \
-              --out-name "${{ inputs.preset }}-full" \
-              --out-dir output --reencode
-          fi
-
-      - name: Publish Direct Video Download (GitHub Release)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          shopt -s nullglob
-          FILES=(output/*.mp4 output/*.webm)
-          if [ ${#FILES[@]} -eq 0 ]; then
-            echo "::error::no stitched video produced"
-            exit 1
-          fi
-          TAG="latest-export"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "${FILES[@]}" --clobber
-          else
-            gh release create "$TAG" "${FILES[@]}" \
-              --title "Latest Rendered Granny POV Exports" \
-              --notes "Auto-published cloud video exports from Granny POV 3D Cartoon Studio."
-          fi
+          node scripts/export-video.mjs \
+            --concat rendered_chunks \
+            --out-name "${{ inputs.preset }}-full" \
+            --out-dir output
 
       - name: Upload Full Stitched Episode
         uses: actions/upload-artifact@v4

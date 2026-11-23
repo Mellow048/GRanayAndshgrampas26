@@ -9,7 +9,6 @@ on:
         default: "comedy_variety_1m"
         options:
           - comedy_variety_1m
-          - mountain_dew_run
           - granny_cookie_heist_15s
           - cookie_heist_15s
           - rocket_ball_test

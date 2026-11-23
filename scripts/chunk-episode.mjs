@@ -188,11 +188,6 @@ function applyBeatToState(beat, state) {
     if (beat.anim) a.anim = beat.anim;
   } else if ((beat.type === "char_move" || beat.type === "move") && beat.actor && state.actorState[beat.actor]) {
     if (beat.to) state.actorState[beat.actor].spawn = beat.to;
-  } else if (beat.type === "player_hold") {
-    // Held FPS items cross chunk boundaries too, otherwise the hand is empty in
-    // the next chunk (and the prop you were carrying is back where it spawned).
-    const held = beat.prop && beat.prop !== "none" ? beat.prop : null;
-    state.heldProp = held;
   } else if (beat.type === "prop_action" && beat.prop && state.propState[beat.prop]) {
     const p = state.propState[beat.prop];
     if (beat.action === "hide") p.visible = false;
@@ -205,9 +200,6 @@ function applyBeatToState(beat, state) {
       if (beat.visible !== undefined) p.visible = beat.visible;
       if (beat.spin !== undefined) p.spin = beat.spin;
       if (beat.float !== undefined) p.float = beat.float;
-    } else if (beat.action === "place") {
-      if (beat.waypoint) p.spawn = beat.waypoint;
-      p.visible = true;
     } else if (beat.action === "pop_out") {
       if (beat.to && SET_MAP[beat.to]) p.spawn = beat.to;
       else if (beat.waypoint && SET_MAP[beat.waypoint]) p.spawn = beat.waypoint;
@@ -284,12 +276,6 @@ export function chunkEpisode(episode, { maxChunkSec = 180, chunks = 0 } = {}) {
       }));
       if (gi > 0 && sIdx === 0 && state.activeBgm && !rebasedBeats.some((b) => b.type === "bgm" && b.at <= 0.6)) {
         rebasedBeats.unshift({ at: 0, type: "bgm", sound: state.activeBgm.sound, volume: state.activeBgm.volume });
-      }
-      if (gi > 0 && sIdx === 0 && state.heldProp) {
-        rebasedBeats.unshift(
-          { at: 0, type: "prop_action", prop: state.heldProp, action: "hide" },
-          { at: 0, type: "player_hold", prop: state.heldProp }
-        );
       }
       return {
         name: g.name,
