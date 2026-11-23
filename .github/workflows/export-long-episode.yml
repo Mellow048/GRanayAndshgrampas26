@@ -9,6 +9,7 @@ on:
         default: "comedy_variety_1m"
         options:
           - comedy_variety_1m
+          - cookie_marathon_150s
           - rocket_ball_x3
           - the_great_escape_68s
           - zombie_fort_5m

@@ -6,6 +6,10 @@ import {
   couchHog,
   chestFakeout,
   sneakPhotobomb,
+  cookieTrial,
+  kickabout,
+  talkSofa,
+  cookiePayback,
 } from "./gags/index.js";
 
 export const COMEDY_VARIETY_1M = buildEpisode({
@@ -22,6 +26,27 @@ export const COMEDY_VARIETY_1M = buildEpisode({
 export const COOKIE_HEIST_15S = buildEpisode({
   title: "Cookie Heist (15s Gag Showcase)",
   gags: [cookieHeist({ location: "kitchen_to_hall" })],
+});
+
+/**
+ * The 2:30 marathon. Eight gag modules, four of them new, chained by
+ * buildEpisode() with black-frame cuts. This is the first preset in the repo
+ * past the two-minute mark that is built from gags rather than hand-written
+ * acts — the point of it is to prove the modular path scales in duration
+ * without the pacing or staging gates starting to complain.
+ */
+export const COOKIE_MARATHON_150S = buildEpisode({
+  title: "Granny & Grandpa: The Cookie Marathon (2:30)",
+  gags: [
+    couchHog({}),
+    cookieTrial({}),
+    kickabout({}),
+    chestFakeout({ location: "living_to_hall" }),
+    talkSofa({}),
+    sneakPhotobomb({ location: "foyer_to_dining" }),
+    cookiePayback({}),
+    cookieHeist({ location: "kitchen_to_hall" }),
+  ],
 });
 
 export const ROCKET_BALL_TEST = buildEpisode({
