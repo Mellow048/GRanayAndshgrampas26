@@ -140,7 +140,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: chunk-video-${{ github.run_id }}-${{ matrix.chunk }}
-          path: rendered_chunk/chunk_${{ matrix.chunk }}.mp4
+          # The renderer slugs its --out-name, so "chunk_000" is written as
+          # chunk-000-<aspect>-<fps>fps.mp4. Matching the exact un-slugged name
+          # silently uploaded an empty artifact and cost two full renders.
+          path: rendered_chunk/*.mp4
+          if-no-files-found: error
 
   stitch:
     needs: [prepare, render-chunk]
