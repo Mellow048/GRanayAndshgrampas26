@@ -285,6 +285,90 @@ export function validateEpisode(episode, options = {}) {
     return false;
   }
 
+  /**
+   * Plans a lateral detour waypoint for a walk whose straight leg passes through
+   * a performer. Prefers a real set waypoint, so the detour also stays inside the
+   * collision-free spine — no teleporting, no walking through walls to dodge.
+   */
+  function detourVia(startPos, endWp, obstacle, legs, { lateral = 0.9, maxExtra = 2.6, clearance = 1.0 } = {}) {
+    const dx = endWp.x - startPos.x;
+    const dz = endWp.z - startPos.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.4) return null;
+    const ux = dx / len;
+    const uz = dz / len;
+
+    // Closest point on the offending leg to the obstacle, then step sideways.
+    let bestOnLeg = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (const [a, b] of legs) {
+      const vx = b.x - a.x;
+      const vz = b.z - a.z;
+      const vv = vx * vx + vz * vz || 1;
+      let t = ((obstacle.x - a.x) * vx + (obstacle.z - a.z) * vz) / vv;
+      t = Math.max(0, Math.min(1, t));
+      const px = a.x + vx * t;
+      const pz = a.z + vz * t;
+      const d = Math.hypot(obstacle.x - px, obstacle.z - pz);
+      if (d < bestDist) {
+        bestDist = d;
+        bestOnLeg = { x: px, z: pz };
+      }
+    }
+    if (!bestOnLeg) return null;
+
+    // Sideways direction, on whichever side the obstacle is NOT.
+    let sideX = -uz;
+    let sideZ = ux;
+    const awayX = bestOnLeg.x - obstacle.x;
+    const awayZ = bestOnLeg.z - obstacle.z;
+    if (sideX * awayX + sideZ * awayZ < 0) {
+      sideX = -sideX;
+      sideZ = -sideZ;
+    }
+
+    const ideal = { x: bestOnLeg.x + sideX * lateral, z: bestOnLeg.z + sideZ * lateral };
+    const baseLen = Math.hypot(endWp.x - startPos.x, endWp.z - startPos.z);
+
+    let best = null;
+    let bestCost = Number.POSITIVE_INFINITY;
+    for (const [name, wp] of Object.entries(setMap || {})) {
+      if (!wp) continue;
+      if (Math.abs((wp.y ?? 0) - (startPos.y ?? 0)) > 0.6) continue;
+      const toIdeal = Math.hypot(wp.x - ideal.x, wp.z - ideal.z);
+      if (toIdeal > 2.2) continue;
+      if (Math.hypot(wp.x - obstacle.x, wp.z - obstacle.z) < clearance) continue;
+      if (Math.hypot(wp.x - startPos.x, wp.z - startPos.z) < 0.5) continue;
+      const extra =
+        Math.hypot(wp.x - startPos.x, wp.z - startPos.z) + Math.hypot(endWp.x - wp.x, endWp.z - wp.z) - baseLen;
+      if (extra > maxExtra || extra < -0.05) continue;
+      const cost = toIdeal + extra * 0.5;
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = { name, wp };
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Picks a waypoint that clears every leg of `legs` by `clearance` metres and is
+   * on the same floor as `from`. Used to repair "a performer is standing in the
+   * path of the lens": the performer steps aside instead of the camera dodging.
+   */
+  function clearStepAside(from, legs, { clearance = 1.15, maxHop = 4.5 } = {}) {
+    let best = null;
+    for (const [name, wp] of Object.entries(setMap || {})) {
+      if (!wp) continue;
+      if (Math.abs((wp.y ?? 0) - (from.y ?? 0)) > 0.6) continue;
+      const hop = Math.hypot(wp.x - from.x, wp.z - from.z);
+      if (hop < 0.45 || hop > maxHop) continue;
+      if (!legs.every(([a, b]) => pointSegmentDistance2D(wp, a, b) >= clearance)) continue;
+      if (!best || hop < best.hop) best = { name, wp, hop };
+    }
+    return best;
+  }
+
   /** Inserts a beat right after `beat` in the authored array. */
   function insertAfter(beat, newBeat) {
     const anchor = sourceOf(beat);
@@ -610,7 +694,7 @@ export function validateEpisode(episode, options = {}) {
     movesByActor.set(key, beat);
 
     const fromName = beat.from || (isWalk ? playerState?.name : actorState.get(beat.actor)?.name);
-    const toName = typeof beat.to === "string" ? beat.to : null;
+    let toName = typeof beat.to === "string" ? beat.to : null;
     const startPos = resolved(fromName) || (isWalk ? playerState : actorState.get(beat.actor));
     let plannedRoute = null;
     let endWp = toName ? resolved(toName) : null;
@@ -802,13 +886,80 @@ export function validateEpisode(episode, options = {}) {
         );
         const travelled = legs.some(([a, b]) => Math.hypot(b.x - a.x, b.z - a.z) > 0.3);
         if (d < BODY.radius + 0.12 && travelled) {
+          // Severity is error, not warn: this is literally "a body walks into the
+          // lens", which viewers read as being shoved. The 2:30 episode shipped
+          // with eight of these as warnings and looked broken.
+          // The runtime pushes the cast out of the lens's personal space
+          // (episodeRunner step 4b), so repairs here are authoring advice: only a
+          // deep overlap is unrecoverable, because by then the lens is already
+          // inside a body on the frame it happens.
+          // Advice, not a build failure: the runtime steps the cast out of the
+          // lens's personal space, and `export-video.mjs --probe` measures the
+          // result (lens-to-body distance per frame) and fails the build on it.
+          // A static path check cannot model those yields, which is why trying
+          // to "repair" crossings here just moved the collision elsewhere.
+          const deep = d < 0.3;
+          let applied = false;
+          let note = deep
+            ? "The lens ends up inside a body here: route the walker around this performer or move them first."
+            : "Grazing distance; the runtime steps the performer aside, but staging the walk around them reads better.";
+          if (autoFix && endWp && Math.hypot(endWp.x - state.x, endWp.z - state.z) < 0.5) {
+            // The walk ENDS on top of the performer — no detour can fix that, the
+            // destination itself is occupied. Stop a conversational distance
+            // away instead: in POV, walking up to someone means standing in front
+            // of them, not inside them.
+            let target = null;
+            let bestCost = Number.POSITIVE_INFINITY;
+            for (const [name, wp] of Object.entries(setMap || {})) {
+              if (!wp) continue;
+              if (Math.abs((wp.y ?? 0) - (endWp.y ?? 0)) > 0.6) continue;
+              if (Math.hypot(wp.x - state.x, wp.z - state.z) < 0.95) continue;
+              const drift = Math.hypot(wp.x - endWp.x, wp.z - endWp.z);
+              if (drift > 3.0 || drift < 0.2) continue;
+
+              if (drift < bestCost) {
+                bestCost = drift;
+                target = { name, wp };
+              }
+            }
+            if (target) {
+              // Route legally to the new destination: if it is across a room
+              // boundary, name the doorway chain in `via` so the repair cannot
+              // introduce a PATH_THROUGH_WALL of its own.
+              const chain = fromName ? suggestedVia(setMap, navGraph, fromName, target.name) : [];
+              const existingVia = Array.isArray(beat.via) ? beat.via : [];
+              const via = chain.length ? [...chain, ...existingVia] : existingVia;
+              patchBeat(beat, {
+                to: target.name,
+                target: target.name,
+                ...(via.length ? { via } : {}),
+              });
+              endWp = target.wp;
+              toName = target.name;
+              applied = true;
+              note = `Retargeted this walk to "${target.name}" — it used to finish on top of ${id}.`;
+            }
+          }
+          if (!applied && autoFix && endWp) {
+            const detour = detourVia(startPos, endWp, state, legs);
+            if (detour) {
+              const existing = Array.isArray(beat.via) ? beat.via : [];
+              if (!existing.includes(detour.name)) {
+                // Insert by progress along the route so the detour happens in place.
+                const route = [...existing, detour.name];
+                patchBeat(beat, { via: route });
+                applied = true;
+                note = `Added via "${detour.name}" to walk around ${id}.`;
+              }
+            }
+          }
           issues.push(
             issue(
               "CAMERA_CLIPS_ACTOR",
               "warn",
               beat.at,
               `${isWalk ? "The player's route" : `${beat.actor}'s route`} passes within ${d.toFixed(2)}m of ${id} — the lens can pass through the body.`,
-              { actor: id, ...fixNote(false, "Route around via a doorway waypoint, or move the performer first.") }
+              { actor: id, ...fixNote(applied, note) }
             )
           );
         }

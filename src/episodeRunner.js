@@ -13,7 +13,7 @@ import {
 } from "./stagingSafety.js";
 
 const LOCOMOTION_ANIMS = new Set(["walk", "run", "run2", "sneak", "granny_walk", "jump"]);
-const PLAYER_PERSONAL_SPACE = 1.3;
+const PLAYER_BUBBLE = 0.8; // the cast starts moving out of the lens at this distance
 const ACTOR_SEPARATION = 1.05;
 
 const BASE_WALK_SPEED = CONFIG.baseWalkSpeed ?? 2.5;
@@ -1059,35 +1059,11 @@ export class EpisodeRunner {
       }
     }
 
-    // 3. Advance PlayerCamera & smoothly ease personal space around same-floor standing actors
+    // 3. Advance PlayerCamera. Personal space is resolved further down, after
+    //    the cast has moved: the CAST yields to the lens, the lens never dodges a
+    //    body. The old code moved the camera 1.3m sideways whenever an actor stood
+    //    near it, which is what "something keeps bumping me" actually was.
     this.playerCamera?.update(dt, this.resolver);
-    if (this.playerCamera && this.playerCamera.mode === "pov") {
-      const pPos = this.playerCamera.playerPos;
-      if (!isElevatedSurfacePos(pPos)) {
-        const pushAlpha = Math.min(1, dt * 6);
-        for (const actor of visibleActors) {
-          if (movingActorSet.has(actor)) continue;
-          if (Math.abs(pPos.y - actor.root.position.y) > 0.65) continue;
-          const dx = pPos.x - actor.root.position.x;
-          const dz = pPos.z - actor.root.position.z;
-          const dist = Math.hypot(dx, dz);
-          if (dist > 1e-4 && dist < PLAYER_PERSONAL_SPACE) {
-            const nx = dx / dist;
-            const nz = dz / dist;
-            const targetX = actor.root.position.x + nx * PLAYER_PERSONAL_SPACE;
-            const targetZ = actor.root.position.z + nz * PLAYER_PERSONAL_SPACE;
-            const candX = pPos.x + (targetX - pPos.x) * pushAlpha;
-            const candZ = pPos.z + (targetZ - pPos.z) * pushAlpha;
-            if (!this.house || pPos.y >= 0.4 || this.house.isPointInsideWalkable(candX, candZ)) {
-              pPos.x = candX;
-              pPos.z = candZ;
-              this.playerCamera.camera.position.x = candX;
-              this.playerCamera.camera.position.z = candZ;
-            }
-          }
-        }
-      }
-    }
     const playerMoving = Boolean(this.playerCamera?.isWalking);
 
     // 4. Update Characters
@@ -1095,6 +1071,42 @@ export class EpisodeRunner {
     const playerCamPos = playerCam?.position || null;
     for (const char of visibleActors) {
       char.update(dt, playerCamPos, playerCam);
+    }
+
+    // 4b. The cast steps out of the lens's personal space. Positions are
+    //     re-derived from the movement tweens every frame, so this deflections
+    //     pass is stateless: an actor who keeps walking at the camera keeps being
+    //     stepped aside, and one who stops simply settles at the bubble edge.
+    if (this.playerCamera && this.playerCamera.mode === "pov" && !isElevatedSurfacePos(this.playerCamera.playerPos)) {
+      const lens = this.playerCamera.camera.position;
+      // Compare FLOORS: the lens is at eye height, the cast is at floor height,
+      // so a raw Y comparison exempted everyone and the bubble never fired.
+      const lensFloor = this.playerCamera.playerPos.y;
+      const bubble = PLAYER_BUBBLE;
+      for (const actor of visibleActors) {
+        const pos = actor.root.position;
+        if (Math.abs(lensFloor - pos.y) > 0.9) continue;
+        const dx = pos.x - lens.x;
+        const dz = pos.z - lens.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist >= bubble) continue;
+        const need = bubble - dist + 0.01;
+        const nx = dist > 1e-3 ? dx / dist : 1;
+        const nz = dist > 1e-3 ? dz / dist : 0;
+        const candidates = [
+          { x: pos.x + nx * need, z: pos.z + nz * need },
+          { x: pos.x + nz * need, z: pos.z - nx * need },
+          { x: pos.x - nz * need, z: pos.z + nx * need },
+          { x: pos.x + nx * need + nz * need * 0.7, z: pos.z + nz * need - nx * need * 0.7 },
+          { x: pos.x + nx * need - nz * need * 0.7, z: pos.z + nz * need + nx * need * 0.7 },
+        ];
+        const walkable = (c) => !this.house || pos.y >= 0.4 || this.house.isPointInsideWalkable(c.x, c.z);
+        const spot = candidates.find(walkable);
+        if (spot) {
+          pos.x = spot.x;
+          pos.z = spot.z;
+        }
+      }
     }
 
     // 5. Update 3D Comedy Props

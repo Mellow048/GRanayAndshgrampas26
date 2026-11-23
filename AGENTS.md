@@ -102,6 +102,11 @@ When asked to make a new episode (15 seconds, 5 minutes, or 40+ minutes):
 3. **Routes are geometry-checked.** Nav-graph edges are only hints: every compiled leg is traced against `HouseWalls`/furniture and replaced with the 0.4m grid A* detour when blocked. Keep `house.stagingWorld` wired into `PlayerCamera` and `EpisodeRunner`.
 4. **Ray helpers accept both call styles.** `isPointInsideWalkable(x, z)` and `hasClearSight(a, b)` also accept Vector3 arguments — passing a Vector3 into the numeric form silently produced NaN rays and disabled collision checks (the original "camera inside Grandpa" bug). Never remove that guard.
 5. **The gate is not optional.** `loadEpisode()` validates + repairs and stores the report on `runner.staging`; `scripts/validate-episode.mjs` gates the export workflow; `node --test tests/*.test.mjs` must stay green.
+6. **The cast yields, the lens does not.** Personal space is resolved by moving the *performer* out of the lens bubble (`PLAYER_BUBBLE`, 0.8m, `EpisodeRunner` step 4b). The camera may only take a capped 0.10m nudge when a body cannot step aside. A camera that dodges bodies reads to the viewer as *being shoved* — that was a reported defect on the 2:30 cut, do not reintroduce it.
+7. **The lens is shielded from geometry.** `LensShield` (`src/lensShield.js`) sphere-casts 14 rays around the finished eye position and pushes it out of anything inside 0.34m, then fades surfaces still inside 0.26m. `house.clampCameraPosition` alone only tests one ray and let the camera end up inside tables.
+8. **Clearance is measured, not assumed.** `node scripts/export-video.mjs --preset <key> --probe` walks every frame without rendering and fails when the lens is inside geometry or a performer is inside 0.45m for more than 1% of frames. Both export workflows run it before spending render time. If the probe fails, restage the scene — do not widen the budget.
+9. **Every episode ≥ 60s needs a story spine.** `story: { premise, goal, goalProp, resolution, scenes:[{objective,obstacle,turn}] }`. The goal prop must be on camera in the setup, the conflict **and** the payoff; two consecutive scenes may not share an objective. `npm run story` is the gate; `LEGACY_SPINE_DEBT` in `src/config.js` is the visible TODO list of presets that predate the rule.
+10. **Two performers never share a waypoint.** `buildEpisode()` runs `enforceStageSeparation()`: concurrent walks to the same (or too-close) target are re-targeted, standing bodies on a route are routed around. Do not disable it — three separate 0.00m body merges in the 2:30 cut came from exactly this.
 
 ---
 
@@ -192,8 +197,13 @@ When asked to make a new episode (15 seconds, 5 minutes, or 40+ minutes):
 # 1. Start local Studio (open http://localhost:8000/?gag=cookieHeist)
 python3 -m http.server 8000
 
-# 2. Pacing & schema check (all presets + all gag x location combos)
+# 2. Pacing, story and staging checks (all presets + all gag x location combos)
 node scripts/audit-pacing.mjs --all
+npm run story -- --all          # premise / goal / payoff, per scene
+npm run validate:episode -- --preset cookie_marathon_150s
+
+# 2b. Lens clearance probe — no rendering, fails on camera-in-furniture
+node scripts/export-video.mjs --preset cookie_marathon_150s --probe --out-dir probe
 
 # 3. 3D mesh collision & cross-cut leak check (requires `npm install --no-save three@0.170.0`)
 node scripts/verify-3d.mjs --gags

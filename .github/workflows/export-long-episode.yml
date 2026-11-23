@@ -146,8 +146,55 @@ jobs:
           path: rendered_chunk/*.mp4
           if-no-files-found: error
 
+  probe:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Cache Playwright Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package.json') }}
+
+      - name: Install Playwright & Three.js (ephemeral)
+        run: |
+          npm i --no-save playwright three @sparticuz/chromium @ffmpeg-installer/ffmpeg
+
+      # Same body as the per-chunk render, walked without rendering: proves the
+      # lens never ends up inside a table or a performer before we spend an hour
+      # of GPU time on frames nobody can watch.
+      - name: Lens clearance probe (no render)
+        run: |
+          node scripts/export-video.mjs \
+            --preset "${{ inputs.preset }}" \
+            --fps "${{ inputs.fps }}" \
+            --probe \
+            --out-dir probe
+
+      - name: Upload probe report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lens-probe-${{ github.run_id }}
+          path: probe/probe-report.json
+          if-no-files-found: warn
+
   stitch:
-    needs: [prepare, render-chunk]
+    needs: [render-chunk, probe]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
