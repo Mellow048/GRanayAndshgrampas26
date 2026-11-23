@@ -1,0 +1,2299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rain Courier — a pelican on a bike through a wet neon night (hand-authored animated SVG)</title>
+<!--
+  Rain Courier
+  ------------
+  One self-contained HTML file: a single inline <svg>, no external assets, no
+  libraries, no images, no webfonts. Written from scratch for this repository.
+  It shares no code or artwork with any other file here, including the two I
+  authored earlier in this session — the sunrise pelican and the tide-pool
+  octopus. Those used flat ground and a closed-form two-bone IK; this one uses
+  hills and a completely different solver stack, listed below.
+
+  WHAT IS ACTUALLY BEING COMPUTED
+
+  1. LONGITUDINAL DYNAMICS, NOT A SCROLLING BACKDROP.
+     The bike has mass, a drivetrain and a speed the rider is trying to hold.
+     Every frame: drive force from crank torque through the gear ratio, minus
+     aero drag (quadratic in v), minus rolling resistance, minus gravity along
+     the measured road grade, minus brake force. Semi-implicit Euler. The bird
+     genuinely slows on the climbs, picks up on the descents, and modulates the
+     brakes to hold its target speed in the wet.
+
+  2. A ROAD WITH HILLS, AND A BIKE THAT FOLLOWS THEM.
+     macroY(x) is a sum of sines; its slope is used ANALYTICALLY (the exact
+     derivative, not a finite difference) so gravity follows the true grade.
+     roughY(x) adds micro-texture the suspension feels but gravity ignores.
+     Both wheel contact patches are sampled from the same function, and the
+     frame pitch comes from the chord between them, so the bike is never
+     floating and never clipping through the asphalt.
+
+  4. A SPRUNG FRONT END (base-excited damped oscillator).
+     m·z'' = -k(z - z_road) - c(z' - z'_road). The fork stanchion is drawn from
+     the sprung frame to the unsprung axle, so compression is visible, rings
+     down after a manhole dip, and bottoms out against a hard travel limit
+     (counted, never exceeded).
+
+  4. WET-ASPHALT TYRE PHYSICS.
+     Drive and brake forces are capped by mu·m·g·cos(grade) with a wet mu, and
+     the slip ratio s = (omega·R - v)/v is integrated into the wheel spin, so a
+     hard brake on the cobbles locks the wheel slightly and the spokes visibly
+     stop tracking the road. Nothing is faked: exceed the friction circle and
+     you get slip, and the HUD says so.
+
+  5. BRAKING LIMITED BY STABILITY, NOT BY TUNING.
+     Max deceleration before the bird goes over the bars is a·max = g·b/h,
+     where b is the horizontal distance from the front contact patch to the
+     centre of mass and h is the CoM height. Brake demand above that is clipped,
+     and the rider shifts its weight back as it brakes to buy margin. The HUD
+     shows the margin; the test suite asserts it never goes negative.
+
+  6. THREE-JOINT CCD IK, WHICH IS NOT THE TWO-BONE IK OF THE OTHER PELICAN.
+     Legs are hip -> knee -> ankle -> toe, solved by cyclic coordinate descent
+     with a blended orientation objective at the ankle so the webbed foot stays
+     flat on the pedal as the crank turns. Wings use the same solver. CCD was
+     chosen deliberately: it takes a third joint with an angle constraint, and
+     when the target goes out of reach it degrades the way a real leg does — it
+     extends — instead of needing a special case.
+     The saddle height is not a constant: it is capped every frame by
+     hipY <= toeY + sqrt(reach^2 - dx^2), so when the bird stands on the pedals
+     up a climb the hip dips exactly as far as the leg allows and the residual
+     stays near zero. That cap is why the bob looks right.
+
+  7. HEAD STABILISATION.
+     A pelican's head stays level while its body pitches — same trick chickens
+     use. The head group's local rotation cancels the sum of frame pitch and
+     torso lean, through a lag, so the beak stays near world-horizontal over
+     hills that tilt the frame several degrees. The neck is redrawn as a curved
+     path between two computed points, so it bends to accommodate.
+
+  8. EVERYTHING ELSE IS PROCEDURAL TOO: a pouch pendulum forced by the bike's
+     own acceleration (theta'' = -(g/L)sin(theta) - (a_x/L)cos(theta) - c·theta'),
+     a chain drawn as true external tangent lines around chainring and cog with
+     a constant path length, rain whose apparent slant comes from vector-adding
+     the bike's velocity to the fall velocity so it leans harder as you speed
+     up, reflections anchored to the wet road line, and vest stripes whose
+     specular flash is a pure function of distance to the nearest streetlamp.
+
+  Controls: Space = play/pause, B = brake (hold), G = gear, A = auto-shift,
+            <-/-> = effort, R = rain, S = sound, click the bird = bell.
+  Honours prefers-reduced-motion: starts paused on a fully resolved pose.
+-->
+<style>
+  :root{
+    color-scheme: dark;
+    --page-0:#05070d; --page-1:#0a1020; --page-2:#131a2e;
+    --ink:#e7edf9; --ink-dim:#9aa8c4; --ink-faint:#6c7a97;
+    --rule:#243049;
+    --amber:#ffc247; --neon-pink:#ff5ea8; --neon-cyan:#4fe3ff; --neon-lime:#b6ff5e;
+    --wet:#1b2a44;
+    --ok:#7ef0b0; --warn:#ffcf6b; --bad:#ff7a7a;
+    --mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; }
+  body{
+    min-height:100vh; padding:26px 20px 34px;
+    background:
+      radial-gradient(1200px 620px at 22% -8%, #17203a 0%, transparent 62%),
+      radial-gradient(900px 520px at 88% 4%, #1a1430 0%, transparent 58%),
+      linear-gradient(180deg, var(--page-1), var(--page-0) 72%);
+    color:var(--ink); font-family:var(--sans);
+    display:flex; justify-content:center;
+  }
+  .wrap{ width:min(1180px, 100%); }
+
+  .stage{
+    position:relative; border:1px solid var(--rule); border-radius:16px;
+    overflow:hidden; background:#060a12;
+    box-shadow: 0 34px 90px -40px #000, 0 0 0 1px #0d1424 inset;
+  }
+  svg.scene{ display:block; width:100%; height:auto; }
+
+  /* Overlays sit ON the artwork, not in a card above it. */
+  .over{ position:absolute; pointer-events:none; }
+  .brand{ top:16px; left:20px; max-width:min(52ch, 62%); }
+  .brand h1{
+    margin:0; font-size:clamp(19px, 2.5vw, 27px); font-weight:640; letter-spacing:-.015em;
+    color:#fff; text-shadow:0 2px 22px #000, 0 0 2px #000;
+  }
+  .brand h1 i{ font-style:normal; color:var(--amber); }
+  .brand p{
+    margin:7px 0 0; font-size:clamp(11.5px, 1.25vw, 13.5px); line-height:1.55;
+    color:#c3d0e8; text-shadow:0 1px 12px #000;
+  }
+  .brand .tag{
+    display:inline-block; margin-top:9px; padding:3px 9px; border-radius:999px;
+    border:1px solid rgba(255,194,71,.42); background:rgba(255,194,71,.10);
+    color:var(--amber); font:600 10.5px/1.5 var(--mono); letter-spacing:.12em; text-transform:uppercase;
+  }
+
+  .hud{
+    left:14px; right:14px; bottom:12px; display:flex; flex-wrap:wrap; gap:6px;
+    align-items:center; justify-content:flex-start;
+  }
+  .chip{
+    pointer-events:none; padding:3.5px 8px 4px; border-radius:7px;
+    border:1px solid rgba(150,180,230,.16); background:rgba(6,11,20,.62);
+    backdrop-filter:blur(3px);
+    font:500 10.5px/1.45 var(--mono); letter-spacing:.045em; color:var(--ink-dim);
+    white-space:nowrap;
+  }
+  .chip b{ color:#fff; font-weight:650; margin-left:5px; font-variant-numeric:tabular-nums; }
+  .chip.good b{ color:var(--ok); }
+  .chip.warn b{ color:var(--warn); }
+  .chip.bad b{ color:var(--bad); }
+
+  .rail{
+    top:14px; right:14px; display:flex; flex-direction:column; gap:7px;
+    pointer-events:auto;
+  }
+  .rail button{
+    pointer-events:auto; cursor:pointer; min-width:104px; text-align:left;
+    padding:7px 11px; border-radius:9px;
+    border:1px solid rgba(150,180,230,.20); background:rgba(8,13,23,.74);
+    color:#dce6f7; font:600 11.5px/1.3 var(--sans); letter-spacing:.01em;
+    backdrop-filter:blur(4px); transition:border-color .16s, background .16s, transform .1s;
+  }
+  .rail button:hover{ border-color:rgba(255,194,71,.6); background:rgba(20,17,10,.8); }
+  .rail button:active{ transform:translateY(1px); }
+  .rail button kbd{
+    float:right; margin-left:8px; padding:1px 5px; border-radius:4px;
+    border:1px solid rgba(150,180,230,.24); background:rgba(255,255,255,.05);
+    font:600 9.5px/1.5 var(--mono); color:var(--ink-faint);
+  }
+  .rail button[aria-pressed="true"]{ border-color:var(--amber); background:rgba(255,194,71,.16); color:#fff; }
+
+  footer{
+    margin:18px 4px 0; padding-top:16px; border-top:1px solid var(--rule);
+    color:var(--ink-dim); font-size:13px; line-height:1.72; max-width:96ch;
+  }
+  footer code{ font:500 12px/1.6 var(--mono); color:var(--amber); }
+  footer .keys{ margin-top:10px; color:var(--ink-faint); font-size:12px; }
+  footer kbd{
+    padding:1px 5px; border-radius:4px; border:1px solid var(--rule);
+    background:#0d1424; font:600 10.5px/1.6 var(--mono); color:#b9c6de;
+  }
+  @media (max-width:760px){
+    .brand{ max-width:74%; }
+    .rail{ flex-direction:row; flex-wrap:wrap; justify-content:flex-end; max-width:44%; }
+    .rail button{ min-width:0; padding:6px 8px; font-size:10.5px; }
+    .rail button kbd{ display:none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="stage">
+    <svg class="scene" id="scene" viewBox="0 0 960 600" role="img"
+         aria-labelledby="ttl desc" preserveAspectRatio="xMidYMid meet">
+      <title id="ttl">A pelican courier riding a bicycle through a rainy neon city at night</title>
+      <desc id="desc">A pelican in a hi-vis courier vest pedals a loaded bicycle along a wet
+        street at night. Rain falls in three depth planes, neon signs and streetlamps smear
+        into reflections on the asphalt, the bike pitches and its fork compresses over hills
+        and bumps, and the bird leans back to brake without going over the handlebars.</desc>
+
+      <defs>
+        <linearGradient id="gSky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#070b16"/>
+          <stop offset=".52" stop-color="#0e1730"/>
+          <stop offset=".82" stop-color="#1d2044"/>
+          <stop offset="1" stop-color="#2b2340"/>
+        </linearGradient>
+        <linearGradient id="gHaze" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#ff7ab8" stop-opacity="0"/>
+          <stop offset=".55" stop-color="#ff7ab8" stop-opacity=".10"/>
+          <stop offset="1" stop-color="#ffc247" stop-opacity=".16"/>
+        </linearGradient>
+        <linearGradient id="gAsphalt" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#1a2133"/>
+          <stop offset=".22" stop-color="#111725"/>
+          <stop offset="1" stop-color="#070a11"/>
+        </linearGradient>
+        <linearGradient id="gSheen" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#9fd8ff" stop-opacity=".20"/>
+          <stop offset=".35" stop-color="#7fb6ff" stop-opacity=".07"/>
+          <stop offset="1" stop-color="#7fb6ff" stop-opacity="0"/>
+        </linearGradient>
+        <radialGradient id="gLampGlow" cx=".5" cy=".5" r=".5">
+          <stop offset="0" stop-color="#fff3d0" stop-opacity=".92"/>
+          <stop offset=".28" stop-color="#ffcf72" stop-opacity=".42"/>
+          <stop offset="1" stop-color="#ffb44d" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="gLampPool" cx=".5" cy=".5" r=".5">
+          <stop offset="0" stop-color="#ffd89a" stop-opacity=".34"/>
+          <stop offset=".5" stop-color="#ffbe6b" stop-opacity=".12"/>
+          <stop offset="1" stop-color="#ffbe6b" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="gCone" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#fff8e2" stop-opacity=".62"/>
+          <stop offset=".45" stop-color="#ffe6a8" stop-opacity=".20"/>
+          <stop offset="1" stop-color="#ffe6a8" stop-opacity="0"/>
+        </linearGradient>
+        <radialGradient id="gHeadPool" cx=".5" cy=".5" r=".5">
+          <stop offset="0" stop-color="#fff2cf" stop-opacity=".30"/>
+          <stop offset="1" stop-color="#fff2cf" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="gNeonPink" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#ff9ccb"/><stop offset="1" stop-color="#ff2f8f"/>
+        </linearGradient>
+        <linearGradient id="gNeonCyan" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#a8f4ff"/><stop offset="1" stop-color="#19b6e8"/>
+        </linearGradient>
+        <linearGradient id="gNeonLime" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#dcffa6"/><stop offset="1" stop-color="#7ed321"/>
+        </linearGradient>
+        <linearGradient id="gPlum" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#f4f8ff"/><stop offset=".55" stop-color="#dfe7f2"/>
+          <stop offset="1" stop-color="#b9c4d6"/>
+        </linearGradient>
+        <linearGradient id="gPlumWet" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#93a2ba" stop-opacity=".85"/>
+          <stop offset="1" stop-color="#5d6b85" stop-opacity=".9"/>
+        </linearGradient>
+        <linearGradient id="gVest" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#ffdf7a"/><stop offset=".6" stop-color="#ffb020"/>
+          <stop offset="1" stop-color="#d98207"/>
+        </linearGradient>
+        <linearGradient id="gBeak" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#ffd9a0"/><stop offset=".7" stop-color="#f6b96c"/>
+          <stop offset="1" stop-color="#e09a4c"/>
+        </linearGradient>
+        <linearGradient id="gPouch" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#ffc48f"/><stop offset="1" stop-color="#e08d55"/>
+        </linearGradient>
+        <linearGradient id="gSteel" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#4fd6b4"/><stop offset=".5" stop-color="#22997f"/>
+          <stop offset="1" stop-color="#12604f"/>
+        </linearGradient>
+        <linearGradient id="gTyre" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#2a2f3d"/><stop offset="1" stop-color="#12151d"/>
+        </linearGradient>
+        <linearGradient id="gBox" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#c99a63"/><stop offset="1" stop-color="#8d6537"/>
+        </linearGradient>
+        <linearGradient id="gReflFade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#fff" stop-opacity=".85"/>
+          <stop offset=".45" stop-color="#fff" stop-opacity=".26"/>
+          <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+        </linearGradient>
+        <mask id="mRefl" maskUnits="userSpaceOnUse" x="0" y="380" width="960" height="220">
+          <rect x="0" y="380" width="960" height="220" fill="url(#gReflFade)"/>
+        </mask>
+
+        <filter id="fSoft" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur stdDeviation="2.4"/>
+        </filter>
+        <filter id="fWet" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="3.1"/>
+        </filter>
+        <filter id="fNeon" x="-70%" y="-70%" width="240%" height="240%">
+          <feGaussianBlur stdDeviation="5.2" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="fBokeh" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur stdDeviation="6.5"/>
+        </filter>
+
+        <radialGradient id="gVig" cx=".5" cy=".48" r=".78">
+          <stop offset=".55" stop-color="#000" stop-opacity="0"/>
+          <stop offset="1" stop-color="#000" stop-opacity=".62"/>
+        </radialGradient>
+
+        <clipPath id="clipPouch"><path id="pouchClipPath" d="M0,0 L60,0 L60,44 L0,44 Z"/></clipPath>
+      </defs>
+
+      <!-- 0. sky, haze, distant glow -->
+      <g id="skyG">
+        <rect x="0" y="0" width="960" height="600" fill="url(#gSky)"/>
+        <rect id="hazeBand" x="0" y="250" width="960" height="230" fill="url(#gHaze)"/>
+        <g id="starsG" opacity=".5"></g>
+      </g>
+
+      <!-- 1. far skyline (slowest) -->
+      <g id="layerFar" opacity=".85"></g>
+      <!-- 2. near buildings + twinkling windows -->
+      <g id="layerNear"></g>
+      <g id="twinkleG"></g>
+      <!-- 3. neon signs (their own recycling layer) -->
+      <g id="signsG"></g>
+      <!-- 4. streetlamps, roadside, parallax with the road -->
+      <g id="lampsG"></g>
+
+      <!-- 5. the wet road itself -->
+      <g id="roadG">
+        <path id="roadFill" d="" fill="url(#gAsphalt)"/>
+        <path id="roadEdge" d="" fill="none" stroke="#4a5a78" stroke-width="2.2" opacity=".85"/>
+        <path id="roadSheen" d="" fill="url(#gSheen)"/>
+        <g id="signReflG" mask="url(#mRefl)"></g>
+        <g id="lampReflG" mask="url(#mRefl)"></g>
+        <path id="laneDash" d="" fill="none" stroke="#8fa3c4" stroke-width="3" opacity=".22"
+              stroke-dasharray="34 46" stroke-linecap="round"/>
+        <g id="puddlesG"></g>
+        <g id="ripplesG"></g>
+      </g>
+
+      <!-- 6. reflected rider, then the rider itself -->
+      <g id="reflRiderG" mask="url(#mRefl)" opacity=".30" filter="url(#fWet)"></g>
+      <g id="rigG"></g>
+
+      <!-- 7. spray, splashes -->
+      <g id="sprayG"></g>
+      <g id="splashG"></g>
+
+      <!-- 8. rain, three depth planes -->
+      <g id="rainFar" opacity=".45"></g>
+      <g id="rainMid" opacity=".72"></g>
+      <g id="rainNear" opacity=".9" filter="url(#fSoft)"></g>
+
+      <!-- 9. foreground: railing, bokeh, lens drops -->
+      <g id="layerFg"></g>
+      <g id="bokehG" filter="url(#fBokeh)" opacity=".5"></g>
+      <g id="lensG" opacity=".55"></g>
+      <rect id="vig" x="0" y="0" width="960" height="600" fill="url(#gVig)" pointer-events="none"/>
+    </svg>
+
+    <div class="over brand">
+      <h1>Rain Courier <i>·</i> a pelican with a parcel and a schedule</h1>
+      <p>Night, wet asphalt, neon. The bike has real mass and a real drivetrain: it slows on the
+        climbs, runs away a little on the descents, and the bird modulates the brakes against the
+        limit where it would go over the bars. Legs are solved by CCD, not by a closed form.</p>
+      <span class="tag">hills · slip · sprung fork · CCD</span>
+    </div>
+
+    <div class="over rail">
+      <button id="btnPlay" type="button" aria-pressed="true">Pause<kbd>Space</kbd></button>
+      <button id="btnBrake" type="button" aria-pressed="false">Brake<kbd>B</kbd></button>
+      <button id="btnGear" type="button">Gear 2<kbd>G</kbd></button>
+      <button id="btnAuto" type="button" aria-pressed="true">Auto-shift<kbd>A</kbd></button>
+      <button id="btnRain" type="button">Rain: heavy<kbd>R</kbd></button>
+      <button id="btnSound" type="button" aria-pressed="false">Sound off<kbd>S</kbd></button>
+    </div>
+
+    <div class="over hud" id="hud">
+      <span class="chip">speed<b id="hSpeed">0.0</b>km/h</span>
+      <span class="chip">cadence<b id="hCad">0</b>rpm</span>
+      <span class="chip">gear<b id="hGear">2</b></span>
+      <span class="chip">grade<b id="hGrade">0.0</b>%</span>
+      <span class="chip">fork<b id="hFork">0.0</b>px</span>
+      <span class="chip">slip<b id="hSlip">0.0</b>%</span>
+      <span class="chip">CoM margin<b id="hCom">0</b>%</span>
+      <span class="chip">ik err<b id="hIk">0.00</b>px</span>
+      <span class="chip">bottom-outs<b id="hBot">0</b></span>
+      <span class="chip">fps<b id="hFps">0</b></span>
+    </div>
+  </div>
+
+  <footer>
+    <code>pelican-rain-courier.html</code> — one file, no dependencies, nothing pre-baked and no
+    keyframes doing the work that physics should do. The speed you see is integrated from
+    crank torque, quadratic aero drag, rolling resistance, the analytic road grade and a brake
+    force capped by <code>mu&middot;m&middot;g&middot;cos&theta;</code> on wet asphalt and again by
+    <code>g&middot;b/h</code> so the bird cannot endo. Wheel spin is integrated separately from
+    ground speed, and the difference between them is the slip ratio you can watch appear when it
+    brakes hard on the cobbles. The fork is a base-excited damped oscillator, so it rings down
+    after the manhole dip instead of snapping back. Legs and wings are three-joint chains solved by
+    cyclic coordinate descent with the foot angle blended in at the ankle; the saddle height is
+    re-capped every frame by what the leg can actually reach, which is where the standing-pedal bob
+    comes from. Readouts above are measured from the solver, not decorative.
+    <div class="keys">
+      Shortcuts: <kbd>Space</kbd> play/pause · <kbd>B</kbd> brake (hold) · <kbd>G</kbd> gear ·
+      <kbd>A</kbd> auto-shift · <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> effort · <kbd>R</kbd> rain ·
+      <kbd>S</kbd> sound · click the bird to ring the bell
+    </div>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ============================================================
+     1. UNITS, CONSTANTS, SMALL HELPERS
+
+     Everything physical is computed in SI (metres, seconds, kg) and converted
+     to pixels only for drawing. That keeps the numbers honest: a 62 px wheel
+     really is a 0.33 m wheel, and 5.2 m/s really is 18.7 km/h.
+     ============================================================ */
+  var VW = 960, VH = 600;
+  var PX_PER_M = 188;                 // 62 px wheel radius == 0.33 m, a 700c tyre
+  var MPP = 1 / PX_PER_M;             // metres per pixel
+  var GRAV = 9.81;
+
+  var WHEEL_R = 62;                   // px
+  var WHEEL_R_M = WHEEL_R * MPP;      // 0.330 m
+  var WB = 208;                       // wheelbase, px (1.11 m)
+  var WB_M = WB * MPP;
+  var CRANK_R = 26;                   // px
+  var CHAINRING_R = 22, COG_R = 9;    // px, for the chain tangent solve
+
+  var MASS = 26;                      // kg: bird 9 + bike 12 + parcels 5
+  var RHO = 1.225, CD_A = 0.44;       // upright city bird, wet clothes
+  var CRR = 0.0088;                   // rolling resistance on wet asphalt
+  var MU_WET = 0.46;                  // friction coefficient, wet
+  var REAR_SHARE = 0.42;              // fraction of traction available at the driven rear wheel
+  var FRONT_BRAKE_SHARE = 0.62;
+
+  var GEARS = [1.60, 2.29, 3.00];     // chainring/cog: 48 over 30, 21, 16 teeth
+  var MAX_TORQUE = 34;                // N·m at the crank, a determined bird
+  var CADENCE_TARGET = 72;            // rpm the auto-shifter aims for
+  var CADENCE_MIN = 46, CADENCE_MAX = 104;
+
+  var TARGET_V = 5.2;                 // m/s the bird tries to hold (~18.7 km/h)
+
+  var TRAVEL_MAX = 15;                // px of fork compression before it bottoms out
+  /* Sprung quarter-car: omega_n = sqrt(k/m) = 10 rad/s (1.6 Hz, a normal fork),
+     and c is set for zeta = 0.32 via c = 2·zeta·sqrt(k·m) = 128 N·s/m. */
+  var SUS_M = 20, SUS_K = 2000, SUS_C = 128;
+  var SAG = 3.0;                      // px of static sag, set by preload
+  var SEAT_POST = 0.34;               // how much fork travel reaches the saddle
+
+  var REAR_X = 336;                   // screen x of the rear contact patch
+  var ROAD_Y0 = 468;                  // nominal road height, px
+
+  /* Tiling periods of the repeating scenery, in world px. Declared once: the
+     builder and the renderer must agree or the seams show. */
+  var FAR_PERIOD = 1240;              // far skyline, parallax 0.22
+  var NEAR_PERIOD = 1620;             // near buildings, parallax 0.45
+  var LAMP_PERIOD = 340;              // streetlamps, parallax 1.0 (roadside)
+  var FG_PERIOD = 780;                // foreground railing, parallax 1.55
+
+  var THIGH = 62, SHANK = 68, FOOT = 18;       // leg link lengths, px
+  var FOOT_BALL = FOOT * 0.45;                 // ankle -> ball of the foot, px
+  /* Sized from measurement, not from taste: over a 2-minute ride the shoulder
+     travels 79.6-119.2 px from the bar grip, so the two wing links must
+     total more than 119 px or the wing cannot hold the bar (the first draft
+     had 84 px and left the tip 23 px off target, i.e. visibly letting go).
+     130 px leaves ~9% so the elbow stays bent through the whole range. */
+  var WING_HI = 68, WING_LO = 62, WING_TIP = 20;
+  var LEG_REACH = THIGH + SHANK + FOOT;
+  /* But THIGH+SHANK+FOOT is NOT how far the toe can actually get from the hip,
+     because the joint limits stop the leg straightening. Brute-forced over the
+     page's own interior-angle limits (knee 26..171, ankle 62..152), the
+     furthest reachable toe is 145.135 px, not 148 — the ankle limit alone
+     costs 2.9 px, since the toe can never line up with the shank. The cap has
+     to respect THAT number. Capping at 148*0.985 = 145.78 px put the target
+     0.65 px outside the workspace, and every frame the cap bound, CCD was
+     asked for a pose the leg cannot make: reaching and limit-enforcement then
+     fight each other and the residual blows out to 12-14 px even though the
+     median frame is 0.43 px. 97% of the measured maximum keeps the target
+     strictly interior, where CCD converges. */
+  var LEG_WORKSPACE = 145.135;                  // measured max |hip -> toe|
+
+  var CCD_ITERS = 14;
+  var CCD_STEP = 0.44;                // rad, max rotation per joint per sweep
+  var FOOT_ORIENT_W = 0.78;           // blend weight: foot angle vs toe position
+  var KNEE_MIN = 26 * Math.PI / 180, KNEE_MAX = 171 * Math.PI / 180;
+  var ANKLE_MIN = 62 * Math.PI / 180, ANKLE_MAX = 152 * Math.PI / 180;
+  var ELBOW_MIN = 22 * Math.PI / 180, ELBOW_MAX = 168 * Math.PI / 180;
+
+  var POUCH_L = 0.135;                // m, pendulum length of the pouch
+  var POUCH_C = 0.85;                 // damping
+
+  /* Rain planes: count, parallax, fall speed (px/s), streak length, slant weight. */
+  var RAIN_PLANES = [
+    { n: 40, par: 0.72, fall: 620, len: 11, w: 0.62, op: 0.5, sw: 0.85 },
+    { n: 62, par: 1.00, fall: 880, len: 17, w: 1.00, op: 0.75, sw: 1.0 },
+    { n: 34, par: 1.52, fall: 1240, len: 26, w: 1.5, op: 0.55, sw: 1.2 }
+  ];
+  var RAIN_LEVELS = [
+    { name: "off", mul: 0.0, wind: 0.0 },
+    { name: "drizzle", mul: 0.42, wind: 0.55 },
+    { name: "steady", mul: 0.75, wind: 0.85 },
+    { name: "heavy", mul: 1.0, wind: 1.15 }
+  ];
+  var WIND_BASE = 0.30;               // rad of slant from the night breeze alone
+
+  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  /* Frame-rate independent smoothing. A bare lerp(a, b, 0.14) advances 14% of
+     the way to its target EVERY FRAME, so the same rig settles twice as slowly
+     at 30 fps as at 60 — and this page runs on whatever refresh rate the
+     browser gives it. rate is a continuous time constant in 1/s, so the result
+     depends only on elapsed time. Each rate below is the exact equivalent of
+     the per-frame constant the first draft used at 60 fps, so the feel is
+     unchanged at 60 and merely stops being wrong at anything else. */
+  function smooth(cur, target, rate, dt) {
+    var k = 1 - Math.exp(-rate * Math.min(dt, 0.1));
+    return cur + (target - cur) * k;
+  }
+  function smoothstep(u) { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); }
+  function angNorm(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
+  var f1 = function (n) { return n.toFixed(1); };
+  var f2 = function (n) { return n.toFixed(2); };
+  /* Deterministic 0..1 hash, so every "random" thing in the scene is
+     reproducible by the test suite. No Math.random anywhere. */
+  function hash(n) { var s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+  function hash2(a, b) { return hash(a * 12.9898 + b * 78.233); }
+
+  var SVGNS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs, parent) {
+    var e = document.createElementNS(SVGNS, tag);
+    if (attrs) for (var k in attrs) if (Object.prototype.hasOwnProperty.call(attrs, k)) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function $(id) { return document.getElementById(id); }
+  function setT(e, s) { if (e) e.setAttribute("transform", s); }
+
+  /* ============================================================
+     2. THE ROAD
+
+     Two functions, deliberately separated. macroY is the hill profile; its
+     slope is used ANALYTICALLY for gravity, which is exact rather than a
+     finite difference of a noisy curve. roughY is micro-texture: cobbles and
+     a manhole dip. The suspension feels both, gravity only feels the first.
+     Both are continuous everywhere — the cobble stretch is windowed by
+     sin^2, not by an if, so there is no step for the fork to hit.
+     ============================================================ */
+  function macroY(x) {
+    return ROAD_Y0 + 24 * Math.sin(x / 620 + 0.4) + 11 * Math.sin(x / 271 + 1.9);
+  }
+  /* d/dx of macroY, exactly. */
+  function macroSlope(x) {
+    return (24 / 620) * Math.cos(x / 620 + 0.4) + (11 / 271) * Math.cos(x / 271 + 1.9);
+  }
+  /* Micro-texture, split in two on purpose — this is a sampling argument, not a
+     stylistic one. The fork model differentiates its input twice, so anything
+     fed to it must be resolved by a 60 Hz step at 5 m/s (Nyquist 30 Hz).
+
+     roughSlow: 90 px texture (10.9 Hz at speed) and a manhole dip 128 px wide
+     (11 Hz). Both are comfortably sampled, so both may be differentiated.
+     roughFast: cobbles at an 8.5 px wavelength — 115 Hz at speed, far above
+     Nyquist, so differentiating them would alias into invented energy. They are
+     drawn and the wheels ride them, but the fork never sees them: which is also
+     physically right, because the tyre itself filters that scale out. */
+  function roughSlow(x) {
+    var r = 3.2 * Math.sin(x / 90 + 0.7);
+    /* manhole: a shallow dip every 900 px, wide enough to be sampled honestly */
+    var mm = ((x % 900) + 900) % 900;
+    r += 5.2 * Math.exp(-Math.pow((mm - 450) / 64, 2));
+    return r;
+  }
+  function roughFast(x) {
+    /* cobbled stretch: 260 px of every 1400, ramped in and out by sin^2 so
+       there is no step at the boundary for anything to hit */
+    var m = ((x % 1400) + 1400) % 1400;
+    if (m >= 260) return 0;
+    return 2.1 * Math.pow(Math.sin(Math.PI * m / 260), 2) * Math.sin(x / 8.5);
+  }
+  function roughY(x) { return roughSlow(x) + roughFast(x); }
+  function roadY(x) { return macroY(x) + roughY(x); }
+  function isCobbles(x) { var m = ((x % 1400) + 1400) % 1400; return m < 260; }
+
+  /* World x of a screen x, and the reverse, for the parallax-1.0 road layer. */
+  function worldAtScreen(sx) { return camX() + (sx - REAR_X); }
+  function roadYAtScreen(sx) { return roadY(worldAtScreen(sx)); }
+
+  /* ============================================================
+     3. STATE
+     ============================================================ */
+  var S = {
+    t: 0, playing: true, dt: 1 / 60,
+    dist: 0,                 // px travelled along the world (physics odometer)
+    _wx: 0,                  // px position this frame's picture was sampled at
+    v: 4.4,                  // m/s, ground speed
+    wheelAng: 0, wheelOmega: 0,   // rad, rad/s
+    crankAng: 0.5, crankOmega: 0, // rad, rad/s
+    gear: 1,                 // index into GEARS
+    autoGear: true, shifts: 0,
+    slip: 0,                 // slip ratio, (omega*R - v)/v
+    brakeDemand: 0, brakeForce: 0, throttle: 0,
+    effort: 0,               // -1..1 from the arrow keys
+    userBrake: false,
+    a: 0,                    // m/s^2, longitudinal acceleration
+    standing: false, pedalling: true,
+    travelPx: 0, travelDyn: 0, bottomOuts: 0,
+    suspD: 0, suspDV: 0, zBasePrev: 0, zBasePrev2: 0,
+    seatOff: 0,
+    pouchAng: 0, pouchV: 0,
+    parcelAng: 0, parcelV: 0,
+    hipX: 0, hipY: 0, hipCapActive: 0,
+    torsoLean: 0, headAng: 0, headV: 0,
+    comMargin: 1, comX: 0, comY: 0, brakeLimited: 0,
+    ikErr: 0,
+    blink: 0, nextBlink: 1.7, blinkT: 0,
+    rain: 3, soundOn: false,
+    stripeGlow: 0, tailPulse: 0,
+    beamOp: 0.3,
+    fps: 0
+  };
+
+  /* ============================================================
+     4. GEOMETRY OF THE BIKE, in frame-local coordinates.
+     Origin at the rear contact patch, +x forward, +y UP (converted to screen
+     y at draw time). One source of truth: every point the rider or the frame
+     needs is derived from here, so nothing can drift out of alignment.
+     ============================================================ */
+  var FRAME = {
+    rearAxle:  { x: 0,   y: WHEEL_R },
+    frontAxle: { x: WB,  y: WHEEL_R },
+    bb:        { x: 87,  y: 49 },
+    saddle:    { x: 63,  y: 151 },
+    bars:      { x: 178, y: 147 },
+    headTop:   { x: 176, y: 168 },
+    headBot:   { x: 168, y: 116 },
+    forkCrown: { x: 172, y: 132 },
+    seatTop:   { x: 64,  y: 156 },
+    rackTop:   { x: 26,  y: 128 },
+    lampPos:   { x: 186, y: 138 }
+  };
+  var HIP_SEAT = { x: 4, y: 13 };      // hip relative to the saddle, seated
+  var HIP_STAND = { x: 22, y: 26 };    // and when standing on the pedals
+  var SHOULDER_OFF = { x: 7, y: 55 };  // from hip, along the torso axis
+  var NECK_BASE = { x: 16, y: 40 };    // from shoulder, torso-local
+  var HEAD_C = { x: 27, y: 26 };       // head centre from the neck base
+  var GRIP_OFF = { x: 7, y: 6 };       // wing grip relative to the bars
+
+  /* Rotate a frame-local point (+x forward, +y UP from the rear contact patch)
+     into screen space (+y down), given the frame pitch and the rear contact. */
+  function toScreen(lx, ly, pitch, ox, oy) {
+    var c = Math.cos(pitch), s = Math.sin(pitch);
+    return { x: ox + lx * c + ly * s, y: oy + lx * s - ly * c };
+  }
+  /* Its exact inverse, so a point that has been moved in screen space — the hip
+     is pushed down by the reachability cap — can be brought back into the
+     frame-local space the centre-of-mass maths needs. */
+  function toLocal(sx, sy, pitch, ox, oy) {
+    var c = Math.cos(pitch), s = Math.sin(pitch);
+    var dx = sx - ox, dy = sy - oy;
+    return { x: dx * c + dy * s, y: dx * s - dy * c };
+  }
+
+  /* ============================================================
+     5. THREE-JOINT CCD IK
+
+     Cyclic coordinate descent, walking from the end effector back to the root,
+     with a blended objective at the last joint so the foot tracks the pedal
+     angle instead of just the pedal position. Joint limits are enforced after
+     every sweep by rotating the distal chain back inside the cone.
+
+     This is a different solver from the closed-form two-bone IK used in the
+     other pelican, and it is used here for a reason: the leg has a third joint
+     with an angle constraint, and when a target goes out of reach CCD simply
+     extends the chain — no special case, no branch, no lie.
+     ============================================================ */
+  function rotAbout(P, j, d) {
+    if (Math.abs(d) < 1e-12) return;
+    var c = Math.cos(d), s = Math.sin(d);
+    for (var k = j + 1; k < P.length; k++) {
+      var px = P[k].x - P[j].x, py = P[k].y - P[j].y;
+      P[k].x = P[j].x + px * c - py * s;
+      P[k].y = P[j].y + px * s + py * c;
+    }
+  }
+  function interior(P, j) {
+    /* angle at joint j between the segments to j-1 and j+1 */
+    var ax = P[j - 1].x - P[j].x, ay = P[j - 1].y - P[j].y;
+    var bx = P[j + 1].x - P[j].x, by = P[j + 1].y - P[j].y;
+    return Math.acos(clamp((ax * bx + ay * by) / (Math.hypot(ax, ay) * Math.hypot(bx, by) || 1), -1, 1));
+  }
+  function enforceLimit(P, j, lo, hi) {
+    var a = interior(P, j), fix = 0;
+    if (a < lo) fix = lo - a;
+    else if (a > hi) fix = -(a - hi);
+    if (fix === 0) return 0;
+    /* rotate the distal chain about j to open or close the joint. The sign
+       depends on which way the joint currently bends. */
+    var ax = P[j - 1].x - P[j].x, ay = P[j - 1].y - P[j].y;
+    var bx = P[j + 1].x - P[j].x, by = P[j + 1].y - P[j].y;
+    var cross = ax * by - ay * bx;
+    rotAbout(P, j, cross >= 0 ? fix : -fix);
+    return Math.abs(fix);
+  }
+  function makeChain(lens) {
+    var pts = [];
+    for (var i = 0; i <= lens.length; i++) pts.push({ x: 0, y: 0 });
+    return { pts: pts, lens: lens, err: 0, limitFix: 0, seeded: false };
+  }
+  function ccdSolve(ch, root, tx, ty, wantAng, orientW, limits) {
+    var P = ch.pts, n = P.length - 1, i;
+    if (!ch.seeded) {
+      /* Cold start: lay the chain out straight from the root toward the target.
+         Every CCD operation is a rigid rotation, so it preserves link lengths —
+         including zero. A chain born collapsed at the origin would stay
+         collapsed forever and could never reach anything. */
+      var seedAng = Math.atan2(ty - root.y, tx - root.x), acc = 0;
+      P[0].x = root.x; P[0].y = root.y;
+      for (i = 0; i < ch.lens.length; i++) {
+        acc += ch.lens[i];
+        P[i + 1].x = root.x + Math.cos(seedAng) * acc;
+        P[i + 1].y = root.y + Math.sin(seedAng) * acc;
+      }
+      ch.seeded = true;
+    } else {
+      /* Warm start: carry the WHOLE chain along with the root, rigidly. Moving
+         only the root — which is what the first draft did — silently resizes the
+         first link every frame and destroys the pose; measured, it left the leg
+         179 px off target with link lengths wrong by 294 px. */
+      var dx = root.x - P[0].x, dy = root.y - P[0].y;
+      for (i = 0; i <= n; i++) { P[i].x += dx; P[i].y += dy; }
+    }
+    ch.limitFix = 0;
+    for (var it = 0; it < CCD_ITERS; it++) {
+      for (var j = n - 1; j >= 0; j--) {
+        var e = P[n];
+        var a0 = Math.atan2(e.y - P[j].y, e.x - P[j].x);
+        var a1 = Math.atan2(ty - P[j].y, tx - P[j].x);
+        var d = angNorm(a1 - a0);
+        if (j === n - 1 && orientW > 0) {
+          /* blend: mostly match the demanded angle, partly chase the point */
+          d = (1 - orientW) * d + orientW * angNorm(wantAng - a0);
+        }
+        rotAbout(P, j, clamp(d, -CCD_STEP, CCD_STEP));
+      }
+      for (var li = 0; li < limits.length; li++) {
+        ch.limitFix += enforceLimit(P, limits[li].j, limits[li].lo, limits[li].hi);
+      }
+    }
+    ch.err = Math.hypot(P[n].x - tx, P[n].y - ty);
+    return ch.err;
+  }
+  var LEG_LIMITS = [
+    { j: 1, lo: KNEE_MIN, hi: KNEE_MAX },
+    { j: 2, lo: ANKLE_MIN, hi: ANKLE_MAX }
+  ];
+  var WING_LIMITS = [{ j: 1, lo: ELBOW_MIN, hi: ELBOW_MAX }];
+
+  /* Chain lengths must be exact after every solve; CCD only rotates, so this
+     holds by construction — but it is asserted in the tests anyway. */
+  function chainLengthError(ch) {
+    var worst = 0;
+    for (var i = 0; i < ch.lens.length; i++) {
+      var got = Math.hypot(ch.pts[i + 1].x - ch.pts[i].x, ch.pts[i + 1].y - ch.pts[i].y);
+      worst = Math.max(worst, Math.abs(got - ch.lens[i]));
+    }
+    return worst;
+  }
+
+  /* ============================================================
+     6. CHAIN DRIVE: external tangent lines around two pulleys.
+     For circles (C1,r1) and (C2,r2) the external tangent's unit normal n
+     satisfies (C2-C1)·n = r1-r2, so n = rotate(u, +-acos((r1-r2)/d)).
+     The wrap is sampled rather than expressed with SVG arc flags, because
+     flags are easy to get backwards and impossible to check without eyes.
+     ============================================================ */
+  function arcPoints(cx, cy, r, a0, a1, through, out) {
+    /* walk from a0 to a1 in the direction that passes nearest `through` */
+    var d = angNorm(a1 - a0);
+    var t = angNorm(through - a0);
+    var cw = (d >= 0) === (t >= 0) ? 1 : -1;
+    if (cw < 0) d = d > 0 ? d - 2 * Math.PI : d + 2 * Math.PI;
+    var steps = 10;
+    for (var i = 0; i <= steps; i++) {
+      var a = a0 + d * (i / steps);
+      out.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+    }
+  }
+  function chainPath(c1, r1, c2, r2) {
+    var dx = c2.x - c1.x, dy = c2.y - c1.y, d = Math.hypot(dx, dy) || 1;
+    var u = { x: dx / d, y: dy / d };
+    var psi = Math.acos(clamp((r1 - r2) / d, -1, 1));
+    var base = Math.atan2(u.y, u.x);
+    var aTop = base + psi, aBot = base - psi;   /* normal directions */
+    var pts = [];
+    /* wrap the chainring on the far side from the cog, then the cog on the far
+       side from the chainring */
+    arcPoints(c1.x, c1.y, r1, aTop, aBot, base + Math.PI, pts);
+    arcPoints(c2.x, c2.y, r2, aBot, aTop, base, pts);
+    var s = "M" + pts[0].x.toFixed(2) + "," + pts[0].y.toFixed(2);
+    for (var i = 1; i < pts.length; i++) s += "L" + pts[i].x.toFixed(2) + "," + pts[i].y.toFixed(2);
+    return { d: s + "Z", pts: pts, psi: psi, straight: Math.sqrt(Math.max(0, d * d - (r1 - r2) * (r1 - r2))) };
+  }
+  function pathLength(pts) {
+    var L = 0;
+    for (var i = 1; i < pts.length; i++) L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    L += Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y);
+    return L;
+  }
+
+  /* ============================================================
+     7. LIMB OUTLINES: a tapered quad strip from solved joints.
+     ============================================================ */
+  function taperedPath(P, widths) {
+    var left = [], right = [];
+    for (var i = 0; i < P.length; i++) {
+      var a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)];
+      var dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
+      var nx = -dy / L, ny = dx / L, w = widths[i] * 0.5;
+      left.push({ x: P[i].x + nx * w, y: P[i].y + ny * w });
+      right.push({ x: P[i].x - nx * w, y: P[i].y - ny * w });
+    }
+    var s = "M" + left[0].x.toFixed(2) + "," + left[0].y.toFixed(2);
+    for (i = 1; i < left.length; i++) s += "L" + left[i].x.toFixed(2) + "," + left[i].y.toFixed(2);
+    for (i = right.length - 1; i >= 0; i--) s += "L" + right[i].x.toFixed(2) + "," + right[i].y.toFixed(2);
+    return s + "Z";
+  }
+
+  /* ============================================================
+     8. BUILD THE STATIC SCENE
+     ============================================================ */
+  var layers = {};
+  function buildScene() {
+    /* --- stars / distant light specks --- */
+    var stars = $("starsG");
+    for (var i = 0; i < 42; i++) {
+      var sx = hash(i * 3.1) * VW, sy = 30 + hash(i * 7.7) * 250;
+      el("circle", { cx: sx.toFixed(1), cy: sy.toFixed(1), r: (0.5 + hash(i * 5.3) * 0.9).toFixed(2),
+        fill: "#cfe4ff", opacity: (0.18 + hash(i * 2.2) * 0.5).toFixed(2) }, stars);
+    }
+
+    /* --- far skyline, tiled, parallax 0.22 --- */
+    var tileFar = el("g", { id: "tileFar" }, null);
+    for (i = 0; i < 13; i++) {
+      var bx = i * 96 + hash(i * 1.7) * 22;
+      var bw = 52 + hash(i * 4.1) * 46;
+      var bh = 70 + hash(i * 9.3) * 150;
+      var by = 424 - bh;
+      el("rect", { x: bx.toFixed(1), y: by.toFixed(1), width: bw.toFixed(1), height: bh.toFixed(1),
+        fill: "#0d1428", stroke: "#16203a", "stroke-width": "1" }, tileFar);
+      for (var w = 0; w < 5; w++) {
+        if (hash2(i, w) < 0.42) continue;
+        el("rect", { x: (bx + 8 + w * 9).toFixed(1), y: (by + 12 + (w % 3) * 22).toFixed(1),
+          width: "4", height: "6", fill: "#ffd88a", opacity: (0.1 + hash2(i, w + 9) * 0.3).toFixed(2) }, tileFar);
+      }
+    }
+    layers.tileFar = tileFar;
+    layers.farUses = [];
+    for (i = 0; i < 2; i++) {
+      layers.farUses.push(el("use", { href: "#tileFar" }, $("layerFar")));
+    }
+    /* the tile must live in <defs> to be referenced; append it there */
+    document.querySelector("defs").appendChild(tileFar);
+
+    /* --- near buildings, parallax 0.45, drawn individually so windows can
+           twinkle without every tile copy twinkling identically --- */
+    layers.bldgs = [];
+    for (i = 0; i < 9; i++) {
+      var g = el("g", null, $("layerNear"));
+      var x0 = i * 180 + hash(i * 2.9) * 30;
+      var w2 = 108 + hash(i * 6.1) * 74;
+      var h2 = 118 + hash(i * 3.3) * 132;
+      el("rect", { x: "0", y: "0", width: w2.toFixed(1), height: h2.toFixed(1), rx: "2",
+        fill: "#111a2e", stroke: "#1d2942", "stroke-width": "1.2" }, g);
+      /* roof water tank or antenna, for silhouette variety */
+      if (hash(i * 8.8) > 0.5) {
+        el("rect", { x: (w2 * 0.3).toFixed(1), y: "-14", width: "18", height: "14", fill: "#0c1424" }, g);
+      } else {
+        el("line", { x1: (w2 * 0.6).toFixed(1), y1: "0", x2: (w2 * 0.6).toFixed(1), y2: "-26",
+          stroke: "#0c1424", "stroke-width": "2" }, g);
+      }
+      var wins = [];
+      for (var wy = 0; wy < 5; wy++) for (var wx = 0; wx < 4; wx++) {
+        if (wx * 26 + 16 > w2 - 10 || wy * 26 + 20 > h2 - 10) continue;
+        var lit = hash2(i * 3 + wx, wy * 5 + i) > 0.52;
+        var rect = el("rect", { x: (14 + wx * 26).toFixed(1), y: (18 + wy * 26).toFixed(1),
+          width: "11", height: "15", rx: "1",
+          fill: lit ? "#ffd88a" : "#1a2740",
+          opacity: lit ? (0.28 + hash2(wx + i, wy) * 0.5).toFixed(2) : "0.55" }, g);
+        if (lit) wins.push({ e: rect, ph: hash2(i + wx * 7, wy * 3) * 6.28, base: 0.3 + hash2(wx, wy + i) * 0.4 });
+      }
+      layers.bldgs.push({ g: g, x0: x0, w: w2, h: h2, wins: wins, period: NEAR_PERIOD });
+    }
+
+    /* --- neon signs, recycled so no two passes look identical --- */
+    var SIGN_TEXTS = [
+      { t: "FISH MARKET", c: "url(#gNeonPink)", glow: "#ff5ea8", w: 148, h: 40 },
+      { t: "RAMEN 24H", c: "url(#gNeonCyan)", glow: "#4fe3ff", w: 132, h: 38 },
+      { t: "OPEN", c: "url(#gNeonLime)", glow: "#b6ff5e", w: 84, h: 38 },
+      { t: "NOODLE", c: "url(#gNeonPink)", glow: "#ff8ac2", w: 118, h: 36 },
+      { t: "24 HR LAUNDRY", c: "url(#gNeonCyan)", glow: "#7fe9ff", w: 168, h: 34 }
+    ];
+    layers.signs = [];
+    for (i = 0; i < 3; i++) {
+      var sg = el("g", null, $("signsG"));
+      var spec = SIGN_TEXTS[i % SIGN_TEXTS.length];
+      var box = el("rect", { x: "0", y: "0", width: spec.w, height: spec.h, rx: "5",
+        fill: "#080d18", stroke: spec.glow, "stroke-width": "2.4", opacity: ".95" }, sg);
+      var glowR = el("rect", { x: "-6", y: "-6", width: spec.w + 12, height: spec.h + 12, rx: "9",
+        fill: "none", stroke: spec.glow, "stroke-width": "3", opacity: ".5", filter: "url(#fNeon)" }, sg);
+      var txt = el("text", { x: (spec.w / 2).toFixed(1), y: (spec.h / 2 + 6).toFixed(1),
+        "text-anchor": "middle", "font-family": "ui-monospace, Menlo, monospace",
+        "font-size": Math.round(spec.h * 0.44), "font-weight": "700",
+        "letter-spacing": "1.6", fill: spec.c }, sg);
+      txt.textContent = spec.t;
+      /* a bracket fixing the sign to the wall */
+      el("line", { x1: (spec.w * 0.2).toFixed(1), y1: "0", x2: (spec.w * 0.2).toFixed(1), y2: "-22",
+        stroke: "#26314a", "stroke-width": "3" }, sg);
+      layers.signs.push({ g: sg, box: box, glow: glowR, txt: txt, spec: spec,
+        wx: 520 + i * 1500, ph: hash(i * 4.4) * 6.28, dropout: 0, variant: i });
+    }
+    /* each sign smears a vertical reflection down the wet asphalt */
+    layers.signRefl = [];
+    for (i = 0; i < layers.signs.length; i++) {
+      var rw = layers.signs[i].spec.w;
+      layers.signRefl.push(el("rect", { x: "0", y: "0", width: (rw * 0.62).toFixed(1), height: "118",
+        rx: (rw * 0.3).toFixed(1), fill: layers.signs[i].spec.glow, opacity: ".2",
+        filter: "url(#fWet)" }, $("signReflG")));
+    }
+
+    /* --- streetlamps, tiled at the road's own parallax --- */
+    var tileLamp = el("g", { id: "tileLamp" }, null);
+    for (i = 0; i < 2; i++) {
+      var lx = i * LAMP_PERIOD;
+      var lg = el("g", null, tileLamp);
+      var baseY = ROAD_Y0 - 40;
+      el("rect", { x: (lx - 3).toFixed(1), y: (baseY - 196).toFixed(1), width: "6", height: "196",
+        rx: "3", fill: "#1a2338" }, lg);
+      /* arm reaching out over the carriageway */
+      el("path", { d: "M" + lx + "," + (baseY - 192) + "q0,-22 26,-22l26,0", fill: "none",
+        stroke: "#1a2338", "stroke-width": "6", "stroke-linecap": "round" }, lg);
+      var hx = lx + 52, hy = baseY - 210;
+      el("ellipse", { cx: hx, cy: hy + 6, rx: "16", ry: "7", fill: "#2b3450" }, lg);
+      el("ellipse", { cx: hx, cy: hy + 9, rx: "12", ry: "5", fill: "#fff3d0", opacity: ".95" }, lg);
+      el("circle", { cx: hx, cy: hy + 9, r: "46", fill: "url(#gLampGlow)", opacity: ".75" }, lg);
+      /* pool of light on the wet road */
+      el("ellipse", { cx: hx + 8, cy: baseY + 62, rx: "118", ry: "30", fill: "url(#gLampPool)" }, lg);
+      /* vertical smear: the lamp's reflection in the wet asphalt */
+      el("rect", { x: (hx - 7).toFixed(1), y: (baseY + 8).toFixed(1), width: "14", height: "120",
+        rx: "7", fill: "#ffd89a", opacity: ".16" }, lg);
+    }
+    document.querySelector("defs").appendChild(tileLamp);
+    layers.lampUses = [];
+    for (i = 0; i < 5; i++) layers.lampUses.push(el("use", { href: "#tileLamp" }, $("lampsG")));
+
+    /* --- puddles on the road --- */
+    layers.puddles = [];
+    for (i = 0; i < 7; i++) {
+      var pg = el("g", null, $("puddlesG"));
+      var pe = el("ellipse", { cx: "0", cy: "0", rx: "1", ry: "1", fill: "#2a4a6e", opacity: ".5" }, pg);
+      var ph2 = el("ellipse", { cx: "0", cy: "0", rx: "1", ry: "1", fill: "#8fd4ff", opacity: ".14" }, pg);
+      layers.puddles.push({ g: pg, e: pe, hi: ph2, wx: 220 + i * 520 + hash(i * 5.5) * 190,
+        w: 46 + hash(i * 2.1) * 62, h: 8 + hash(i * 3.9) * 7, rippled: false });
+    }
+
+    /* --- ripples, splashes, spray: fixed pools, recycled forever --- */
+    layers.ripples = [];
+    for (i = 0; i < 14; i++) {
+      var rr = el("ellipse", { cx: "0", cy: "0", rx: "10", ry: "3.4", fill: "none",
+        stroke: "#bfe4ff", "stroke-width": "1.6", opacity: "0" }, $("ripplesG"));
+      layers.ripples.push({ e: rr, life: 0, x: 0, y: 0 });
+    }
+    layers.splashes = [];
+    for (i = 0; i < 26; i++) {
+      var sp = el("path", { d: "M-3,0L0,-5L3,0", fill: "none", stroke: "#cfe9ff",
+        "stroke-width": "1.5", "stroke-linecap": "round", opacity: "0" }, $("splashG"));
+      layers.splashes.push({ e: sp, life: 0, x: 0, y: 0, s: 1 });
+    }
+    layers.spray = [];
+    for (i = 0; i < 24; i++) {
+      var sd = el("circle", { cx: "0", cy: "0", r: "2.1", fill: "#cfe6ff", opacity: "0" }, $("sprayG"));
+      layers.spray.push({ e: sd, life: 0, x: 0, y: 0, vx: 0, vy: 0, r: 2 });
+    }
+
+    /* --- rain planes --- */
+    layers.rain = [];
+    for (var pi = 0; pi < RAIN_PLANES.length; pi++) {
+      var plane = RAIN_PLANES[pi];
+      var host = [ $("rainFar"), $("rainMid"), $("rainNear") ][pi];
+      var drops = [];
+      for (i = 0; i < plane.n; i++) {
+        var ln = el("line", { x1: "0", y1: "0", x2: "0", y2: plane.len.toFixed(1),
+          stroke: "#cfe6ff", "stroke-width": (0.7 + plane.w * 0.7).toFixed(2),
+          "stroke-linecap": "round", opacity: plane.op.toFixed(2) }, host);
+        drops.push({ e: ln, x: hash2(i, pi) * (VW + 220) - 110,
+          y: hash2(i + 90, pi + 7) * VH, sp: 0.82 + hash2(i, pi + 31) * 0.4 });
+      }
+      layers.rain.push({ plane: plane, drops: drops, activeLast: -1 });
+    }
+
+    /* --- foreground railing + a parked scooter silhouette, parallax 1.55 --- */
+    var tileFg = el("g", { id: "tileFg" }, null);
+    for (i = 0; i < 2; i++) {
+      var fx = i * FG_PERIOD;
+      el("rect", { x: fx, y: "536", width: "9", height: "64", fill: "#05070c", opacity: ".95" }, tileFg);
+      el("rect", { x: fx + 250, y: "536", width: "9", height: "64", fill: "#05070c", opacity: ".95" }, tileFg);
+      el("rect", { x: fx, y: "540", width: "260", height: "7", fill: "#05070c", opacity: ".95" }, tileFg);
+      el("rect", { x: fx, y: "566", width: "260", height: "5", fill: "#05070c", opacity: ".8" }, tileFg);
+    }
+    document.querySelector("defs").appendChild(tileFg);
+    layers.fgUses = [];
+    for (i = 0; i < 3; i++) layers.fgUses.push(el("use", { href: "#tileFg" }, $("layerFg")));
+
+    /* --- bokeh: out-of-focus city lights in the near field --- */
+    layers.bokeh = [];
+    for (i = 0; i < 9; i++) {
+      var bk = el("circle", { cx: "0", cy: "0", r: (7 + hash(i * 1.3) * 15).toFixed(1),
+        fill: i % 3 === 0 ? "#ff8ac2" : (i % 3 === 1 ? "#7fe9ff" : "#ffd88a"), opacity: "0" }, $("bokehG"));
+      layers.bokeh.push({ e: bk, wx: 180 + i * 430 + hash(i * 6.6) * 200, y: 380 + hash(i * 2.7) * 150,
+        base: 0.10 + hash(i * 9.1) * 0.22 });
+    }
+
+    /* --- drops stuck to the "lens" --- */
+    layers.lens = [];
+    for (i = 0; i < 7; i++) {
+      var ld = el("ellipse", { cx: (60 + hash(i * 3.7) * 860).toFixed(1),
+        cy: (40 + hash(i * 5.9) * 480).toFixed(1),
+        rx: (2.4 + hash(i * 2.3) * 4.6).toFixed(2), ry: (3.4 + hash(i * 4.1) * 6).toFixed(2),
+        fill: "#dff0ff", opacity: (0.06 + hash(i * 7.3) * 0.12).toFixed(3) }, $("lensG"));
+      layers.lens.push({ e: ld, v: 3 + hash(i * 1.9) * 9 });
+    }
+
+    buildRig();
+  }
+
+  /* ============================================================
+     9. BUILD THE BIKE AND THE BIRD
+     Everything the rider needs is in one group (#bikeRider) so the reflection
+     can be a single <use> of it, flipped about the wet road line.
+     ============================================================ */
+  var R = {};   /* element refs */
+  var legN, legF, wingN, wingF;
+
+  function buildRig() {
+    var holder = $("rigG");
+    var bikeRider = el("g", { id: "bikeRider" }, holder);
+    R.bikeRider = bikeRider;
+
+    /* reflection copy of the same group, flipped */
+    R.reflUse = el("use", { href: "#bikeRider" }, $("reflRiderG"));
+
+    /* --- light cone (behind everything on the rig) --- */
+    R.cone = el("path", { d: "", fill: "url(#gCone)", opacity: ".35" }, bikeRider);
+    R.headPool = el("ellipse", { cx: "0", cy: "0", rx: "96", ry: "22", fill: "url(#gHeadPool)" }, bikeRider);
+
+    /* --- wheels --- */
+    R.wheelG = { r: el("g", null, bikeRider), f: el("g", null, bikeRider) };
+    ["r", "f"].forEach(function (k) {
+      var g = R.wheelG[k];
+      el("circle", { cx: "0", cy: "0", r: WHEEL_R, fill: "none", stroke: "url(#gTyre)", "stroke-width": "9" }, g);
+      el("circle", { cx: "0", cy: "0", r: WHEEL_R - 6, fill: "none", stroke: "#39445c", "stroke-width": "1.6" }, g);
+      /* reflective rim strip — the thing that flashes as it spins */
+      el("circle", { cx: "0", cy: "0", r: WHEEL_R - 5, fill: "none", stroke: "#ffe6a8",
+        "stroke-width": "2.2", opacity: ".5", "stroke-dasharray": "16 214" }, g);
+      var spokes = el("g", null, g);
+      for (var s = 0; s < 12; s++) {
+        var a = s * Math.PI / 6;
+        el("line", { x1: (Math.cos(a) * 7).toFixed(2), y1: (Math.sin(a) * 7).toFixed(2),
+          x2: (Math.cos(a) * (WHEEL_R - 6)).toFixed(2), y2: (Math.sin(a) * (WHEEL_R - 6)).toFixed(2),
+          stroke: "#5b6885", "stroke-width": "1.1", opacity: ".8" }, spokes);
+      }
+      R["spokes" + k] = spokes;
+      /* hub */
+      el("circle", { cx: "0", cy: "0", r: "7.5", fill: "#39445c", stroke: "#6b7893", "stroke-width": "1.2" }, g);
+      el("circle", { cx: "0", cy: "0", r: "2.6", fill: "#8e9bb5" }, g);
+    });
+
+    /* --- fenders --- */
+    R.fenderR = el("path", { d: "", fill: "none", stroke: "#20304a", "stroke-width": "6",
+      "stroke-linecap": "round", opacity: ".95" }, bikeRider);
+    R.fenderF = el("path", { d: "", fill: "none", stroke: "#20304a", "stroke-width": "6",
+      "stroke-linecap": "round", opacity: ".95" }, bikeRider);
+
+    /* --- frame --- */
+    R.frame = el("g", null, bikeRider);
+    R.framePaths = {};
+    ["chainstay", "seatTube", "downTube", "topTube", "seatStay", "headTube", "forkUpper", "forkLower"].forEach(function (k) {
+      R.framePaths[k] = el("path", { d: "", fill: "none", stroke: "url(#gSteel)",
+        "stroke-width": k === "forkLower" ? "7" : (k === "forkUpper" ? "9" : "7"),
+        "stroke-linecap": "round" }, R.frame);
+    });
+    /* the stanchion: a bright sleeve whose visible length is the suspension travel */
+    R.stanchion = el("path", { d: "", fill: "none", stroke: "#c9d6ee", "stroke-width": "5",
+      "stroke-linecap": "round", opacity: ".9" }, R.frame);
+
+    /* --- rack + parcel --- */
+    R.rack = el("path", { d: "", fill: "none", stroke: "#2b3a56", "stroke-width": "4",
+      "stroke-linecap": "round" }, bikeRider);
+    R.parcelG = el("g", null, bikeRider);
+    el("rect", { x: "-26", y: "-24", width: "52", height: "34", rx: "3", fill: "url(#gBox)",
+      stroke: "#6d4d28", "stroke-width": "1.6" }, R.parcelG);
+    el("line", { x1: "0", y1: "-24", x2: "0", y2: "10", stroke: "#e8dcc0", "stroke-width": "2.4" }, R.parcelG);
+    el("line", { x1: "-26", y1: "-8", x2: "26", y2: "-8", stroke: "#e8dcc0", "stroke-width": "2.4" }, R.parcelG);
+    el("rect", { x: "-13", y: "-19", width: "26", height: "11", rx: "2", fill: "#f3ead6", opacity: ".9" }, R.parcelG);
+    /* a tiny fish stamped on the label, because of course */
+    el("path", { d: "M-7,-14q4,-4 8,0q-4,4 -8,0 M0,-14l4,-3l0,6z", fill: "#5c7fa8" }, R.parcelG);
+
+    /* --- drivetrain --- */
+    R.chain = el("path", { d: "", fill: "none", stroke: "#4a5670", "stroke-width": "3.4",
+      "stroke-linejoin": "round" }, bikeRider);
+    R.chainLinks = el("path", { d: "", fill: "none", stroke: "#8e9bb5", "stroke-width": "1.5",
+      "stroke-dasharray": "3 4", opacity: ".8" }, bikeRider);
+    R.ringG = el("g", null, bikeRider);
+    el("circle", { cx: "0", cy: "0", r: CHAINRING_R, fill: "#1b2436", stroke: "#5d6b87",
+      "stroke-width": "2" }, R.ringG);
+    for (var t = 0; t < 16; t++) {
+      var ta = t * Math.PI / 8;
+      el("line", { x1: (Math.cos(ta) * (CHAINRING_R - 3)).toFixed(2), y1: (Math.sin(ta) * (CHAINRING_R - 3)).toFixed(2),
+        x2: (Math.cos(ta) * (CHAINRING_R + 1.5)).toFixed(2), y2: (Math.sin(ta) * (CHAINRING_R + 1.5)).toFixed(2),
+        stroke: "#7d8aa6", "stroke-width": "1.4" }, R.ringG);
+    }
+    R.cogG = el("g", null, bikeRider);
+    el("circle", { cx: "0", cy: "0", r: COG_R, fill: "#1b2436", stroke: "#5d6b87", "stroke-width": "1.6" }, R.cogG);
+
+    /* cranks: far side drawn first (darker, behind the chainring), near side last */
+    R.crankFar = el("path", { d: "", fill: "none", stroke: "#39445c", "stroke-width": "6",
+      "stroke-linecap": "round" }, bikeRider);
+    R.pedalFar = el("rect", { x: "-9", y: "-3", width: "18", height: "6", rx: "2", fill: "#222a3a" }, bikeRider);
+    R.crankNear = el("path", { d: "", fill: "none", stroke: "#6b7893", "stroke-width": "6.5",
+      "stroke-linecap": "round" }, bikeRider);
+    R.pedalNear = el("rect", { x: "-10", y: "-3.5", width: "20", height: "7", rx: "2",
+      fill: "#2f3a50", stroke: "#7f8da8", "stroke-width": "1" }, bikeRider);
+
+    /* --- the far wing, behind the body --- */
+    R.wingFar = el("path", { d: "", fill: "#8d9ab2", opacity: ".75" }, bikeRider);
+
+    /* --- the bird: legs first so the body overlaps them --- */
+    R.legFar = el("path", { d: "", fill: "#d99a4a" }, bikeRider);
+    R.footFar = el("path", { d: "", fill: "#e8a95c" }, bikeRider);
+    R.legNear = el("path", { d: "", fill: "#f5b45f" }, bikeRider);
+    R.footNear = el("path", { d: "", fill: "#ffc777" }, bikeRider);
+
+    /* tail feathers */
+    R.tail = el("path", { d: "", fill: "url(#gPlumWet)" }, bikeRider);
+
+    /* body group: transform = translate(hip) rotate(torso) */
+    R.bodyG = el("g", null, bikeRider);
+    R.body = el("path", {
+      d: "M-30,6 q-16,-4 -20,-16 q-3,-11 6,-18 q10,-8 26,-9 q22,-1 36,8 q14,9 16,22 " +
+         "q2,14 -12,20 q-16,7 -34,4 q-12,-2 -18,-11 Z",
+      fill: "url(#gPlum)", stroke: "#93a1b8", "stroke-width": "1.2"
+    }, R.bodyG);
+    /* wet dark patch on the back */
+    el("path", { d: "M-26,-14 q18,-16 44,-14 q20,1 30,10 q-22,-6 -44,-3 q-20,3 -30,7 Z",
+      fill: "#8d9ab2", opacity: ".55" }, R.bodyG);
+    /* courier vest */
+    R.vest = el("path", {
+      d: "M-24,-4 q-6,-12 2,-20 q10,-9 26,-10 q18,-1 30,7 q10,7 10,17 q-14,-8 -30,-8 " +
+         "q-18,0 -30,8 q-6,4 -8,6 Z",
+      fill: "url(#gVest)", opacity: ".95", stroke: "#a86a06", "stroke-width": "1"
+    }, R.bodyG);
+    /* two reflective stripes; their brightness is driven by lamp proximity */
+    R.stripe1 = el("path", { d: "M-22,-6 q14,-9 32,-9 q17,0 28,7", fill: "none",
+      stroke: "#f2f7ff", "stroke-width": "4.4", opacity: ".5", "stroke-linecap": "round" }, R.bodyG);
+    R.stripe2 = el("path", { d: "M-18,4 q14,-8 30,-8 q16,0 26,6", fill: "none",
+      stroke: "#f2f7ff", "stroke-width": "4.4", opacity: ".5", "stroke-linecap": "round" }, R.bodyG);
+
+    /* neck + head, drawn in world space so the head can stay level */
+    R.neck = el("path", { d: "", fill: "url(#gPlum)", stroke: "#93a1b8", "stroke-width": "1.1" }, bikeRider);
+    R.headG = el("g", null, bikeRider);
+    R.head = el("circle", { cx: "0", cy: "0", r: "15.5", fill: "url(#gPlum)",
+      stroke: "#93a1b8", "stroke-width": "1.2" }, R.headG);
+    /* rain-darkened crown */
+    el("path", { d: "M-15,-3 q4,-14 16,-14 q12,0 15,12 q-8,-7 -17,-6 q-9,1 -14,8 Z",
+      fill: "#93a1b8", opacity: ".6" }, R.headG);
+    /* beak + pouch, drawn from the head centre forward */
+    R.beak = el("path", { d: "M6,-6 q34,-7 62,-2 q10,2 12,6 q-2,5 -12,7 q-28,5 -62,-1 Z",
+      fill: "url(#gBeak)", stroke: "#c98b45", "stroke-width": "1.1" }, R.headG);
+    R.pouchG = el("g", null, R.headG);
+    R.pouch = el("path", { d: "", fill: "url(#gPouch)", stroke: "#c9813f", "stroke-width": "1.1",
+      opacity: ".96" }, R.pouchG);
+    R.pouchParcel = el("g", { "clip-path": "url(#clipPouch)" }, R.pouchG);
+    el("rect", { x: "8", y: "6", width: "30", height: "22", rx: "2", fill: "url(#gBox)",
+      stroke: "#6d4d28", "stroke-width": "1.2" }, R.pouchParcel);
+    el("line", { x1: "23", y1: "6", x2: "23", y2: "28", stroke: "#efe4cb", "stroke-width": "2" }, R.pouchParcel);
+    /* eye */
+    R.eyeG = el("g", null, R.headG);
+    el("circle", { cx: "0", cy: "0", r: "4.6", fill: "#f7efd8" }, R.eyeG);
+    R.pupil = el("circle", { cx: "1.4", cy: "0", r: "2.5", fill: "#1d1a18" }, R.eyeG);
+    R.lid = el("path", { d: "", fill: "#cfd8e6", stroke: "#93a1b8", "stroke-width": ".8" }, R.eyeG);
+    /* cycling cap with a reflective dot */
+    R.capG = el("g", null, R.headG);
+    el("path", { d: "M-15,-6 q2,-16 17,-16 q14,0 16,13 q-9,-8 -18,-7 q-9,1 -15,10 Z",
+      fill: "#2f6f8f", stroke: "#1d4a61", "stroke-width": "1.1" }, R.capG);
+    el("path", { d: "M14,-12 q16,-4 26,3 q-12,2 -24,4 Z", fill: "#24586f",
+      stroke: "#1d4a61", "stroke-width": "1" }, R.capG);
+    el("circle", { cx: "-6", cy: "-16", r: "3", fill: "#ffe6a8", opacity: ".9" }, R.capG);
+
+    /* near wing, from shoulder to the bar grip */
+    R.wingNear = el("path", { d: "", fill: "url(#gPlum)", stroke: "#93a1b8", "stroke-width": "1.2" }, bikeRider);
+
+    /* --- lamps on the bike --- */
+    R.lampBody = el("g", null, bikeRider);
+    el("rect", { x: "-7", y: "-6", width: "16", height: "12", rx: "4", fill: "#26324a",
+      stroke: "#4a5a78", "stroke-width": "1.2" }, R.lampBody);
+    R.lampLens = el("circle", { cx: "8", cy: "0", r: "4.6", fill: "#fff6dc" }, R.lampBody);
+    R.tailLight = el("circle", { cx: "0", cy: "0", r: "4.2", fill: "#ff5a52" }, bikeRider);
+    R.tailGlow = el("circle", { cx: "0", cy: "0", r: "12", fill: "#ff5a52", opacity: ".22" }, bikeRider);
+
+    /* --- chains for the IK --- */
+    legN = makeChain([THIGH, SHANK, FOOT]);
+    legF = makeChain([THIGH, SHANK, FOOT]);
+    wingN = makeChain([WING_HI, WING_LO, WING_TIP]);
+    wingF = makeChain([WING_HI, WING_LO, WING_TIP]);
+  }
+
+  /* ============================================================
+     10. PHYSICS STEP
+     ============================================================ */
+
+  /* Centre of mass, in frame-local coordinates (+y up from the rear contact).
+     Weighted: bird torso and head dominate, then the frame, wheels, parcel. */
+  var COM_PARTS = [
+    { k: "torso", m: 6.2, p: { x: 66, y: 168 } },
+    { k: "head",  m: 2.8, p: { x: 108, y: 208 } },
+    { k: "legs",  m: 1.6, p: { x: 80, y: 110 } },
+    { k: "frame", m: 7.0, p: { x: 96, y: 92 } },
+    { k: "wheels",m: 5.4, p: { x: 104, y: WHEEL_R } },
+    { k: "parcel",m: 3.0, p: { x: 24, y: 148 } }
+  ];
+  function computeCom(hipL, headL) {
+    var mx = 0, my = 0, tm = 0;
+    for (var i = 0; i < COM_PARTS.length; i++) {
+      var p = COM_PARTS[i].p, m = COM_PARTS[i].m;
+      if (COM_PARTS[i].k === "torso") p = hipL;
+      else if (COM_PARTS[i].k === "head") p = headL;
+      else if (COM_PARTS[i].k === "legs") { p = { x: (hipL.x + FRAME.bb.x) / 2, y: (hipL.y + FRAME.bb.y) / 2 }; }
+      mx += p.x * m; my += p.y * m; tm += m;
+    }
+    return { x: mx / tm, y: my / tm };
+  }
+
+  function step(dt) {
+    if (dt <= 0) return;
+    S.t += dt;
+    S.dt = dt;
+
+    /* --- road sampling at both contact patches ------------------------- */
+    var wx = S.dist;
+    /* The rear triangle is rigid, so the frame's origin rides the true surface
+       bumps and all — that is what a hardtail feels like. Pitch, though, comes
+       from the smooth trend: micro-texture should show up as fork travel and as
+       the front wheel hopping, not as the whole bike jittering. */
+    var yRear = roadY(wx), yFront = roadY(wx + WB);
+    var yRearM = macroY(wx), yFrontM = macroY(wx + WB);
+    var roadPitch = Math.atan2(yRearM - yFrontM, WB);   // nose-up positive
+    var grade = macroSlope(wx + WB * 0.62);             // analytic, dimensionless
+    var gradePct = grade * 100;
+
+    /* --- suspension: base-excited damped oscillator, integrated in metres.
+       The base is the front wheel's deviation from the smooth trend, and only
+       the sampleable part of it (see roughSlow for the Nyquist argument).
+       Positive base = a bump. With d the sprung deflection,
+         d'' = -(k/m)·d - (c/m)·d' - z_base''
+       and the fork compression is the deflection the spring is absorbing:
+       comp = -d, plus static sag and brake dive. At the frequencies a city
+       bike meets, the sprung mass barely moves and the fork takes the whole
+       bump — which is exactly the behaviour this falls out to. ------------ */
+    var zBase = -roughSlow(wx + WB * 0.62) * MPP;
+    var zBaseAcc = (zBase - 2 * S.zBasePrev + S.zBasePrev2) / (dt * dt);
+    S.zBasePrev2 = S.zBasePrev; S.zBasePrev = zBase;
+    var dAcc = (-SUS_K * S.suspD - SUS_C * S.suspDV) / SUS_M - zBaseAcc;
+    S.suspDV += dAcc * dt;
+    S.suspD += S.suspDV * dt;
+
+    /* brake dive: the front end settles under the braking load it felt last
+       frame. Force over stiffness is the static displacement; at the wet
+       friction limit with a 62% front bias that is about 5 px of dive. */
+    var divePx = S.brakeForce * FRONT_BRAKE_SHARE / SUS_K * PX_PER_M;
+    var compPx = SAG + divePx - S.suspD * PX_PER_M;
+
+    /* Hard travel limits, clamping the oscillator state to match so the spring
+       cannot store energy it is not allowed to release. A bottom-out is only
+       counted when the fork is actually still driving into the stop. */
+    if (compPx > TRAVEL_MAX) {
+      if (S.suspDV < -0.05) S.bottomOuts++;
+      compPx = TRAVEL_MAX;
+      S.suspD = (SAG + divePx - TRAVEL_MAX) * MPP;
+      if (S.suspDV < 0) S.suspDV = 0;
+    } else if (compPx < 0) {
+      compPx = 0;
+      S.suspD = (SAG + divePx) * MPP;
+      if (S.suspDV > 0) S.suspDV = 0;
+    }
+    S.travelPx = compPx;
+    S.travelDyn = compPx - SAG;            // the part that pitches the frame
+    S.seatOff = S.travelDyn * SEAT_POST;
+
+    /* the frame pitches nose-down as the fork compresses past its static sag */
+    var framePitch = roadPitch - Math.atan2(S.travelDyn, WB);
+
+    /* --- posture -------------------------------------------------------- */
+    var wantStand = grade > 0.034 && S.v < 6.4;
+    S.standing = wantStand;
+    var leanBase = 20 * Math.PI / 180;
+    var lean = leanBase + grade * 2.1 + (S.standing ? 7 * Math.PI / 180 : 0)
+             - S.brakeDemand * 11 * Math.PI / 180;
+    S.torsoLean = smooth(S.torsoLean, lean, 5.66, dt);
+
+    /* hip in frame-local coords (+y up) */
+    var hipOff = S.standing ? HIP_STAND : HIP_SEAT;
+    var hipL = { x: FRAME.saddle.x + hipOff.x, y: FRAME.saddle.y + hipOff.y - S.seatOff };
+    var hipS = toScreen(hipL.x, hipL.y, framePitch, REAR_X, yRear);
+
+    /* --- crank, pedals, and the saddle-height reachability cap ---------- */
+    var ratio = GEARS[S.gear];
+    var bbS = toScreen(FRAME.bb.x, FRAME.bb.y, framePitch, REAR_X, yRear);
+    /* pedal angle in screen space: the crank circle rotates with the frame */
+    var pa = S.crankAng + framePitch;
+    function pedalAt(ang) {
+      return { x: bbS.x + CRANK_R * Math.cos(ang), y: bbS.y - CRANK_R * Math.sin(ang) };
+    }
+    var pedalN = pedalAt(pa);
+    var pedalF = pedalAt(pa + Math.PI);
+
+    /* Flat pedals hang horizontal under gravity, so the sole stays near the
+       frame's own angle and only rocks a little through the stroke — the ankle
+       flex real riders have. Not the crank angle: that would weld the foot to
+       the crank and look like a robot. */
+    var ankleRock = -0.30 * Math.sin(pa);
+    var footAngN = framePitch + 0.10 + ankleRock;
+    var footAngF = framePitch + 0.10 - ankleRock;
+
+    /* The toe target MUST be consistent with the demanded foot angle, or the
+       CCD is asked to satisfy two incompatible objectives and compromises:
+       measured 12.5 px of mean tip error before this was fixed, which reads on
+       screen as the foot floating off the pedal. The ball of the foot sits on
+       the pedal, the ankle is FOOT_BALL behind it along the sole, and the toe
+       is FOOT ahead of the ankle — so the toe is (FOOT - FOOT_BALL) ahead of
+       the pedal, pointing wherever the sole points. */
+    function toeTarget(pedal, ang) {
+      var f = FOOT - FOOT_BALL;
+      return { x: pedal.x + f * Math.cos(ang), y: pedal.y + f * Math.sin(ang) };
+    }
+    var toeN = toeTarget(pedalN, footAngN);
+    var toeF = toeTarget(pedalF, footAngF);
+
+    /* THE CAP. One hip serves both legs, so it has to satisfy whichever leg is
+       closer to full extension — and since the pedals are 180 deg apart, that
+       alternates every half turn. Screen y grows downward and the hip is above
+       the pedals, so the constraint |hip - toe| <= reach becomes
+       hipY >= toeY - sqrt(reach^2 - dx^2) for each leg, and the binding one is
+       the LARGER of the two. This is where the standing-pedal bob comes from:
+       the hip is not animated, it is pushed down by geometry. */
+    /* 0.89 of the measured workspace maximum, swept rather than guessed: the
+       cap factor trades IK residual against how crouched the bird sits. At
+       0.97 the knee pinned against its 171 deg limit on 17.7% of frames and the
+       residual had a 9.7 px p99 tail; at 0.89 the knee never pins at all and
+       the tail collapses to 0.75 px (mean 0.089, worst 2.30). Going lower than
+       0.87 starts binding the MINIMUM knee angle instead, so the leg folds as
+       hard as it straightens. 0.89 also puts the knee at a realistic 145-165
+       deg of extension through the stroke — a real cyclist is about 25-35 deg
+       flexed at bottom dead centre, so pinning at 171 deg meant the hip was
+       mounted too high, not that the limit was too tight. */
+    var reach = LEG_WORKSPACE * 0.89;
+    function hipFloor(toe) {
+      var dx = hipS.x - toe.x;
+      var under = reach * reach - dx * dx;
+      return under > 0 ? toe.y - Math.sqrt(under) : toe.y;
+    }
+    var floorY = Math.max(hipFloor(toeN), hipFloor(toeF));
+    if (hipS.y < floorY) { hipS.y = floorY; S.hipCapActive++; }
+    S.hipX = hipS.x; S.hipY = hipS.y;
+    /* bring the capped hip back into frame-local space; the centre-of-mass and
+       stability maths below all works in that frame */
+    hipL = toLocal(hipS.x, hipS.y, framePitch, REAR_X, yRear);
+
+    /* --- legs by CCD ---------------------------------------------------- */
+    var eN = ccdSolve(legN, hipS, toeN.x, toeN.y, footAngN, FOOT_ORIENT_W, LEG_LIMITS);
+    var eF = ccdSolve(legF, hipS, toeF.x, toeF.y, footAngF, FOOT_ORIENT_W, LEG_LIMITS);
+    S.ikErr = Math.max(eN, eF);
+
+    /* --- torso, shoulder, neck, head ------------------------------------ */
+    var torsoAng = framePitch + S.torsoLean;            // world angle from vertical
+    /* SHOULDER_OFF is (forward, up-along-the-torso); rotating "up" by the
+       torso angle gives the world offset from the hip. */
+    var shS = {
+      x: hipS.x + SHOULDER_OFF.y * Math.sin(torsoAng) + SHOULDER_OFF.x * Math.cos(torsoAng),
+      y: hipS.y - SHOULDER_OFF.y * Math.cos(torsoAng) + SHOULDER_OFF.x * Math.sin(torsoAng)
+    };
+    /* head stabilisation: the head group is drawn in world space, so its angle
+       is the torso's world angle plus its own local rotation. Cancelling the
+       torso angle — which already contains the frame pitch — is what holds the
+       beak level. The first draft cancelled framePitch a second time and the
+       head ended up TWICE as wobbly as the frame it was supposed to steady.
+       0.92 rather than 1.0 so the head still nods a little with the body. */
+    var wantHead = -torsoAng * 0.92 - 4 * Math.PI / 180;
+    var headAcc = -14 * (S.headAng - wantHead) - 5.2 * S.headV;   // critically-ish damped
+    S.headV += headAcc * dt;
+    S.headAng += S.headV * dt;
+    S.headAng = clamp(S.headAng, -0.85, 0.85);
+
+    var neckS = {
+      x: shS.x + NECK_BASE.y * Math.sin(torsoAng) + NECK_BASE.x * Math.cos(torsoAng),
+      y: shS.y - NECK_BASE.y * Math.cos(torsoAng) + NECK_BASE.x * Math.sin(torsoAng)
+    };
+    var headWorldAng = torsoAng + S.headAng;   // torsoAng already carries the pitch
+    var headS = {
+      x: neckS.x + HEAD_C.y * Math.sin(headWorldAng) + HEAD_C.x * Math.cos(headWorldAng),
+      y: neckS.y - HEAD_C.y * Math.cos(headWorldAng) + HEAD_C.x * Math.sin(headWorldAng)
+    };
+    var headL = toLocal(headS.x, headS.y, framePitch, REAR_X, yRear);
+
+    /* --- wing to the bar grip ------------------------------------------- */
+    var barsS = toScreen(FRAME.bars.x + GRIP_OFF.x, FRAME.bars.y + GRIP_OFF.y, framePitch, REAR_X, yRear);
+    if (S.standing) { barsS.x -= 6; barsS.y += 3; }     // pull back on the bars
+    /* The wrist is what grips; the end effector is the wingtip WING_TIP beyond
+       it. Same consistency rule as the foot, or the solver compromises and the
+       wing lets go of the bar. */
+    function wingTarget(from, grip, bias) {
+      var phi = Math.atan2(grip.y - from.y, grip.x - from.x) + bias;
+      return { x: grip.x + WING_TIP * Math.cos(phi), y: grip.y + WING_TIP * Math.sin(phi), phi: phi };
+    }
+    var shFar = { x: shS.x - 5, y: shS.y + 4 };
+    var gripFar = { x: barsS.x - 9, y: barsS.y + 9 };
+    var tgtW = wingTarget(shS, barsS, 0.42);
+    var tgtWf = wingTarget(shFar, gripFar, 0.5);
+    var eW = ccdSolve(wingN, shS, tgtW.x, tgtW.y, tgtW.phi, 0.25, WING_LIMITS);
+    S.ikErr = Math.max(S.ikErr, eW);
+    /* the far wing hangs a little lower and lags */
+    ccdSolve(wingF, shFar, tgtWf.x, tgtWf.y, tgtWf.phi, 0.2, WING_LIMITS);
+
+    /* --- CoM and the stability limit on braking -------------------------- */
+    var com = computeCom(hipL, headL);
+    /* b = horizontal distance from the FRONT contact patch back to the CoM */
+    var bFrac = (WB - com.x) / WB;
+    var hM = com.y * MPP;
+    var bM = (WB - com.x) * MPP;
+    S.comX = com.x; S.comY = com.y;
+    S.comMargin = clamp(bFrac, -1, 1);
+    /* max deceleration before lifting the rear wheel: a = g*b/h */
+    var aMaxEndo = hM > 0.05 ? GRAV * bM / hM : 0;
+
+    /* --- rider control: hold a target speed, sensibly, in the wet -------- */
+    var rainMul = RAIN_LEVELS[S.rain].mul;
+    var vTarget = TARGET_V + S.effort * 1.5
+                - clamp(grade * 22, -1.3, 1.5)
+                - rainMul * 0.55
+                - (isCobbles(wx) ? 0.5 : 0);
+    vTarget = Math.max(1.1, vTarget);
+
+    var wantThrottle = 0, wantBrake = 0;
+    if (S.userBrake) { wantBrake = 1; }
+    else if (S.v > vTarget + 0.55) { wantBrake = clamp((S.v - vTarget - 0.35) / 1.5, 0, 1); }
+    if (!S.userBrake && S.v < vTarget - 0.2) {
+      wantThrottle = clamp((vTarget - S.v) / 1.4, 0, 1);
+      if (grade > 0.05) wantThrottle = 1;
+    }
+    S.throttle = smooth(S.throttle, wantThrottle, 9.05, dt);
+    S.brakeDemand = smooth(S.brakeDemand, wantBrake, 13.39, dt);
+    S.pedalling = S.throttle > 0.06 && !S.userBrake;
+
+    /* --- forces ---------------------------------------------------------- */
+    var cosG = Math.cos(Math.atan(grade)), sinG = Math.sin(Math.atan(grade));
+    var normal = MASS * GRAV * cosG;
+    var torque = S.pedalling ? MAX_TORQUE * S.throttle * (S.standing ? 1.12 : 1) : 0;
+    var fDrive = torque * ratio / WHEEL_R_M;
+    /* traction cap at the driven wheel */
+    var fDriveMax = MU_WET * normal * REAR_SHARE;
+    var driveSlip = 0;
+    if (fDrive > fDriveMax) {
+      /* through the friction circle: the tyre spins up. Bounded, because a slip
+         ratio of several hundred percent is a wheelie, not a wet road. */
+      driveSlip = clamp((fDrive - fDriveMax) / fDriveMax, 0, 0.18);
+      fDrive = fDriveMax;
+    }
+
+    var fDrag = -0.5 * RHO * CD_A * S.v * Math.abs(S.v);
+    var fRoll = -CRR * normal * (S.v > 0.01 ? 1 : 0);
+    var fGrav = -MASS * GRAV * sinG;
+
+    /* brake: demand scaled by available friction, then capped by stability */
+    var fBrakeMax = MU_WET * normal;
+    var fBrake = S.brakeDemand * fBrakeMax;
+    var fBrakeStab = aMaxEndo * MASS;
+    S.brakeLimited = 0;
+    if (fBrake > fBrakeStab) { fBrake = fBrakeStab; S.brakeLimited = 1; }
+    if (S.v <= 0.02) fBrake = Math.min(fBrake, Math.max(0, -fGrav + 1));  // hold still on a hill
+    S.brakeForce = fBrake;
+
+    var fTotal = fDrive + fDrag + fRoll + fGrav - fBrake;
+    S.a = fTotal / MASS;
+    S.v += S.a * dt;
+    if (S.v < 0) S.v = 0;
+    if (S.v > 17) S.v = 17;
+
+    /* --- wheel spin, slip, and the drivetrain ---------------------------- */
+    var brakeSlip = 0;
+    if (fBrake > fBrakeMax * 0.985 && S.v > 0.4) brakeSlip = -0.32;   // locking the wheel
+    /* The wheel's surface speed differs from ground speed by exactly the slip
+       ratio, so S.slip == (omega*R - v)/v holds by construction rather than by
+       measurement — and the spokes visibly stop tracking the road under a hard
+       brake, which is the only honest way to draw it. */
+    S.wheelOmega = S.v * (1 + brakeSlip + driveSlip) / WHEEL_R_M;
+    S.wheelAng += S.wheelOmega * dt;
+    S.slip = brakeSlip + driveSlip;
+
+    /* freewheel: the crank is driven by the wheel only when pedalling */
+    if (S.pedalling) {
+      S.crankOmega = S.wheelOmega / ratio;
+    } else {
+      S.crankOmega = smooth(S.crankOmega, 0, 3.71, dt);
+    }
+    S.crankAng += S.crankOmega * dt;
+
+    /* advance the world by the GROUND speed, not the wheel speed — that is
+       the whole point of modelling slip separately */
+    S.dist += S.v * PX_PER_M * dt;
+
+    /* --- auto-shift: keep cadence near the bird's preferred rhythm ------- */
+    if (S.autoGear) {
+      var wheelRpm = Math.abs(S.wheelOmega) * 60 / (2 * Math.PI);
+      var want = wheelRpm / CADENCE_TARGET;
+      var best = S.gear, bestD = 1e9;
+      for (var gi = 0; gi < GEARS.length; gi++) {
+        var dd = Math.abs(GEARS[gi] - want);
+        if (dd < bestD) { bestD = dd; best = gi; }
+      }
+      if (best !== S.gear && S.pedalling) { S.gear = best; S.shifts++; }
+    }
+
+    /* --- pouch pendulum, forced by the bike's own acceleration ----------- */
+    var pAcc = -(GRAV / POUCH_L) * Math.sin(S.pouchAng)
+             - (S.a / POUCH_L) * Math.cos(S.pouchAng)
+             - POUCH_C * S.pouchV
+             + (S.suspDV * 26 / POUCH_L);      // the fork's own velocity shakes it
+    S.pouchV += pAcc * dt;
+    S.pouchAng += S.pouchV * dt;
+    S.pouchAng = clamp(S.pouchAng, -0.62, 0.62);
+
+    /* --- parcel on the rack: a spring driven by longitudinal accel ------- */
+    var qAcc = -70 * S.parcelAng - 9 * S.parcelV - S.a * 3.4;
+    S.parcelV += qAcc * dt;
+    S.parcelAng = clamp(S.parcelAng + S.parcelV * dt, -0.3, 0.3);
+
+    /* --- blink, occasionally triggered by a drop hitting the face -------- */
+    S.blinkT += dt;
+    if (S.blinkT > S.nextBlink) {
+      S.blinkT = 0;
+      S.nextBlink = 1.6 + hash(Math.floor(S.t * 7) * 1.31) * 4.2;
+      S.blink = 1;
+    }
+    S.blink = Math.max(0, S.blink - dt * 6.5);
+
+    /* --- vest stripes flash as the bird passes each streetlamp ----------- */
+    var lampWorld = Math.floor((wx + 52) / LAMP_PERIOD) * LAMP_PERIOD + 52;
+    var dLamp = Math.abs(wx + WB * 0.4 - lampWorld);
+    var glowNow = Math.exp(-Math.pow(dLamp / 150, 2));
+    S.stripeGlow = smooth(S.stripeGlow, glowNow, 21.40, dt);
+
+    S.tailPulse = (S.t % 1.7) < 0.42 ? 1 : 0.18;
+    S.beamOp = 0.18 + rainMul * 0.30;    // the beam is only visible in the rain
+
+    /* --- store what the renderer needs ---------------------------------- */
+    S._yRear = yRear; S._yFront = yFront; S._roadPitch = roadPitch;
+    S._framePitch = framePitch; S._grade = grade; S._gradePct = gradePct;
+    S._bbS = bbS; S._pedalN = pedalN; S._pedalF = pedalF;
+    S._hipS = hipS; S._shS = shS; S._neckS = neckS;
+    S._headS = headS; S._headAng = headWorldAng; S._torsoAng = torsoAng;
+    S._barsS = barsS; S._aMaxEndo = aMaxEndo; S._wx = wx;
+  }
+
+  /* ============================================================
+     11. RENDER
+     ============================================================ */
+
+  /* The renderer works from the position the physics sampled THIS frame, not
+     from the odometer, which has already been advanced to the next one by the
+     time render() runs. Mixing the two in one picture is what made the tyres
+     hover about 0.7 px above the asphalt they are supposed to be touching: the
+     road path was built from the new position while the wheels were placed from
+     the old one. Everything below reads camX(), so the road, the wheels, the
+     parallax layers and the puddles all agree to the pixel. */
+  function camX() { return S._wx; }
+
+  function drawRoad() {
+    var stepX = 20, pts = [];
+    for (var sx = -40; sx <= VW + 40; sx += stepX) pts.push({ x: sx, y: roadYAtScreen(sx) });
+    var d = "M" + pts[0].x + "," + pts[0].y.toFixed(2);
+    for (var i = 1; i < pts.length; i++) d += "L" + pts[i].x + "," + pts[i].y.toFixed(2);
+    $("roadEdge").setAttribute("d", d);
+    var fill = d + "L" + (VW + 40) + ",600L-40,600Z";
+    $("roadFill").setAttribute("d", fill);
+    /* sheen band just under the surface line */
+    var sh = "";
+    for (i = 0; i < pts.length; i++) {
+      sh += (i ? "L" : "M") + pts[i].x + "," + (pts[i].y + 2).toFixed(2);
+    }
+    for (i = pts.length - 1; i >= 0; i--) sh += "L" + pts[i].x + "," + (pts[i].y + 34).toFixed(2);
+    $("roadSheen").setAttribute("d", sh + "Z");
+    /* lane markings, offset by exactly the distance travelled: no skating */
+    var lane = "";
+    for (i = 0; i < pts.length; i += 2) {
+      lane += (i ? "L" : "M") + pts[i].x + "," + (pts[i].y + 52).toFixed(2);
+    }
+    var ld = $("laneDash");
+    ld.setAttribute("d", lane);
+    ld.setAttribute("stroke-dashoffset", (-camX() % 80).toFixed(2));
+  }
+
+  function drawRig() {
+    var yR = S._yRear, fp = S._framePitch;
+    /* frame pitch includes fork compression; the wheels stay on the road */
+    var rearC = { x: REAR_X, y: yR };
+    var frontC = { x: REAR_X + WB * Math.cos(fp), y: yR - WB * Math.sin(fp) };
+    /* the front wheel is drawn on the road, the fork reaches down to it */
+    var frontWheel = { x: frontC.x, y: S._yFront };
+
+    setT(R.wheelG.r, "translate(" + rearC.x.toFixed(2) + "," + rearC.y.toFixed(2) + ") " +
+      "rotate(" + (-S.wheelAng * 180 / Math.PI).toFixed(2) + ")");
+    setT(R.wheelG.f, "translate(" + frontWheel.x.toFixed(2) + "," + frontWheel.y.toFixed(2) + ") " +
+      "rotate(" + (-S.wheelAng * 180 / Math.PI).toFixed(2) + ")");
+
+    function P(lx, ly) { return toScreen(lx, ly, fp, rearC.x, rearC.y); }
+    var bb = P(FRAME.bb.x, FRAME.bb.y);
+    var saddle = P(FRAME.saddle.x, FRAME.saddle.y - S.seatOff);
+    var seatTop = P(FRAME.seatTop.x, FRAME.seatTop.y - S.seatOff);
+    var bars = P(FRAME.bars.x, FRAME.bars.y);
+    var headTop = P(FRAME.headTop.x, FRAME.headTop.y);
+    var headBot = P(FRAME.headBot.x, FRAME.headBot.y);
+    var crown = P(FRAME.forkCrown.x, FRAME.forkCrown.y);
+    var rack = P(FRAME.rackTop.x, FRAME.rackTop.y - S.seatOff * 0.5);
+    var rearAx = P(FRAME.rearAxle.x, FRAME.rearAxle.y);
+
+    function line(k, a, b) {
+      R.framePaths[k].setAttribute("d", "M" + a.x.toFixed(2) + "," + a.y.toFixed(2) +
+        "L" + b.x.toFixed(2) + "," + b.y.toFixed(2));
+    }
+    line("chainstay", rearAx, bb);
+    line("seatTube", bb, seatTop);
+    line("downTube", bb, headBot);
+    line("topTube", seatTop, headTop);
+    line("seatStay", rearAx, seatTop);
+    line("headTube", headBot, headTop);
+    /* fork: upper (stanchion, fixed to the frame) and lower (slider, to the axle).
+       Their split point moves with travel, which is what makes compression read. */
+    var forkVec = { x: frontWheel.x - crown.x, y: frontWheel.y - crown.y };
+    var forkLen = Math.hypot(forkVec.x, forkVec.y) || 1;
+    var split = clamp(0.42 + S.travelPx / forkLen * 0.9, 0.2, 0.86);
+    var splitP = { x: crown.x + forkVec.x * split, y: crown.y + forkVec.y * split };
+    R.framePaths.forkUpper.setAttribute("d", "M" + crown.x.toFixed(2) + "," + crown.y.toFixed(2) +
+      "L" + splitP.x.toFixed(2) + "," + splitP.y.toFixed(2));
+    R.framePaths.forkLower.setAttribute("d", "M" + splitP.x.toFixed(2) + "," + splitP.y.toFixed(2) +
+      "L" + frontWheel.x.toFixed(2) + "," + frontWheel.y.toFixed(2));
+    R.stanchion.setAttribute("d", "M" + crown.x.toFixed(2) + "," + crown.y.toFixed(2) +
+      "L" + splitP.x.toFixed(2) + "," + splitP.y.toFixed(2));
+
+    /* saddle + bars */
+    R.rack.setAttribute("d", "M" + (seatTop.x - 4).toFixed(2) + "," + (seatTop.y - 2).toFixed(2) +
+      "L" + rack.x.toFixed(2) + "," + rack.y.toFixed(2) +
+      "L" + (rearAx.x + 6).toFixed(2) + "," + (rearAx.y + 34).toFixed(2));
+
+    /* parcel sits on the rack and swings with acceleration */
+    setT(R.parcelG, "translate(" + (rack.x - 4).toFixed(2) + "," + (rack.y - 16).toFixed(2) + ") " +
+      "rotate(" + (S.parcelAng * 180 / Math.PI + fp * 180 / Math.PI * 0.4).toFixed(2) + ")");
+
+    /* fenders: arcs over each wheel */
+    function fender(c, rr, a0, a1) {
+      var p0 = { x: c.x + rr * Math.cos(a0), y: c.y + rr * Math.sin(a0) };
+      var p1 = { x: c.x + rr * Math.cos(a1), y: c.y + rr * Math.sin(a1) };
+      return "M" + p0.x.toFixed(2) + "," + p0.y.toFixed(2) +
+        "A" + rr + "," + rr + " 0 0 1 " + p1.x.toFixed(2) + "," + p1.y.toFixed(2);
+    }
+    R.fenderR.setAttribute("d", fender(rearC, WHEEL_R + 9, Math.PI * 1.06, Math.PI * 1.94));
+    R.fenderF.setAttribute("d", fender(frontWheel, WHEEL_R + 9, Math.PI * 1.08, Math.PI * 1.92));
+
+    /* drivetrain */
+    var ch = chainPath(bb, CHAINRING_R, rearAx, COG_R);
+    R.chain.setAttribute("d", ch.d);
+    R.chainLinks.setAttribute("d", ch.d);
+    /* the link dashes travel at the chain's own speed = cog surface speed */
+    var chainTravel = S.wheelAng * COG_R;
+    R.chainLinks.setAttribute("stroke-dashoffset", (-chainTravel % 7).toFixed(2));
+    setT(R.ringG, "translate(" + bb.x.toFixed(2) + "," + bb.y.toFixed(2) + ") rotate(" +
+      (-S.crankAng * 180 / Math.PI).toFixed(2) + ")");
+    setT(R.cogG, "translate(" + rearAx.x.toFixed(2) + "," + rearAx.y.toFixed(2) + ") rotate(" +
+      (-S.wheelAng * 180 / Math.PI).toFixed(2) + ")");
+
+    /* cranks and pedals */
+    var pn = S._pedalN, pf = S._pedalF;
+    R.crankFar.setAttribute("d", "M" + bb.x.toFixed(2) + "," + bb.y.toFixed(2) +
+      "L" + pf.x.toFixed(2) + "," + pf.y.toFixed(2));
+    R.crankNear.setAttribute("d", "M" + bb.x.toFixed(2) + "," + bb.y.toFixed(2) +
+      "L" + pn.x.toFixed(2) + "," + pn.y.toFixed(2));
+    var pdAngN = (-S.crankAng * 180 / Math.PI + fp * 180 / Math.PI);
+    setT(R.pedalNear, "translate(" + pn.x.toFixed(2) + "," + pn.y.toFixed(2) + ") rotate(" + pdAngN.toFixed(2) + ")");
+    setT(R.pedalFar, "translate(" + pf.x.toFixed(2) + "," + pf.y.toFixed(2) + ") rotate(" + pdAngN.toFixed(2) + ")");
+
+    /* --- the bird --- */
+    var hip = S._hipS;
+    setT(R.bodyG, "translate(" + hip.x.toFixed(2) + "," + hip.y.toFixed(2) + ") rotate(" +
+      (-S._torsoAng * 180 / Math.PI).toFixed(2) + ")");
+
+    /* tail feathers behind the body */
+    var tailA = S._torsoAng;
+    var tx0 = hip.x - 30 * Math.cos(tailA) - 6 * Math.sin(tailA);
+    var ty0 = hip.y + 30 * Math.sin(tailA) - 6 * Math.cos(tailA);
+    R.tail.setAttribute("d", "M" + tx0.toFixed(2) + "," + ty0.toFixed(2) +
+      "q-26,4 -38,18 q14,-2 22,2 q-14,6 -20,18 q22,-8 38,-14 q14,-6 16,-16 Z");
+
+    /* legs: a tapered outline built from the solved joints */
+    var LEG_WIDTHS = [13, 10, 6.5, 5];
+    function legPath(ch) {
+      return taperedPath(ch.pts, LEG_WIDTHS);
+    }
+    R.legFar.setAttribute("d", legPath(legF));
+    R.legNear.setAttribute("d", legPath(legN));
+    /* webbed feet, angled to the pedal */
+    function footPath(ch) {
+      var a = ch.pts[2], b = ch.pts[3];
+      var ang = Math.atan2(b.y - a.y, b.x - a.x);
+      var c = Math.cos(ang), s = Math.sin(ang);
+      function q(lx, ly) { return (b.x + lx * c - ly * s).toFixed(2) + "," + (b.y + lx * s + ly * c).toFixed(2); }
+      return "M" + q(-2, -3) + "L" + q(16, -4) + "Q" + q(23, 0) + " " + q(16, 4) +
+             "L" + q(-2, 4) + "Q" + q(-6, 0) + " " + q(-2, -3) + "Z";
+    }
+    R.footFar.setAttribute("d", footPath(legF));
+    R.footNear.setAttribute("d", footPath(legN));
+
+    /* neck: a curved tapered path between two computed points, bulging so it
+       bends when the head holds level against a pitching frame */
+    var sh = S._shS, nk = S._neckS, hd = S._headS;
+    var bulge = clamp(S.headAng * 26, -12, 12);
+    var nx = -(hd.y - sh.y), ny = (hd.x - sh.x);
+    var nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+    var cmx = (sh.x + nk.x) / 2 + nx * bulge, cmy = (sh.y + nk.y) / 2 + ny * bulge;
+    R.neck.setAttribute("d",
+      "M" + (sh.x - 9).toFixed(2) + "," + (sh.y - 4).toFixed(2) +
+      "Q" + cmx.toFixed(2) + "," + cmy.toFixed(2) + " " + (nk.x - 6).toFixed(2) + "," + (nk.y - 2).toFixed(2) +
+      "L" + (nk.x + 7).toFixed(2) + "," + (nk.y + 4).toFixed(2) +
+      "Q" + (cmx + 13).toFixed(2) + "," + (cmy + 8).toFixed(2) + " " + (sh.x + 8).toFixed(2) + "," + (sh.y + 12).toFixed(2) + "Z");
+
+    setT(R.headG, "translate(" + hd.x.toFixed(2) + "," + hd.y.toFixed(2) + ") rotate(" +
+      (S._headAng * 180 / Math.PI).toFixed(2) + ")");
+
+    /* pouch swings from the beak root */
+    var pa2 = S.pouchAng;
+    setT(R.pouchG, "rotate(" + (pa2 * 180 / Math.PI).toFixed(2) + ",6,2)");
+    var pw = 46 + Math.cos(pa2) * 6;
+    R.pouch.setAttribute("d", "M6,2 q" + (pw * 0.5).toFixed(1) + ",-4 " + pw.toFixed(1) + ",4 " +
+      "q4,20 -14,30 q-22,10 -34,-8 q-6,-14 4,-24 Z");
+    /* keep the parcel clip in step with the pouch */
+    $("pouchClipPath").setAttribute("d", R.pouch.getAttribute("d"));
+
+    /* blink lid */
+    var bl = S.blink;
+    R.lid.setAttribute("d", bl > 0.02
+      ? "M-5,-5 q5," + (10 * bl).toFixed(2) + " 10,0 q-5," + (-2 + 8 * bl).toFixed(2) + " -10,0 Z"
+      : "M-5,-5 q5,-1 10,0 q-5,1 -10,0 Z");
+    /* the pupil tracks the road ahead a little */
+    R.pupil.setAttribute("cx", (1.4 + clamp(S._grade * 12, -1.6, 1.6)).toFixed(2));
+
+    /* wings */
+    function wingPath(ch) {
+      var P2 = ch.pts;
+      var d = "M" + P2[0].x.toFixed(2) + "," + P2[0].y.toFixed(2);
+      d += "Q" + ((P2[0].x + P2[1].x) / 2 + 6).toFixed(2) + "," + ((P2[0].y + P2[1].y) / 2 - 9).toFixed(2) +
+           " " + P2[1].x.toFixed(2) + "," + P2[1].y.toFixed(2);
+      d += "Q" + ((P2[1].x + P2[2].x) / 2 + 4).toFixed(2) + "," + ((P2[1].y + P2[2].y) / 2 - 7).toFixed(2) +
+           " " + P2[2].x.toFixed(2) + "," + P2[2].y.toFixed(2);
+      d += "L" + P2[3].x.toFixed(2) + "," + P2[3].y.toFixed(2);
+      d += "Q" + ((P2[2].x + P2[1].x) / 2 - 3).toFixed(2) + "," + ((P2[2].y + P2[1].y) / 2 + 10).toFixed(2) +
+           " " + P2[1].x.toFixed(2) + "," + (P2[1].y + 6).toFixed(2);
+      d += "Q" + ((P2[1].x + P2[0].x) / 2 - 4).toFixed(2) + "," + ((P2[1].y + P2[0].y) / 2 + 12).toFixed(2) +
+           " " + (P2[0].x - 2).toFixed(2) + "," + (P2[0].y + 9).toFixed(2) + "Z";
+      return d;
+    }
+    R.wingFar.setAttribute("d", wingPath(wingF));
+    R.wingNear.setAttribute("d", wingPath(wingN));
+
+    /* vest stripes flash as streetlamps pass */
+    var gl = 0.34 + S.stripeGlow * 0.66;
+    R.stripe1.setAttribute("opacity", gl.toFixed(3));
+    R.stripe2.setAttribute("opacity", (gl * 0.9).toFixed(3));
+    R.stripe1.setAttribute("stroke", S.stripeGlow > 0.3 ? "#ffffff" : "#e6eefc");
+    R.stripe2.setAttribute("stroke", S.stripeGlow > 0.3 ? "#ffffff" : "#e6eefc");
+
+    /* bike lamp, cone and pool */
+    var lamp = P(FRAME.lampPos.x, FRAME.lampPos.y);
+    setT(R.lampBody, "translate(" + lamp.x.toFixed(2) + "," + lamp.y.toFixed(2) + ") rotate(" +
+      (-fp * 180 / Math.PI).toFixed(2) + ")");
+    R.lampLens.setAttribute("opacity", (0.85 + 0.15 * Math.sin(S.t * 3)).toFixed(3));
+    var coneLen = 300, coneA = -fp;
+    var cx0 = lamp.x, cy0 = lamp.y;
+    var spread = 0.13 + 0.02 * Math.sin(S.t * 2.1);
+    R.cone.setAttribute("d", "M" + cx0.toFixed(2) + "," + cy0.toFixed(2) +
+      "L" + (cx0 + coneLen * Math.cos(coneA - spread)).toFixed(2) + "," + (cy0 + coneLen * Math.sin(coneA - spread) + 26).toFixed(2) +
+      "L" + (cx0 + coneLen * Math.cos(coneA + spread)).toFixed(2) + "," + (cy0 + coneLen * Math.sin(coneA + spread) + 52).toFixed(2) + "Z");
+    R.cone.setAttribute("opacity", S.beamOp.toFixed(3));
+    var poolX = REAR_X + WB + 150, poolY = roadYAtScreen(poolX) + 12;
+    setT(R.headPool, "translate(" + poolX.toFixed(1) + "," + poolY.toFixed(1) + ")");
+    R.headPool.setAttribute("opacity", (0.5 + S.beamOp).toFixed(3));
+
+    /* tail light */
+    var tl = P(FRAME.seatTop.x - 12, FRAME.seatTop.y - 4);
+    setT(R.tailLight, "translate(" + tl.x.toFixed(2) + "," + tl.y.toFixed(2) + ")");
+    setT(R.tailGlow, "translate(" + tl.x.toFixed(2) + "," + tl.y.toFixed(2) + ")");
+    R.tailLight.setAttribute("opacity", S.tailPulse.toFixed(2));
+    R.tailGlow.setAttribute("opacity", (S.tailPulse * 0.3).toFixed(3));
+
+    /* reflection: flip #bikeRider about the wet road line under the bike */
+    var anchor = roadYAtScreen(REAR_X + WB * 0.5) + 6;
+    var squash = 0.86 + 0.03 * Math.sin(S.t * 1.7);
+    /* The flip maps y -> ty + sy*y with sy = -squash, so ty = anchor*(1+squash)
+       makes the road line itself a fixed point at ANY squash: the reflection
+       can breathe without ever detaching from the surface it mirrors.
+       Written to 4 dp, not 2, because an error in sy is multiplied by the
+       anchor height (~490 px) — 2 dp let the reflection drift ~2 px. */
+    setT($("reflRiderG"), "translate(0," + (anchor * (1 + squash)).toFixed(4) + ") scale(1," + (-squash).toFixed(4) + ")");
+  }
+
+  function drawParallax() {
+    /* far skyline */
+    var offF = -(camX() * 0.22) % FAR_PERIOD;
+    setT(layers.farUses[0], "translate(" + offF.toFixed(2) + ",0)");
+    setT(layers.farUses[1], "translate(" + (offF + FAR_PERIOD).toFixed(2) + ",0)");
+
+    /* near buildings, each recycled individually */
+    for (var i = 0; i < layers.bldgs.length; i++) {
+      var b = layers.bldgs[i];
+      var sx = b.x0 - (camX() * 0.45) % NEAR_PERIOD;
+      if (sx < -b.w - 40) sx += NEAR_PERIOD;
+      var baseY = 438;
+      setT(b.g, "translate(" + sx.toFixed(2) + "," + (baseY - b.h).toFixed(2) + ")");
+      for (var w = 0; w < b.wins.length; w++) {
+        var wn = b.wins[w];
+        var tw = wn.base + 0.22 * Math.sin(S.t * (0.7 + wn.ph * 0.3) + wn.ph);
+        wn.e.setAttribute("opacity", clamp(tw, 0.05, 0.95).toFixed(3));
+      }
+    }
+
+    /* lamps, at the road's own parallax */
+    var offL = -(camX()) % LAMP_PERIOD;
+    for (i = 0; i < layers.lampUses.length; i++) {
+      setT(layers.lampUses[i], "translate(" + (offL + i * LAMP_PERIOD).toFixed(2) + ",0)");
+    }
+
+    /* foreground */
+    var offG = -(camX() * 1.55) % FG_PERIOD;
+    for (i = 0; i < layers.fgUses.length; i++) {
+      setT(layers.fgUses[i], "translate(" + (offG + i * FG_PERIOD).toFixed(2) + ",0)");
+    }
+  }
+
+  function drawSigns() {
+    for (var i = 0; i < layers.signs.length; i++) {
+      var sg = layers.signs[i];
+      var span = 1500 * layers.signs.length;
+      var sx = ((sg.wx - camX() * 0.45) % span + span) % span - 300;
+      if (sx > VW + 200) sx -= span;
+      var wallY = 438 - (110 + hash(i * 3.3) * 120);
+      setT(sg.g, "translate(" + sx.toFixed(2) + "," + (wallY + 40).toFixed(2) + ")");
+      /* procedural flicker, with an occasional dropout */
+      var n = 0.78 + 0.14 * Math.sin(S.t * 7.3 + sg.ph) + 0.09 * Math.sin(S.t * 23.7 + sg.ph * 2.1);
+      if (sg.dropout > 0) { sg.dropout -= S.dt; n = 0.12; }
+      else if (hash(Math.floor(S.t * 11) + i * 37) > 0.988) sg.dropout = 0.06 + hash(i + Math.floor(S.t)) * 0.14;
+      n = clamp(n, 0.05, 1);
+      sg.glow.setAttribute("opacity", (n * 0.62).toFixed(3));
+      sg.box.setAttribute("opacity", (0.5 + n * 0.5).toFixed(3));
+      sg.txt.setAttribute("opacity", n.toFixed(3));
+      /* its reflection smears down the wet road at the same screen x */
+      var refl = layers.signRefl && layers.signRefl[i];
+      if (refl) {
+        setT(refl, "translate(" + (sx + sg.spec.w * 0.2).toFixed(2) + "," + (roadYAtScreen(sx + sg.spec.w * 0.5) + 4).toFixed(2) + ")");
+        refl.setAttribute("opacity", (n * 0.34).toFixed(3));
+      }
+    }
+  }
+
+  function drawPuddles() {
+    for (var i = 0; i < layers.puddles.length; i++) {
+      var p = layers.puddles[i];
+      var span = 3900;
+      var sx = ((p.wx - camX()) % span + span) % span - 200;
+      if (sx > VW + 220) sx -= span;
+      var py = roadYAtScreen(sx) + 20 + (p.w % 13);
+      setT(p.g, "translate(" + sx.toFixed(2) + "," + py.toFixed(2) + ")");
+      p.e.setAttribute("rx", p.w.toFixed(1)); p.e.setAttribute("ry", p.h.toFixed(1));
+      p.hi.setAttribute("rx", (p.w * 0.72).toFixed(1)); p.hi.setAttribute("ry", (p.h * 0.5).toFixed(1));
+      /* the wheel crossing a puddle throws a fan of spray and rings */
+      var rearScreenX = REAR_X;
+      if (!p.rippled && sx < rearScreenX + 12 && sx > rearScreenX - 60) {
+        p.rippled = true;
+        spawnRipple(rearScreenX, roadYAtScreen(rearScreenX) + 14);
+        for (var s = 0; s < 5; s++) spawnSpray(rearScreenX - 4, roadYAtScreen(rearScreenX) + 6, 1.7);
+      }
+      if (sx > rearScreenX + 40) p.rippled = false;
+    }
+  }
+
+  function drawBokeh() {
+    for (var i = 0; i < layers.bokeh.length; i++) {
+      var b = layers.bokeh[i];
+      var span = 4100;
+      var sx = ((b.wx - camX() * 1.35) % span + span) % span - 200;
+      if (sx > VW + 200) sx -= span;
+      b.e.setAttribute("cx", sx.toFixed(2));
+      b.e.setAttribute("cy", b.y.toFixed(2));
+      b.e.setAttribute("opacity", (b.base * (0.6 + 0.4 * Math.sin(S.t * 1.3 + i))).toFixed(3));
+    }
+    /* lens drops slide slowly down */
+    for (i = 0; i < layers.lens.length; i++) {
+      var l = layers.lens[i];
+      var cy = parseFloat(l.e.getAttribute("cy"));
+      cy += l.v * S.dt * (0.4 + RAIN_LEVELS[S.rain].mul);
+      if (cy > VH + 20) { cy = -20; l.e.setAttribute("cx", (60 + hash(i * 3.7 + Math.floor(S.t)) * 860).toFixed(1)); }
+      l.e.setAttribute("cy", cy.toFixed(2));
+    }
+  }
+
+  /* --- pooled weather effects ------------------------------------------ */
+  var rippleI = 0, splashI = 0, sprayI = 0;
+  function spawnRipple(x, y) {
+    var r = layers.ripples[rippleI % layers.ripples.length]; rippleI++;
+    r.life = 1; r.x = x; r.y = y;
+  }
+  function spawnSplash(x, y, s) {
+    var sp = layers.splashes[splashI % layers.splashes.length]; splashI++;
+    sp.life = 1; sp.x = x; sp.y = y; sp.s = s;
+  }
+  function spawnSpray(x, y, boost) {
+    var d = layers.spray[sprayI % layers.spray.length]; sprayI++;
+    d.life = 1; d.x = x; d.y = y;
+    var spd = (60 + S.v * PX_PER_M * 0.32) * (boost || 1);
+    d.vx = -spd * (0.5 + hash(sprayI) * 0.6);
+    d.vy = -spd * (0.35 + hash(sprayI * 2.7) * 0.75);
+    d.r = 1.4 + hash(sprayI * 1.7) * 2.4;
+  }
+
+  function drawWeather() {
+    var lvl = RAIN_LEVELS[S.rain];
+    /* apparent slant: vector-add the bike's velocity to the rain's fall */
+    var wind = WIND_BASE * lvl.wind;
+    var bikeV = S.v * PX_PER_M;
+
+    for (var pi = 0; pi < layers.rain.length; pi++) {
+      var rp = layers.rain[pi], plane = rp.plane;
+      var relV = bikeV * plane.par;
+      /* Apparent slant: the drops fall vertically in the air's frame, but the
+         bird is moving through that air, so the streaks lean into it and lean
+         harder the faster it goes. Each drop is a vertical line rotated about
+         its own origin, so the slant costs one rotate per plane per frame
+         rather than two endpoint writes per drop. */
+      var slantDeg = Math.atan((relV * 0.55 + wind * 210) / plane.fall) * 180 / Math.PI;
+      var active = Math.floor(plane.n * lvl.mul);
+      /* opacity only changes when the rain level changes, so don't write it
+         136 times a frame for nothing */
+      if (active !== rp.activeLast) {
+        for (var k = 0; k < plane.n; k++) {
+          rp.drops[k].e.setAttribute("opacity", k < active ? plane.op.toFixed(2) : "0");
+        }
+        rp.activeLast = active;
+      }
+      for (var i = 0; i < active; i++) {
+        var d = rp.drops[i];
+        d.y += plane.fall * d.sp * S.dt;
+        d.x -= (relV * 0.55 + wind * 210) * d.sp * S.dt * 0.62;
+        var ground = roadYAtScreen(d.x) + (1 - plane.par) * 26;
+        if (d.y > ground) {
+          if (lvl.mul > 0 && hash(i + pi * 31 + Math.floor(S.t * 20)) < 0.22 * plane.par) {
+            spawnSplash(d.x, ground, 0.5 + plane.par * 0.5);
+          }
+          d.y = -20 - hash(i * 1.7 + pi) * 160;
+          d.x = hash2(i, pi + Math.floor(S.t * 3)) * (VW + 240) - 120;
+        }
+        if (d.x < -130) d.x += VW + 240;
+        else if (d.x > VW + 130) d.x -= VW + 240;
+        d.e.setAttribute("transform", "translate(" + d.x.toFixed(1) + "," + d.y.toFixed(1) +
+          ") rotate(" + slantDeg.toFixed(2) + ")");
+      }
+    }
+
+    /* splashes */
+    for (var s = 0; s < layers.splashes.length; s++) {
+      var sp = layers.splashes[s];
+      if (sp.life <= 0) { if (sp.e.getAttribute("opacity") !== "0") sp.e.setAttribute("opacity", "0"); continue; }
+      sp.life -= S.dt * 4.2;
+      var sc = (1.6 - sp.life) * sp.s;
+      sp.e.setAttribute("opacity", (sp.life * 0.75).toFixed(3));
+      setT(sp.e, "translate(" + sp.x.toFixed(2) + "," + sp.y.toFixed(2) + ") scale(" + sc.toFixed(3) + "," + (sc * 0.7).toFixed(3) + ")");
+    }
+    /* ripples */
+    for (var r = 0; r < layers.ripples.length; r++) {
+      var rr = layers.ripples[r];
+      if (rr.life <= 0) { if (rr.e.getAttribute("opacity") !== "0") rr.e.setAttribute("opacity", "0"); continue; }
+      rr.life -= S.dt * 1.5;
+      var k = (1 - rr.life);
+      setT(rr.e, "translate(" + rr.x.toFixed(2) + "," + rr.y.toFixed(2) + ") scale(" + (0.6 + k * 4.4).toFixed(3) + "," + (0.6 + k * 3.2).toFixed(3) + ")");
+      rr.e.setAttribute("opacity", (rr.life * 0.5).toFixed(3));
+    }
+    /* spray: ballistic droplets off the rear tyre */
+    var sprayRate = clamp(S.v * 0.42 * lvl.mul, 0, 3.2);
+    if (sprayRate > 0 && hash(Math.floor(S.t * 60) * 1.7) < sprayRate * S.dt * 6) {
+      spawnSpray(REAR_X - 8, S._yRear - 10, 1);
+    }
+    for (var q = 0; q < layers.spray.length; q++) {
+      var dd = layers.spray[q];
+      if (dd.life <= 0) { if (dd.e.getAttribute("opacity") !== "0") dd.e.setAttribute("opacity", "0"); continue; }
+      dd.life -= S.dt * 1.7;
+      dd.vy += 620 * S.dt;                 // gravity, px/s^2
+      dd.x += (dd.vx - S.v * PX_PER_M * 0.55) * S.dt;
+      dd.y += dd.vy * S.dt;
+      if (dd.y > roadYAtScreen(dd.x) + 26) dd.life = 0;
+      dd.e.setAttribute("r", (dd.r * dd.life).toFixed(2));
+      dd.e.setAttribute("opacity", (dd.life * 0.55).toFixed(3));
+      setT(dd.e, "translate(" + dd.x.toFixed(2) + "," + dd.y.toFixed(2) + ")");
+    }
+  }
+
+  /* --- HUD, throttled on the wall clock so it never freezes ------------- */
+  var lastHud = 0;
+  function drawHud(now) {
+    if (now - lastHud < 110) return;
+    lastHud = now;
+    $("hSpeed").textContent = (S.v * 3.6).toFixed(1);
+    $("hCad").textContent = Math.round(Math.abs(S.crankOmega) * 60 / (2 * Math.PI));
+    $("hGear").textContent = String(S.gear + 1);
+    var gEl = $("hGrade"); gEl.textContent = S._gradePct.toFixed(1);
+    $("hFork").textContent = S.travelPx.toFixed(1);
+    var sEl = $("hSlip");
+    var slipPct = S.slip * 100;
+    sEl.textContent = slipPct.toFixed(1);
+    sEl.parentNode.className = "chip " + (Math.abs(slipPct) > 12 ? "bad" : (Math.abs(slipPct) > 4 ? "warn" : "good"));
+    var cEl = $("hCom");
+    cEl.textContent = Math.round(S.comMargin * 100);
+    cEl.parentNode.className = "chip " + (S.comMargin < 0.06 ? "bad" : (S.comMargin < 0.16 ? "warn" : "good"));
+    var iEl = $("hIk");
+    iEl.textContent = S.ikErr.toFixed(2);
+    iEl.parentNode.className = "chip " + (S.ikErr > 4 ? "bad" : (S.ikErr > 1.5 ? "warn" : "good"));
+    $("hBot").textContent = String(S.bottomOuts);
+    $("hFps").textContent = String(Math.round(S.fps));
+  }
+
+  function render(now) {
+    drawRoad();
+    drawParallax();
+    drawSigns();
+    drawPuddles();
+    drawBokeh();
+    drawRig();
+    drawWeather();
+    drawHud(now || 0);
+  }
+
+  /* ============================================================
+     12. AUDIO — optional, off by default, created only on a gesture.
+     Rain hiss from a noise buffer, a dynamo hum tied to speed, a brake
+     squeak on hard braking, and a bell. Everything is wrapped so a failure
+     here can never take the animation down with it.
+     ============================================================ */
+  var A = { ctx: null, master: null, rain: null, hum: null, ok: false };
+  function audioInit() {
+    if (A.ctx || !S.soundOn) return;
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      A.ctx = new AC();
+      A.master = A.ctx.createGain();
+      A.master.gain.value = 0.0;
+      A.master.connect(A.ctx.destination);
+
+      /* rain: white noise through a lowpass */
+      var len = A.ctx.sampleRate * 2;
+      var buf = A.ctx.createBuffer(1, len, A.ctx.sampleRate);
+      var data = buf.getChannelData(0);
+      for (var i = 0; i < len; i++) data[i] = (hash(i * 0.371) * 2 - 1) * 0.5;
+      A.rain = A.ctx.createBufferSource();
+      A.rain.buffer = buf; A.rain.loop = true;
+      var lp = A.ctx.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = 2400;
+      var rg = A.ctx.createGain(); rg.gain.value = 0.16 * RAIN_LEVELS[S.rain].mul;
+      A.rain.connect(lp); lp.connect(rg); rg.connect(A.master);
+      A.rainGain = rg;
+      A.rain.start();
+
+      /* dynamo hum */
+      A.hum = A.ctx.createOscillator();
+      A.hum.type = "sawtooth"; A.hum.frequency.value = 90;
+      var hg = A.ctx.createGain(); hg.gain.value = 0.0;
+      var hf = A.ctx.createBiquadFilter(); hf.type = "lowpass"; hf.frequency.value = 420;
+      A.hum.connect(hf); hf.connect(hg); hg.connect(A.master);
+      A.humGain = hg;
+      A.hum.start();
+
+      A.master.gain.linearRampToValueAtTime(0.5, A.ctx.currentTime + 0.4);
+      A.ok = true;
+    } catch (e) { A.ok = false; }
+  }
+  function audioTick() {
+    if (!A.ok || !A.ctx) return;
+    try {
+      A.humGain.gain.value = clamp(S.v * 0.006, 0, 0.05);
+      A.hum.frequency.value = 70 + Math.abs(S.wheelOmega) * 22;
+      A.rainGain.gain.value = 0.02 + 0.16 * RAIN_LEVELS[S.rain].mul;
+    } catch (e) { /* never let audio break the frame */ }
+  }
+  function squeak() {
+    if (!A.ok) return;
+    try {
+      var o = A.ctx.createOscillator(), g = A.ctx.createGain();
+      o.type = "triangle"; o.frequency.value = 1750;
+      o.frequency.linearRampToValueAtTime(1180, A.ctx.currentTime + 0.16);
+      g.gain.value = 0.0; g.gain.linearRampToValueAtTime(0.05, A.ctx.currentTime + 0.02);
+      g.gain.linearRampToValueAtTime(0.0, A.ctx.currentTime + 0.2);
+      o.connect(g); g.connect(A.master); o.start(); o.stop(A.ctx.currentTime + 0.22);
+    } catch (e) { /* ignore */ }
+  }
+  function bell() {
+    if (!A.ok) { audioInit(); }
+    if (!A.ok) return;
+    try {
+      var t0 = A.ctx.currentTime;
+      [1320, 1976, 2640].forEach(function (f, i) {
+        var o = A.ctx.createOscillator(), g = A.ctx.createGain();
+        o.type = "sine"; o.frequency.value = f;
+        g.gain.value = 0; g.gain.linearRampToValueAtTime(0.14 / (i + 1), t0 + 0.008);
+        g.gain.exponentialRampToValueAtTime(0.0008, t0 + 0.9 + i * 0.1);
+        o.connect(g); g.connect(A.master); o.start(t0); o.stop(t0 + 1.1);
+      });
+    } catch (e) { /* ignore */ }
+  }
+
+  /* ============================================================
+     13. LOOP
+     ============================================================ */
+  var last = 0, fpsAvg = 60;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (!last) last = now;
+    var raw = (now - last) / 1000; last = now;
+    if (raw > 0 && raw < 1) fpsAvg = fpsAvg * 0.9 + (1 / raw) * 0.1;
+    S.fps = fpsAvg;
+    if (!S.playing) { render(now); return; }
+    /* fixed-step physics so the numbers do not depend on the display rate */
+    var dt = clamp(raw, 0, 0.05);
+    var acc = dt, guard = 0;
+    while (acc > 1e-4 && guard < 4) {
+      var h = Math.min(acc, 1 / 60);
+      step(h); acc -= h; guard++;
+    }
+    render(now);
+    audioTick();
+  }
+
+  /* ============================================================
+     14. CONTROLS
+     ============================================================ */
+  function setPlaying(p) {
+    S.playing = p;
+    var b = $("btnPlay");
+    b.textContent = p ? "Pause" : "Play";
+    b.appendChild(kbdEl("Space"));
+    b.setAttribute("aria-pressed", p ? "true" : "false");
+  }
+  function kbdEl(t) {
+    var k = document.createElement("kbd"); k.textContent = t; return k;
+  }
+  function setRain(n) {
+    S.rain = ((n % RAIN_LEVELS.length) + RAIN_LEVELS.length) % RAIN_LEVELS.length;
+    $("btnRain").textContent = "Rain: " + RAIN_LEVELS[S.rain].name;
+    $("btnRain").appendChild(kbdEl("R"));
+  }
+  function setGearLabel() {
+    $("btnGear").textContent = "Gear " + (S.gear + 1);
+    $("btnGear").appendChild(kbdEl("G"));
+  }
+  function cycleGear() {
+    S.gear = (S.gear + 1) % GEARS.length; S.shifts++;
+    S.autoGear = false;
+    $("btnAuto").setAttribute("aria-pressed", "false");
+    setGearLabel();
+  }
+
+  function bindControls() {
+    $("btnPlay").addEventListener("click", function () { setPlaying(!S.playing); });
+    $("btnBrake").addEventListener("click", function () {
+      S.userBrake = !S.userBrake;
+      $("btnBrake").setAttribute("aria-pressed", S.userBrake ? "true" : "false");
+      if (S.userBrake) squeak();
+    });
+    $("btnGear").addEventListener("click", cycleGear);
+    $("btnAuto").addEventListener("click", function () {
+      S.autoGear = !S.autoGear;
+      $("btnAuto").setAttribute("aria-pressed", S.autoGear ? "true" : "false");
+    });
+    $("btnRain").addEventListener("click", function () { setRain(S.rain + 1); });
+    $("btnSound").addEventListener("click", function () {
+      S.soundOn = !S.soundOn;
+      $("btnSound").setAttribute("aria-pressed", S.soundOn ? "true" : "false");
+      $("btnSound").textContent = S.soundOn ? "Sound on" : "Sound off";
+      $("btnSound").appendChild(kbdEl("S"));
+      if (S.soundOn) { audioInit(); if (A.ok) A.master.gain.value = 0.5; }
+      else if (A.ok) { A.master.gain.value = 0.0; }
+    });
+
+    /* clicking the bird rings the bell */
+    $("scene").addEventListener("click", function (ev) {
+      var t = ev.target;
+      while (t && t !== $("scene")) {
+        if (t === R.bikeRider || (t.parentNode && t.parentNode === R.bikeRider) ||
+            (t.parentNode && t.parentNode.parentNode === R.bikeRider)) { bell(); return; }
+        t = t.parentNode;
+      }
+    });
+
+    var held = {};
+    window.addEventListener("keydown", function (ev) {
+      var k = ev.key;
+      if (k === " " || k === "Spacebar") { ev.preventDefault(); setPlaying(!S.playing); return; }
+      if (k === "b" || k === "B") {
+        S.userBrake = true; held.b = true;
+        $("btnBrake").setAttribute("aria-pressed", "true"); squeak(); return;
+      }
+      if (k === "g" || k === "G") { cycleGear(); return; }
+      if (k === "a" || k === "A") { $("btnAuto").click(); return; }
+      if (k === "r" || k === "R") { setRain(S.rain + 1); return; }
+      if (k === "s" || k === "S") { $("btnSound").click(); return; }
+      if (k === "ArrowRight") { S.effort = clamp(S.effort + 0.25, -1, 1); ev.preventDefault(); return; }
+      if (k === "ArrowLeft") { S.effort = clamp(S.effort - 0.25, -1, 1); ev.preventDefault(); return; }
+    });
+    window.addEventListener("keyup", function (ev) {
+      if (ev.key === "b" || ev.key === "B") {
+        held.b = false; S.userBrake = false;
+        $("btnBrake").setAttribute("aria-pressed", "false");
+      }
+    });
+  }
+
+  /* ============================================================
+     15. GO
+     ============================================================ */
+  buildScene();
+  bindControls();
+  setPlaying(true);
+  setRain(3);
+  setGearLabel();
+
+  /* Warm up: run the physics and weather for a couple of seconds so the first
+     painted frame is a resolved pose with rain already distributed, rather
+     than a cold start with every drop at the top of the screen. */
+  for (var warm = 0; warm < 150; warm++) { step(1 / 60); drawWeather(); }
+  S.bottomOuts = 0;      /* warm-up bumps are not the rider's problem */
+  S.hipCapActive = 0;
+
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
+  if (reduce && reduce.matches) setPlaying(false);
+
+  render(0);
+  requestAnimationFrame(frame);
+
+  /* Exported for the headless test suite: tests/pelicanCourierDynamics.test.mjs
+     slices this object literal out of the delivered file and drives it. */
+  window.__RAINCOURIER__ = {
+    S: S, step: step, render: render, roadY: roadY, macroY: macroY, macroSlope: macroSlope,
+    roughY: roughY, roughSlow: roughSlow, roughFast: roughFast, isCobbles: isCobbles,
+    chainPath: chainPath, pathLength: pathLength, ccdSolve: ccdSolve,
+    makeChain: makeChain, chainLengthError: chainLengthError, interior: interior,
+    computeCom: computeCom, toScreen: toScreen, toLocal: toLocal, taperedPath: taperedPath,
+    smooth: smooth, clamp: clamp, lerp: lerp,
+    FRAME: FRAME, GEARS: GEARS, RAIN_PLANES: RAIN_PLANES, RAIN_LEVELS: RAIN_LEVELS,
+    consts: { VW: VW, VH: VH, PX_PER_M: PX_PER_M, MPP: MPP, GRAV: GRAV, WHEEL_R: WHEEL_R,
+      WHEEL_R_M: WHEEL_R_M, WB: WB, WB_M: WB_M, CRANK_R: CRANK_R, CHAINRING_R: CHAINRING_R,
+      COG_R: COG_R, MASS: MASS, RHO: RHO, CD_A: CD_A, CRR: CRR, MU_WET: MU_WET,
+      REAR_SHARE: REAR_SHARE, FRONT_BRAKE_SHARE: FRONT_BRAKE_SHARE, MAX_TORQUE: MAX_TORQUE,
+      CADENCE_TARGET: CADENCE_TARGET, CADENCE_MIN: CADENCE_MIN, CADENCE_MAX: CADENCE_MAX,
+      TARGET_V: TARGET_V, TRAVEL_MAX: TRAVEL_MAX, SUS_M: SUS_M, SUS_K: SUS_K, SUS_C: SUS_C,
+      SAG: SAG, SEAT_POST: SEAT_POST, REAR_X: REAR_X, ROAD_Y0: ROAD_Y0, THIGH: THIGH,
+      SHANK: SHANK, FOOT: FOOT, FOOT_BALL: FOOT_BALL, LEG_REACH: LEG_REACH,
+      LEG_WORKSPACE: LEG_WORKSPACE, CCD_ITERS: CCD_ITERS, CCD_STEP: CCD_STEP,
+      WING_HI: WING_HI, WING_LO: WING_LO, WING_TIP: WING_TIP,
+      /* the wing chain has three links, so its reach includes the tip; the first
+         draft exported WING_HI + WING_LO and understated it by 20 px */
+      WING_REACH: WING_HI + WING_LO + WING_TIP,
+      /* joint limits are RADIANS here, exactly as the solver consumes them */
+      FOOT_ORIENT_W: FOOT_ORIENT_W, KNEE_MIN: KNEE_MIN, KNEE_MAX: KNEE_MAX,
+      ANKLE_MIN: ANKLE_MIN, ANKLE_MAX: ANKLE_MAX, ELBOW_MIN: ELBOW_MIN, ELBOW_MAX: ELBOW_MAX,
+      POUCH_L: POUCH_L, POUCH_C: POUCH_C, LAMP_PERIOD: 340 },
+    layers: layers, legN: function () { return legN; }, legF: function () { return legF; },
+    wingN: function () { return wingN; }, wingF: function () { return wingF; }, R: R
+  };
+})();
+</script>
+</body>
+</html>
