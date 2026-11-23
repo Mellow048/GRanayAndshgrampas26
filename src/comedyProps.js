@@ -552,22 +552,102 @@ export function createPropMesh(propType) {
       break;
     }
 
+    case "cookie": {
+      // A single comedy-scale cookie (48cm wide) split into four sectors, so the
+      // "bite" action can bite real chunks off it instead of faking a shrink.
+      const dough = new THREE.MeshStandardMaterial({ color: 0xd39247, roughness: 0.88 });
+      const rimMat = new THREE.MeshStandardMaterial({ color: 0xb9762f, roughness: 0.9 });
+      const chipMat = new THREE.MeshStandardMaterial({ color: 0x40230f, roughness: 0.7 });
+      const R = 0.24;
+      const H = 0.075;
+      for (let i = 0; i < 4; i += 1) {
+        const sector = new THREE.Mesh(
+          new THREE.CylinderGeometry(R, R * 0.97, H, 12, 1, false, (i * Math.PI) / 2, Math.PI / 2 - 0.012),
+          i % 2 === 0 ? dough : rimMat
+        );
+        sector.name = `CookieSector_${i}`;
+        sector.position.y = H / 2;
+        sector.castShadow = true;
+        group.add(sector);
+      }
+      const chipSpots = [
+        [0.09, 0.07],
+        [-0.11, 0.05],
+        [0.02, -0.13],
+        [-0.06, -0.04],
+        [0.14, -0.05],
+        [-0.01, 0.11],
+      ];
+      for (const [cx, cz] of chipSpots) {
+        const chip = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 6), chipMat);
+        chip.position.set(cx, H + 0.012, cz);
+        chip.scale.y = 0.55;
+        group.add(chip);
+      }
+      group.userData.sectors = 4;
+      group.userData.bitesTaken = 0;
+      break;
+    }
+
     case "cookie_jar":
     default: {
-      const jarMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.3 });
+      // Bigger than a real jar (48cm) plus a few cookies inside, so the camera
+      // can actually tell what the heist is about.
+      const jarMat = new THREE.MeshStandardMaterial({
+        color: 0x7dd3fc,
+        roughness: 0.25,
+        metalness: 0.05,
+        transparent: true,
+        opacity: 0.72,
+      });
       const lidMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, roughness: 0.35 });
-      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.32, 16), jarMat);
-      body.position.y = 0.16;
-      const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 0.06, 16), lidMat);
-      lid.position.y = 0.34;
-      const knob = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), lidMat);
-      knob.position.y = 0.39;
-      group.add(body, lid, knob);
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.25, 0.44, 18), jarMat);
+      body.position.y = 0.22;
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.05, 18), lidMat);
+      base.position.y = 0.025;
+      const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.07, 18), lidMat);
+      lid.position.y = 0.47;
+      const knob = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 10), lidMat);
+      knob.position.y = 0.53;
+      group.add(body, base, lid, knob);
+
+      const innerDough = new THREE.MeshStandardMaterial({ color: 0xd39247, roughness: 0.9 });
+      const innerChip = new THREE.MeshStandardMaterial({ color: 0x40230f, roughness: 0.7 });
+      for (const [cx, cy, cz, rot] of [
+        [0.02, 0.16, 0.04, 0.5],
+        [-0.05, 0.27, -0.03, 1.1],
+        [0.06, 0.36, 0.02, 2.0],
+      ]) {
+        const c = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.08, 0.03, 10), innerDough);
+        c.position.set(cx, cy, cz);
+        c.rotation.z = rot;
+        group.add(c);
+        if (cy > 0.2) {
+          const chip = new THREE.Mesh(new THREE.SphereGeometry(0.016, 6, 5), innerChip);
+          chip.position.set(cx + 0.02, cy + 0.016, cz);
+          group.add(chip);
+        }
+      }
       break;
     }
   }
 
   return group;
+}
+
+
+/**
+ * Bites a cookie-shaped prop one sector at a time. Returns true when a chunk
+ * actually disappeared (so callers can time an "eat" sfx to the visible bite).
+ */
+export function biteCookie(group) {
+  if (!group) return false;
+  const sectors = group.children.filter((c) => c.name && c.name.startsWith("CookieSector_"));
+  const taken = group.userData.bitesTaken || 0;
+  if (!sectors.length || taken >= sectors.length) return false;
+  sectors[sectors.length - 1 - taken].visible = false;
+  group.userData.bitesTaken = taken + 1;
+  return true;
 }
 
 /**
@@ -867,6 +947,12 @@ export class ComedyPropManager {
         mesh.visible = true;
         state.bounce = true;
         break;
+      case "bite": {
+        // Cookies are four sectors: each bite makes one disappear.
+        biteCookie(mesh);
+        state.bounce = true;
+        break;
+      }
       case "stop":
         state.bounce = false;
         state.spin = false;

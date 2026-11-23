@@ -4,6 +4,64 @@ This repository is a zero-build Three.js (`v0.170.0`) first-person **POV Kids-Co
 
 ---
 
+## What Can I Ask For? (read this before writing a beat)
+
+Never guess an animation, prop or beat name — print the catalogue:
+
+```bash
+npm run catalogue            # human readable
+npm run catalogue:json       # machine readable, ideal for an agent
+npm run gestures             # just the head gestures
+node scripts/catalogue.mjs --animations
+```
+
+It reports **22 animations** (15 Mixamo FBX templates + 7 procedural head
+gestures), **10 props**, **22 beat types** and every preset, and it exits
+non-zero if an animation points at a file that isn't on disk.
+
+### Animation templates
+
+| key | source | notes |
+| --- | --- | --- |
+| `walk` `run` `run2` `sneak` | Walk / Fast Run | locomotion, loops |
+| `jump` | Jumping | one-shot, keeps the 0.32 m arc |
+| `laugh` `angry` `talk` `sit` `terrified` `panic` | Laughing / Angry / Talking / Sitting / Terrified | reaction + dialogue beds |
+| `punch` `kick` `mma_kick` `trip` | Punching / NormalKick / Mma Kick / Tripping | one-shot slapstick |
+| `nod` `nod_yes` `nod_once` `shake` `shake_no` `tilt` `double_take` | **procedural** | no FBX, layered on the head bone |
+
+Dropping a new `.fbx` into `Assets/AnimationTemplates/` and adding one entry to
+`ASSET_MANIFEST.animations` in `src/config.js` is the whole integration — the
+retargeter picks it up for both rigs.
+
+### Head gestures (nodding / saying no)
+
+A gesture is a rotation layered **on top of** whatever clip is playing, so a
+character can nod while laughing. There are two ways to use one:
+
+```js
+// fire and forget: the gesture overlays the current clip, nothing waits
+{ at: 2.7, type: "char_gesture", actor: "grandpa", gesture: "nod", duration: 0.9 }
+
+// as an animation: waits for the gesture window like any other anim beat
+{ at: 2.7, type: "char_anim", actor: "grandpa", anim: "shake_no", duration: 0.9 }
+```
+
+`src/headGestures.js` owns the catalogue (`axis`, `amplitude` in radians,
+`cycles`). Each gesture eases in and out so the neck never pops, and
+`amplitude` / `cycles` can be overridden per beat. The rig composes the gesture
+and the existing head-tracking aim into a single quaternion, so neither layer
+can compound across frames.
+
+### Props, including the cookie
+
+`{ type: "char_prop", actor, prop: "cookie" }` puts a 48 cm comedy cookie in
+the actor's hand; `{ type: "char_prop_action", actor, action: "bite", sfx: "eat" }`
+removes one of its four sectors — real geometry disappearing, not a scale trick.
+`action: "hide"` drops it. The cookie jar is translucent with three cookies
+inside, so the camera can read what the heist is about.
+
+---
+
 ## Golden Rule for Agents: Build Modular Gags, NEVER Monolithic Scripts
 
 When asked to make a new episode (15 seconds, 5 minutes, or 40+ minutes):
@@ -24,9 +82,11 @@ When asked to make a new episode (15 seconds, 5 minutes, or 40+ minutes):
 - `index.html` — Studio UI shell, importmap (`three@0.170.0`), `#stageContainer`, `#fadeOverlay`, and `?headless=1` export mode.
 - `src/config.js` — `CONFIG`, `ASSET_MANIFEST`, `SFX_MANIFEST`, verified indoor `SET_MAP` waypoints, `GRANDPA_KEY_POV_44S` (44s default episode), and `JUMP_RUN_WALK_EPISODE` (6s).
 - `src/assetLoader.js` — `loadHouse()` with 0.4m indoor A* navigation (`findPath`, `isPointInsideWalkable`, `clampCameraPosition`), `loadCharacterTemplate()`, `instantiateCharacter()` (`playAnim`, `faceTarget`, `lookAtPlayer`, `showBubble`, `setProp`).
+- `src/headGestures.js` — procedural head gestures (`nod`, `shake`, `tilt`, `double_take`): pure sampling, no FBX, unit-tested in `tests/headGestures.test.mjs`.
+- `src/catalog.js` + `scripts/catalogue.mjs` — the capability catalogue agents read instead of guessing names (`npm run catalogue`).
 - `src/animationLibrary.js` — Mixamo `.fbx` template extraction, root-motion stripping, jump arc extraction (`0.32m` cap), and rest-pose quaternion retargeting (`AnimationLibrary`).
 - `src/playerCamera.js` — First-person POV controller (`PlayerCamera`): eye-level walking (`1.50m`) with head-bob, whip-pan `lookAt` + tracking, `nod_yes` / `shake_no` / `shake_panic` / `peek_lean` gestures, crouch (`0.42m`), bottom-right FPS held-item viewmodel (`holdProp`, `useHeldProp`), fade-to-black, wall clamping, and `16:9` / `9:16` aspect toggling + Orbit calibrator toggle.
-- `src/comedyProps.js` — `ThoughtBubbleCache` (`key`, `question`, `exclamation`, `zzz`, `angry`, `laugh`, `food`, `heart`) and `ComedyPropManager` (`golden_key`, `padlock`, `treasure_chest`, `emoji_ball`, `toy_blaster`, `cookie_jar`).
+- `src/comedyProps.js` — `ThoughtBubbleCache` (`key`, `question`, `exclamation`, `zzz`, `angry`, `laugh`, `food`, `heart`) and `ComedyPropManager` (`golden_key`, `padlock`, `red_button`, `treasure_chest`, `emoji_ball`, `toy_blaster`, `delivery_box`, `rising_lava`, `cookie`, `cookie_jar`).
 - `src/sfxEngine.js` — Web Audio mixer (`SfxEngine`): looping BGM (`fluffing_a_duck`, `monkeys_spinning_monkeys`, `run_amok` in `SoundEffects/backroundMusics/`, plus `granny_ambience`, `granny_good_part`, `granny_chase`), `cutBgm` silence ducking, movement-synced footsteps, whip-pan/bubble/pickup/action foley, 1–2s gap pacer, and deterministic offline capture for FFmpeg.
 - `src/episodeRunner.js` — Deterministic 60Hz multi-skit timeline (`EpisodeRunner`) compiling `skits[].beats` (`at` / `after`) and legacy `actions`; validates + repairs every episode on load and refines each path leg against real house geometry (`_refineChainGeometry`).
 - `src/stagingSafety.js` — dependency-free staging geometry: actor capsules (`makeCapsule`, `pushOutOfCapsules`), camera placement (`findSafeCameraSpot`), prop support (`resolvePropPlacement`), route validity (`findBlockedLeg`, `ensureRoute`).

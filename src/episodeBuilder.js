@@ -4,15 +4,29 @@
 
 const CUT = 0.4; // black-frame "cut" between gags (hides repositioning)
 
-export function validateGag(gag, index = 0) {
+export function validateGag(gag, index = 0, { requireCast = true } = {}) {
   if (!gag || typeof gag !== "object") {
     throw new Error(`[episodeBuilder] Gag #${index} is not an object.`);
   }
-  if (!gag.name) throw new Error(`[episodeBuilder] Gag #${index} is missing \`name\`.`);
+  if (!gag.name && !gag.title) {
+    throw new Error(`[episodeBuilder] Gag #${index} is missing \`name\` (or \`title\`).`);
+  }
+  if (gag.name === undefined) gag.name = gag.title;
   if (!(gag.duration > 0)) throw new Error(`[episodeBuilder] Gag "${gag.name}" needs positive \`duration\`.`);
-  if (!gag.cast || Object.keys(gag.cast).length === 0) {
+  if (requireCast && (!gag.cast || Object.keys(gag.cast).length === 0)) {
     throw new Error(`[episodeBuilder] Gag "${gag.name}" needs at least one actor in \`cast\`.`);
   }
+  for (const [actorId, entry] of Object.entries(gag.cast || {})) {
+    if (!entry || typeof entry !== "object") {
+      throw new Error(`[episodeBuilder] Gag "${gag.name}" cast entry "${actorId}" must be an object.`);
+    }
+    // `spawn` is optional: a scene that picks up where the last one left off
+    // simply says the actor is here (continuous shows never re-seat anyone).
+    if (entry.spawn !== undefined && typeof entry.spawn !== "string") {
+      throw new Error(`[episodeBuilder] Gag "${gag.name}" cast "${actorId}.spawn" must be a waypoint name.`);
+    }
+  }
+
   for (const [bi, b] of (gag.beats || []).entries()) {
     if (typeof b.at !== "number" || b.at < 0) {
       throw new Error(`[episodeBuilder] Gag "${gag.name}" beat #${bi} (${b.type}) must use numeric \`at >= 0\`.`);
@@ -35,17 +49,33 @@ export function buildEpisode({
   maxLookDuration = undefined,
   allowSlowScans = undefined,
   gags = [],
+  scenes = [],
+  id = undefined,
+  requireCast = true,
+  // "cut"         — legacy: fade to black, teleport everyone, reset props.
+  // "continuous"  — long-form: nothing happens at the boundary. The player, the
+  //                 cast and every prop simply carry on from where the last
+  //                 scene left them, so a scene change is invisible.
+  transitions = "cut",
 }) {
+  const continuous = transitions === "continuous";
+  // `scenes` is the long-form name for a gag: a self-contained chunk of story
+  // with local `at` timings. Both are chained identically.
+  const blocks = scenes.length ? scenes : gags;
   const cast = new Map();
   const props = new Map();
   const skits = [];
+  const sceneMap = [];
   let t = 0;
 
-  const resolvedGags = gags.map((g, idx) => validateGag(typeof g === "function" ? g() : g, idx));
+  const resolvedGags = blocks.map((g, idx) =>
+    validateGag(typeof g === "function" ? g() : g, idx, { requireCast })
+  );
   const rootSpawn = playerSpawn || resolvedGags[0]?.playerSpawn || "back_hall";
   const rootFacing = playerFacing || resolvedGags[0]?.playerFacing || "kitchen";
 
   resolvedGags.forEach((g, i) => {
+    const sceneStart = t;
     const beats = [];
     const propRemap = new Map();
     const activePropIds = new Set();
@@ -64,12 +94,12 @@ export function buildEpisode({
       return { ...p, id };
     });
 
-    if (i > 0) {
+    if (i > 0 && !continuous) {
       // Fade to black -> reset actors, player, held items & props -> fade back in
       beats.push({ at: +t.toFixed(3), type: "fade", to: 1, duration: CUT / 2 });
       const cutAt = +(t + CUT / 2).toFixed(3);
 
-      for (const [id, c] of Object.entries(g.cast)) {
+      for (const [id, c] of Object.entries(g.cast || {})) {
         beats.push({
           at: cutAt,
           type: "char_cut",
@@ -116,6 +146,11 @@ export function buildEpisode({
 
     for (const [id, c] of Object.entries(g.cast)) {
       if (!cast.has(id)) {
+        if (continuous && c.spawn === undefined) {
+          throw new Error(
+            `[episodeBuilder] Scene "${g.name}" introduces "${id}" without a \`spawn\` — the first scene that shows an actor must seat them.`
+          );
+        }
         cast.set(id, {
           id,
           asset: c.asset || id,
@@ -137,13 +172,42 @@ export function buildEpisode({
       beats.push(remapped);
     }
 
-    skits.push({ name: `${g.name} (${t.toFixed(1)}-${(t + g.duration).toFixed(1)}s)`, beats });
+    const sceneTitle = g.title || g.name;
+    const sceneId = g.id || `scene_${i + 1}`;
+    skits.push({
+      name: `${sceneTitle} (${t.toFixed(1)}-${(t + g.duration).toFixed(1)}s)`,
+      sceneId,
+      castIds: Object.keys(g.cast || {}),
+      beats,
+    });
     t += g.duration;
+    sceneMap.push({
+      index: i,
+      id: sceneId,
+      title: sceneTitle,
+      room: g.room || null,
+      start: +sceneStart.toFixed(3),
+      end: +t.toFixed(3),
+      // What the scene says should be true when it opens. In continuous mode
+      // these are only used for solo previews and for the continuity check.
+      playerSpawn: g.playerSpawn ?? null,
+      castSpawns: Object.fromEntries(
+        Object.entries(g.cast || {}).map(([id, c]) => [id, c.spawn ?? null])
+      ),
+      transitions: continuous ? "continuous" : "cut",
+    });
   });
 
-  // End on motion + clean fade to black
+  // End on motion + clean fade to black (skip it when the last scene already
+  // fades out at the end — a second fade would bury the closing motion).
   if (skits.length > 0) {
-    skits.at(-1).beats.push({ at: +Math.max(0, t - 0.6).toFixed(3), type: "fade", to: 1, duration: 0.6 });
+    const lastBeats = skits.at(-1).beats;
+    const alreadyFades = lastBeats.some(
+      (b) => b.type === "fade" && (b.to ?? 0) >= 0.99 && b.at >= t - 3.2
+    );
+    if (!alreadyFades) {
+      lastBeats.push({ at: +Math.max(0, t - 0.6).toFixed(3), type: "fade", to: 1, duration: 0.6 });
+    }
   }
 
   const episode = {
@@ -154,7 +218,11 @@ export function buildEpisode({
     cast: [...cast.values()],
     props: [...props.values()],
     skits,
+    sceneMap,
+    sceneCasts: Object.fromEntries(sceneMap.map((m, i) => [m.id, skits[i]?.castIds || []])),
   };
+  episode.transitions = continuous ? "continuous" : "cut";
+  if (id) episode.showId = id;
   if (maxLookDuration !== undefined) episode.maxLookDuration = maxLookDuration;
   if (allowSlowScans !== undefined) episode.allowSlowScans = allowSlowScans;
   return episode;

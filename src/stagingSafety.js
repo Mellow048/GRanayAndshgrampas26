@@ -597,6 +597,144 @@ export function forwardFromYaw(yaw) {
   return { x: Math.sin(yaw), y: 0, z: Math.cos(yaw) };
 }
 
+/* ------------------------------------------------------------------ *
+ * 7. Head aim (the "look at me" mechanic)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Angles that turn a performer's head toward the lens, expressed relative to
+ * the body yaw so the neck never breaks: yaw is clamped to `maxYaw` and pitch
+ * to `maxPitch`. Pure maths — the three.js layer applies the quaternion.
+ *
+ *   headPos   {x,y,z} world position of the head bone (or an eye estimate)
+ *   targetPos {x,y,z} world position of the camera
+ *   bodyYaw   the actor's root yaw in radians (+Z forward)
+ */
+export function headAimAngles(headPos, targetPos, bodyYaw = 0, { maxYaw = 0.95, maxPitch = 0.42 } = {}) {
+  if (!headPos || !targetPos) return { yaw: 0, pitch: 0, distance: 0 };
+  const dx = num(targetPos.x) - num(headPos.x);
+  const dy = num(targetPos.y) - num(headPos.y);
+  const dz = num(targetPos.z) - num(headPos.z);
+  const flat = Math.hypot(dx, dz);
+  const distance = Math.hypot(flat, dy);
+  if (distance < 1e-4) return { yaw: 0, pitch: 0, distance: 0 };
+
+  let yaw = Math.atan2(dx, dz) - num(bodyYaw);
+  while (yaw > Math.PI) yaw -= Math.PI * 2;
+  while (yaw < -Math.PI) yaw += Math.PI * 2;
+
+  // Rotating about world +X by -atan2(dy, flat) lifts +Z toward the target.
+  const pitch = -Math.atan2(dy, flat);
+
+  return {
+    yaw: Math.max(-maxYaw, Math.min(maxYaw, yaw)),
+    pitch: Math.max(-maxPitch, Math.min(maxPitch, pitch)),
+    distance,
+    // True when the camera is close enough to the body axis that a head turn
+    // alone reads as eye contact (otherwise the shoulders must turn too).
+    inCone: Math.abs(yaw) <= maxYaw + 1e-3,
+  };
+}
+
+/**
+ * How much of the head aim to use given the lens distance. A camera inside the
+ * head's personal space makes the facing direction pure noise, so the aim eases
+ * out below ~0.9m and is fully off at 0.35m.
+ */
+export function headAimWeight(distance, { full = 0.9, zero = 0.35 } = {}) {
+  const d = num(distance);
+  if (!Number.isFinite(d)) return 0;
+  if (d >= full) return 1;
+  if (d <= zero) return 0;
+  return (d - zero) / (full - zero);
+}
+
+/**
+ * One smoothing step toward `goal`, hard-limited to `maxOmega` rad/s so a target
+ * flip (or a camera pressed against the face) can never whip the neck.
+ */
+export function aimStep(current, goal, dt, { easeRate = 9, maxOmega = 4, minDt = 1 / 120 } = {}) {
+  const from = num(current);
+  const to = num(goal);
+  const step = Math.max(num(dt), minDt);
+  const next = from + (to - from) * Math.min(1, step * easeRate);
+  const maxStep = maxOmega * step;
+  return from + Math.max(-maxStep, Math.min(maxStep, next - from));
+}
+
+/* ------------------------------------------------------------------ *
+ * 8. Prop boxes vs bodies
+ * ------------------------------------------------------------------ */
+
+/** True when a capsule-ish body at `from` → `to` would sweep through `box`. */
+export function segmentHitsBox(from, to, box, { radius = 0.3 } = {}) {
+  if (!box?.min || !box?.max) return false;
+  const min = {
+    x: box.min.x - radius,
+    y: box.min.y,
+    z: box.min.z - radius,
+  };
+  const max = {
+    x: box.max.x + radius,
+    y: box.max.y,
+    z: box.max.z + radius,
+  };
+  // Slab test on the XZ span; ignore Y unless the body actually reaches it.
+  const dx = num(to.x) - num(from.x);
+  const dz = num(to.z) - num(from.z);
+  let t0 = 0;
+  let t1 = 1;
+  for (const [origin, dir, lo, hi] of [
+    [num(from.x), dx, min.x, max.x],
+    [num(from.z), dz, min.z, max.z],
+  ]) {
+    if (Math.abs(dir) < 1e-6) {
+      if (origin < lo || origin > hi) return false;
+      continue;
+    }
+    let a = (lo - origin) / dir;
+    let b = (hi - origin) / dir;
+    if (a > b) [a, b] = [b, a];
+    t0 = Math.max(t0, a);
+    t1 = Math.min(t1, b);
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+
+/** Pushes a standing position out of every prop box it overlaps (XZ only). */
+export function pushOutOfBoxes(pos, boxes = [], { pad = 0.12 } = {}) {
+  let x = num(pos.x);
+  let z = num(pos.z);
+  const dodged = [];
+  for (let pass = 0; pass < 4; pass += 1) {
+    let moved = false;
+    for (const box of boxes) {
+      if (!box?.min || !box?.max) continue;
+      const minX = box.min.x - pad;
+      const maxX = box.max.x + pad;
+      const minZ = box.min.z - pad;
+      const maxZ = box.max.z + pad;
+      if (x <= minX || x >= maxX || z <= minZ || z >= maxZ) continue;
+      const cx = (minX + maxX) / 2;
+      const cz = (minZ + maxZ) / 2;
+      const dx = x - cx;
+      const dz = z - cz;
+      const outX = maxX - cx;
+      const outZ = maxZ - cz;
+      if (Math.abs(dx) * outZ >= Math.abs(dz) * outX) {
+        x = dx >= 0 ? maxX : minX;
+      } else {
+        z = dz >= 0 ? maxZ : minZ;
+      }
+      dodged.push(box.id ?? "prop");
+      moved = true;
+    }
+    if (!moved) break;
+  }
+  return { pos: { x, y: num(pos.y), z }, dodged };
+}
+
 /** Unit vector from `from` to `to` in XZ, with a safe fallback. */
 export function direction2D(from, to, fallback = { x: 0, z: 1 }) {
   const dx = num(to.x) - num(from.x);
@@ -628,6 +766,11 @@ export const stagingSafety = {
   framingError,
   forwardFromYaw,
   direction2D,
+  headAimAngles,
+  headAimWeight,
+  aimStep,
+  segmentHitsBox,
+  pushOutOfBoxes,
 };
 
 export default stagingSafety;
