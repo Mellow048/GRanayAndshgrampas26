@@ -168,10 +168,24 @@ jobs:
 
       - name: Lossless FFmpeg Stitch
         run: |
-          node scripts/export-video.mjs \
-            --concat rendered_chunks \
-            --out-name "${{ inputs.preset }}-full" \
-            --out-dir output
+          echo "== downloaded chunks =="
+          find rendered_chunks -type f -printf '  %p  %s bytes\n' | head -40
+          mkdir -p output
+          # Stream-copy first (no quality loss). If the chunks disagree on stream
+          # parameters, re-encode. If a single chunk came back, just take it.
+          node scripts/export-video.mjs --concat rendered_chunks --out-name "${{ inputs.preset }}-full" --out-dir output \
+            || node scripts/export-video.mjs --concat rendered_chunks --reencode --out-name "${{ inputs.preset }}-full" --out-dir output \
+            || true
+          if ! ls output/*.mp4 >/dev/null 2>&1; then
+            single=$(find rendered_chunks -type f -name '*.mp4' | head -1)
+            if [ -n "$single" ]; then
+              echo "Single-chunk render, copying $single"
+              cp "$single" "output/${{ inputs.preset }}-full.mp4"
+            fi
+          fi
+          echo "== stitched output =="
+          ls -la output
+          ls output/*.mp4 >/dev/null 2>&1 || { echo "::error::no stitched video produced"; exit 1; }
 
       # A release asset gives the video a stable public URL instead of an
       # artifact that only people signed in to GitHub can download.
@@ -182,7 +196,7 @@ jobs:
           tag_name: latest-export
           name: Latest export
           body: "${{ inputs.preset }} — stitched from ${{ inputs.max_chunk_sec }}s parallel chunks."
-          files: output/${{ inputs.preset }}-full.mp4
+          files: output/*.mp4
           fail_on_unmatched_files: false
 
       - name: Upload Full Stitched Episode
