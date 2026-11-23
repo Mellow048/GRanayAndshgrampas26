@@ -2,7 +2,9 @@ import * as THREE from "three";
 import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { ASSET_MANIFEST, CONFIG, SEMANTIC_MESH_TAGS, SEMANTIC_OBJECT_REGIONS } from "./config.js";
-import { createPropMesh, ThoughtBubbleCache } from "./comedyProps.js";
+import { createPropMesh, biteCookie, ThoughtBubbleCache } from "./comedyProps.js";
+import { headAimAngles, headAimWeight, aimStep } from "./stagingSafety.js";
+import { isHeadGesture, headGestureSpec, sampleHeadGesture } from "./headGestures.js";
 
 const sharedBubbleCache = new ThoughtBubbleCache();
 
@@ -47,6 +49,8 @@ async function loadFbxWithTextures(fbxPath, textureDir, textureAliases = {}) {
   }
   return fbx;
 }
+const num = (v) => (Number.isFinite(v) ? v : 0);
+
 export function createAssetLoadingManager(textureDir, textureAliases = {}) {
   const manager = new THREE.LoadingManager();
   manager.setURLModifier((url) => {
@@ -923,6 +927,12 @@ export function instantiateCharacter(id, template, animationClips) {
   const headBone = template.spec.headBoneName
     ? rigHolder.getObjectByName(template.spec.headBoneName)
     : null;
+  // The head aim must always be rebuilt from the *bind pose*: most clips do not
+  // animate the head bone, so premultiplying a world delta every frame compounds
+  // and the head visibly spins.
+  const headRestQuat = headBone ? headBone.quaternion.clone() : null;
+  const lastAimQuat = new THREE.Quaternion();
+  let headAimApplied = false;
   const handBoneName =
     template.spec.rigType === "bip01" ? "Bip01_R_Hand" : "hand_R_001";
   const handBone = rigHolder.getObjectByName(handBoneName) || null;
@@ -993,12 +1003,31 @@ export function instantiateCharacter(id, template, animationClips) {
   let faceTargetGoal = null;
   let faceTurnSpeed = 12;
 
+  // Head-tracking ("look at me") state: the head aims at the lens independently
+  // of the animation clip, clamped so the neck never breaks.
+  let headTrack = { enabled: false, weight: 1, maxYaw: 0.95, maxPitch: 0.42 };
+  let headTrackYaw = 0;
+  let headTrackPitch = 0;
+
   let currentActionEntry = null;
   let currentAnimName = null;
   let speaking = false;
   let speakPhase = 0;
   let jumpOffsetY = 0;
   const lookTargetVec = new THREE.Vector3();
+  const tmpHeadPos = new THREE.Vector3();
+  const tmpHeadQuat = new THREE.Quaternion();
+  const tmpHeadQuatB = new THREE.Quaternion();
+  const tmpHeadQuatC = new THREE.Quaternion();
+  const tmpParentQuat = new THREE.Quaternion();
+  const tmpLocalQuat = new THREE.Quaternion();
+  const WORLD_UP = new THREE.Vector3(0, 1, 0);
+  const WORLD_RIGHT = new THREE.Vector3(1, 0, 0);
+  const WORLD_FORWARD = new THREE.Vector3(0, 0, 1);
+
+  // Layered procedural head gesture (nod / shake / tilt). Runs on top of the
+  // clip and on top of the head aim, so a character can agree while laughing.
+  let headGesture = null; // { name, spec, duration, elapsed }
   const tmpHandWorldScale = new THREE.Vector3();
   const tmpBubbleWorld = new THREE.Vector3();
   const tmpBubbleNdc = new THREE.Vector3();
@@ -1010,6 +1039,13 @@ export function instantiateCharacter(id, template, animationClips) {
     speed = null,
     loopOverride = null
   ) {
+    // Gesture "animations" (nod / shake / tilt) are procedural: they layer onto
+    // whatever clip is playing instead of replacing it, so no FBX is needed.
+    if (isHeadGesture(name)) {
+      playHeadGesture(name, typeof fadeDuration === "number" && fadeDuration > 0.2 ? fadeDuration : 0.8);
+      return null;
+    }
+
     const entry = actions[name] || actions.idle || Object.values(actions)[0];
     if (!entry) return null;
 
@@ -1088,6 +1124,142 @@ export function instantiateCharacter(id, template, animationClips) {
     }
   }
 
+  /**
+   * Keeps the head pointed at the lens while any animation plays, so a
+   * taunt/laugh never plays to the back of the room.
+   */
+  function setHeadTrack(enabled, opts = {}) {
+    headTrack = {
+      ...headTrack,
+      ...opts,
+      enabled: Boolean(enabled),
+    };
+    if (!headTrack.enabled) {
+      clearHeadAim();
+    }
+  }
+
+  /** Drops any head rotation we applied, leaving the pose exactly as the clip left it. */
+  function clearHeadAim() {
+    headTrackYaw = 0;
+    headTrackPitch = 0;
+    if (headAimApplied && headBone && headRestQuat) {
+      headBone.quaternion.copy(headRestQuat);
+    }
+    headAimApplied = false;
+  }
+
+  /**
+   * Applies the clamped world-space head turn and any layered gesture as one
+   * quaternion on top of the clip pose. Composing both here (instead of
+   * premultiplying twice) means neither layer can compound across frames.
+   */
+  function applyHeadPose(targetPos, dt, gesture = null) {
+    if (!headBone) return;
+    const step = Math.max(0, Math.min(dt || 0, 0.1));
+
+    // If nobody touched the head since we aimed it, this clip does not animate
+    // that bone — rebuild from the bind pose so the delta cannot pile up.
+    if (headAimApplied && headBone.quaternion.angleTo(lastAimQuat) < 1e-5) {
+      headBone.quaternion.copy(headRestQuat);
+      headAimApplied = false;
+    }
+
+    let aimYaw = 0;
+    let aimPitch = 0;
+    if (targetPos && headTrack.enabled) {
+      const headPos = headBone.getWorldPosition(tmpHeadPos);
+      const camDist = Math.hypot(
+        num(targetPos.x) - headPos.x,
+        num(targetPos.y) - headPos.y,
+        num(targetPos.z) - headPos.z
+      );
+
+      // A lens this close to the skull turns tiny movements into huge swings —
+      // ease the aim out instead of chasing it.
+      const weight =
+        Math.max(0, Math.min(1, headTrack.weight ?? 1)) * headAimWeight(camDist);
+
+      if (weight > 1e-3) {
+        const aim = headAimAngles(headPos, targetPos, root.rotation.y, {
+          maxYaw: headTrack.maxYaw,
+          maxPitch: headTrack.maxPitch,
+        });
+        aimYaw = aim.yaw * weight;
+        aimPitch = aim.pitch * weight;
+      }
+
+      // Smooth toward the goal but never faster than 4 rad/s, so no target flip
+      // (or a lens pressed against the face) can whip the neck around.
+      headTrackYaw = aimStep(headTrackYaw, aimYaw, step);
+      headTrackPitch = aimStep(headTrackPitch, aimPitch, step);
+      aimYaw = headTrackYaw;
+      aimPitch = headTrackPitch;
+    }
+
+    const gestureYaw = gesture ? gesture.yaw || 0 : 0;
+    const gesturePitch = gesture ? gesture.pitch || 0 : 0;
+    const gestureRoll = gesture ? gesture.roll || 0 : 0;
+
+    const totalYaw = aimYaw + gestureYaw;
+    const totalPitch = aimPitch + gesturePitch;
+
+    if (
+      Math.abs(totalYaw) < 1e-4 &&
+      Math.abs(totalPitch) < 1e-4 &&
+      Math.abs(gestureRoll) < 1e-4
+    ) {
+      if (headAimApplied) {
+        headBone.quaternion.copy(headRestQuat);
+        headAimApplied = false;
+      }
+      return;
+    }
+
+    tmpHeadQuat
+      .setFromAxisAngle(WORLD_UP, totalYaw)
+      .multiply(tmpHeadQuatB.setFromAxisAngle(WORLD_RIGHT, totalPitch));
+    if (Math.abs(gestureRoll) > 1e-5) {
+      tmpHeadQuat.multiply(tmpHeadQuatC.setFromAxisAngle(WORLD_FORWARD, gestureRoll));
+    }
+    headBone.parent.getWorldQuaternion(tmpParentQuat);
+    tmpLocalQuat
+      .copy(tmpParentQuat)
+      .invert()
+      .multiply(tmpHeadQuat)
+      .multiply(tmpParentQuat);
+    headBone.quaternion.premultiply(tmpLocalQuat);
+    lastAimQuat.copy(headBone.quaternion);
+    headAimApplied = true;
+  }
+
+  /**
+   * Starts a layered head gesture (nod / shake / tilt). The base clip keeps
+   * playing underneath; passing null stops whatever is running.
+   */
+  function playHeadGesture(name, duration = 0.8, overrides = {}) {
+    if (name == null) {
+      headGesture = null;
+      return null;
+    }
+    const spec = headGestureSpec(name, overrides);
+    if (!spec) {
+      console.warn(`[character:${id}] unknown head gesture "${name}"`);
+      return null;
+    }
+    headGesture = {
+      name,
+      spec,
+      duration: Math.max(0.08, Number.isFinite(duration) ? duration : 0.8),
+      elapsed: 0,
+    };
+    return spec;
+  }
+
+  function stopHeadGesture() {
+    headGesture = null;
+  }
+
   function showBubble(iconName, duration = 2.0) {
     if (!iconName) {
       bubbleSprite.visible = false;
@@ -1144,6 +1316,22 @@ export function instantiateCharacter(id, template, animationClips) {
     parent.add(heldPropGroup);
   }
 
+  /**
+   * Applies an action to whatever comedy prop is currently in this actor's hand.
+   * Right now: "bite" (one cookie chunk per call) and "hide" (drop it).
+   */
+  function actOnHeldProp(action) {
+    if (!heldPropGroup) return false;
+    if (action === "bite") return biteCookie(heldPropGroup);
+    if (action === "hide" || action === "drop") {
+      if (heldPropGroup.parent) heldPropGroup.parent.remove(heldPropGroup);
+      disposeObject3D(heldPropGroup);
+      heldPropGroup = null;
+      return true;
+    }
+    return false;
+  }
+
   function setSpeaking(isSpeaking) {
     speaking = Boolean(isSpeaking);
     if (!speaking) {
@@ -1184,6 +1372,22 @@ export function instantiateCharacter(id, template, animationClips) {
         const rate = lookAtPlayerEnabled ? 14 : faceTurnSpeed;
         root.rotation.y += diff * Math.min(1, dt * rate);
       }
+    }
+
+    // Advance any layered gesture, then apply aim + gesture as one head pose.
+    if (headGesture) {
+      headGesture.elapsed += Math.max(0, dt || 0);
+      if (headGesture.elapsed >= headGesture.duration) {
+        headGesture = null;
+      }
+    }
+    const gestureSample = headGesture
+      ? sampleHeadGesture(headGesture.name, headGesture.elapsed, headGesture.duration, headGesture.spec)
+      : null;
+
+    // Head-only aim on top of whatever the clip is doing (taunts, laughs, idle).
+    if ((headTrack.enabled && playerCameraPos) || gestureSample) {
+      applyHeadPose(playerCameraPos, dt, gestureSample);
     }
 
     // Subtle cartoon squash/bounce + head accent while speaking
@@ -1260,6 +1464,7 @@ export function instantiateCharacter(id, template, animationClips) {
     jumpOffsetY = 0;
     lookAtPlayerEnabled = false;
     faceTargetGoal = null;
+    setHeadTrack(false);
     bubbleTimer = 0;
     bubbleSprite.visible = false;
     setProp(null);
@@ -1301,10 +1506,21 @@ export function instantiateCharacter(id, template, animationClips) {
     },
     playAnim: playAnimation,
     playAnimation,
+    playHeadGesture,
+    stopHeadGesture,
+    actOnHeldProp,
+    get headGesture() {
+      return headGesture ? headGesture.name : null;
+    },
     setAnimSpeed,
     faceTarget,
     lookAt,
     lookAtPlayer,
+    setHeadTrack,
+    clearHeadAim,
+    get headTracking() {
+      return { ...headTrack };
+    },
     showBubble,
     hideBubble: () => showBubble(null),
     setProp,

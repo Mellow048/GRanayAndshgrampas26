@@ -376,8 +376,12 @@ export class AnimationLibrary {
 
   async loadAllTemplates() {
     const loader = new FBXLoader();
+    // Procedural entries (the head gestures) have no FBX — they are layered at
+    // runtime, so only file-backed entries are loaded here.
     const uniquePaths = new Set(
-      Object.values(ASSET_MANIFEST.animations).map((entry) => entry.path)
+      Object.values(ASSET_MANIFEST.animations)
+        .map((entry) => entry.path)
+        .filter(Boolean)
     );
 
     const loadedByPath = new Map();
@@ -413,7 +417,9 @@ export class AnimationLibrary {
     );
 
     for (const [actionKey, animDef] of Object.entries(ASSET_MANIFEST.animations)) {
+      if (!animDef.path) continue; // procedural (head gesture)
       const bundle = loadedByPath.get(animDef.path);
+      if (!bundle) continue;
       this.templates.set(actionKey, {
         key: actionKey,
         animDef,

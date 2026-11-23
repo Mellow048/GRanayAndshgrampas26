@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { isHeadGesture } from "./headGestures.js";
 import { CONFIG, SET_MAP, NAV_GRAPH } from "./config.js";
 import { findTaggedObject, getObjectBounds } from "./assetLoader.js";
 import { validateAndRepair, formatStagingReport } from "./episodeSafety.js";
@@ -1289,8 +1290,32 @@ export class EpisodeRunner {
         this.sfxEngine?.notifyAction(ev.anim, this.simTime);
       }
       const clipDur = actor.currentAction?.getClip()?.duration || 1.0;
-      const waitDur = ev.duration ?? (ev.loop ? 0.45 : clipDur);
+      const isGesture = isHeadGesture(ev.anim);
+      const waitDur = ev.duration ?? (isGesture ? 0.8 : ev.loop ? 0.45 : clipDur);
       return this._waitSim(waitDur, runToken);
+    }
+
+    if (type === "char_gesture") {
+      // Fire-and-forget: the gesture layers onto the current clip, so a beat
+      // after it is not delayed. Use `anim: "nod"` instead if you *want* a wait.
+      const actor = this.characters[ev.actor];
+      if (!actor) return;
+      const name = ev.gesture ?? ev.anim ?? "nod";
+      const dur = ev.duration ?? 0.8;
+      if (typeof actor.playHeadGesture === "function") {
+        actor.playHeadGesture(name, dur, {
+          amplitude: ev.amplitude,
+          cycles: ev.cycles,
+          hold: ev.hold,
+        });
+      } else {
+        actor.playAnim?.(name, 0.1);
+      }
+      if (ev.icon && typeof actor.showBubble === "function") {
+        actor.showBubble(ev.icon, Math.max(1.0, dur + 0.4));
+      }
+      if (!silentSeek) this.sfxEngine?.notifyAction(name, this.simTime);
+      return Promise.resolve();
     }
 
     if (type === "char_cut") {
@@ -1442,6 +1467,16 @@ export class EpisodeRunner {
       if (!actor) return;
       actor.setProp(ev.prop ?? null);
       this._faceActorToCamera(actor, ev);
+      return this._waitSim(ev.duration ?? 0, runToken);
+    }
+
+    if (type === "char_prop_action") {
+      const actor = this.characters[ev.actor];
+      if (!actor || typeof actor.actOnHeldProp !== "function") return;
+      const did = actor.actOnHeldProp(ev.action ?? "bite");
+      if (did && !silentSeek && ev.sfx) {
+        this.sfxEngine?.notifyAction(ev.sfx, this.simTime);
+      }
       return this._waitSim(ev.duration ?? 0, runToken);
     }
 
