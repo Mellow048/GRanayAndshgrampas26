@@ -1,95 +1,65 @@
-# Granny POV 3D Cartoon Studio
+# Granny POV 3D Cartoon Studio (Remastered)
 
-A zero-build Three.js (`v0.170.0`) first-person **Granny POV Kids-Comedy 3D Cartoon Studio** set inside the Granny 1 House (`./Assets/granny-1-house/source/GrannyHouse.fbx`), powered by a **modular gag-builder framework**, Mixamo-retargeted Granny & Grandpa rigs, procedural 3D props & thought bubbles, a Web Audio SFX/BGM mixer, automated 3D verification, and parallel GitHub Actions cloud rendering.
+A zero-build Three.js (`v0.170.0`) first-person **Granny POV Kids-Comedy 3D Cartoon Studio** set inside the Granny 1 House (`./Assets/granny-1-house/source/GrannyHouse.fbx`), featuring Mixamo-retargeted Granny & Grandpa rigs, real baked-mesh floor navigation, strict camera discipline & grounding validators, procedural 3D props, Web Audio SFX/BGM mixing, and automated GitHub Actions FFmpeg rendering.
 
----
-
-## Why This Framework Is Fast & Reusable
-
-Instead of hand-coding massive fragile scripts, you write **one short gag function (`10–25s`)** in `src/gags/` and chain any number of gags together with `buildEpisode()` (`src/episodeBuilder.js`):
-
-- **Zero-leak `CUT` transitions:** Every `0.4s` black cut between gags hides unused props, resets shared props, clears held FPS items, and resets Granny/Grandpa poses & hand props.
-- **Multi-room staging (`src/gags/locations.js`):** One gag automatically works across Kitchen, Living Room, Foyer, and Upstairs Hall (`GAG_LOCATIONS`).
-- **Dead-air-proof helpers (`src/gags/helpers.js`):** `react`, `launchProp`, `chase`, `sneakUp`, `walkTo`, `propAction`, `holdProp`, `lookAt`, `panic`.
-- **Instant single-gag preview:** Open `?gag=cookieHeist` or pick any gag from **Gag Lab** in the Studio dropdown.
-- **40+ minute ready:** `scripts/chunk-episode.mjs` + `.github/workflows/export-long-episode.yml` splits long gag shows cleanly on gag boundaries, renders chunks in parallel across up to 16 GitHub runners, and stitches them losslessly with FFmpeg.
-
-> **New to authoring?** Read [`src/gags/README.md`](src/gags/README.md) (60-second cheat sheet) and [`AGENTS.md`](AGENTS.md) (full agent playbook).
+> **Writing a new episode?** Start with [`AGENTS.md`](AGENTS.md) — it is the single source of truth for both continuous shows (`src/shows/`) and cut-based gag modules (`src/gags/`).
 
 ---
 
-## Built-In Gag Modules & Presets
+## What Changed in the Remastered Framework
 
-### Modular Gag Library (`src/gags/`)
-- **`cookieHeist`** — Grandpa sneaks cookies from the jar, Granny catches him red-handed, frantic chase.
-- **`couchHog`** — Granny & Grandpa sprint for the living room sofa; winner claims the seat smugly.
-- **`chestFakeout`** — Opening the chest expecting treasure, only to get bonked by a surprise pop-out.
-- **`sneakPhotobomb`** — Grandpa tiptoes behind Granny while she searches the room and photobombs the camera.
-- **`ballRace`** — Rocket emoji ball zips across the room, bonks the victim, and triggers a room-to-room chase.
-
-### Episode Presets (`src/config.js` / `src/episodes.js`)
-- **`comedy_variety_1m`** *(Default, `69.6s`, `16:9`)* — Chains all 5 gags back-to-back across 5 rooms with zero leaks.
-- **`cookie_heist_15s`** *(`15.0s`, `16:9`)* — Standalone 15-second slapstick gag showcase (`cookieHeist`).
-- **`granny_cookie_heist_15s`** *(`14.8s`, `16:9`)* — Hand-authored POV reference episode: Grandpa guards the jar, Granny storms in through the doorway, jumpscare finish. The episode the staging gate is regression-tested against (0 errors, 0 warnings, world-aware).
-- **`rocket_ball_test`** *(`14.0s`, `16:9`)* — Single `ballRace` gag preview.
-- **`rocket_ball_x3`** *(`42.8s`, `16:9`)* — Same `ballRace` gag chained across 3 different rooms with swapped roles.
-- **`cookie_caper_30s`** *(`30.2s`, `9:16` Vertical Short)* — Kid-safe vertical comedy Short.
-- **`the_great_escape_68s`** *(`67.6s`, `16:9`)* — Fast-cut escape episode.
-- **`grandpa_key_pov_44s`** *(`43.9s`, `16:9`)* — Legacy 3-skit chest adventure.
+- **Steady, focused POV camera (`src/playerCamera.js`):** Explicit `player_look` beats now lock gaze during walks (`manualLookOverride`) so `autoLook` never snaps the lens back forward mid-walk. Tracking automatically releases when a prop is hidden/picked up, eliminating staring at empty air.
+- **Real baked-mesh floor navigation at runtime (`src/nav/houseNav.js` + `src/episodeRunner.js`):** Ground-floor walks now route over the exact same baked house floor mesh used by the validator — no more wall-clipping, floating characters, or attempts to climb a nonexistent staircase.
+- **No more phantom props or silent no-ops (`src/schema.js`, `src/comedyProps.js`, `src/episodeRunner.js`):** Implemented real 3D meshes for `soda_can`, `bed`, and `shelf`, wired `player_pose` (`lie`/`stand`) and `prop_action: "place"`, respected `seat: false` on custom surfaces, and made `validate:episode` reject unknown prop/beat types as hard errors.
+- **Strict camera & staging gate (`src/episodeSafety.js`):** Added `UNKNOWN_PROP_TYPE`, `UNKNOWN_BEAT_TYPE`, `RAPID_LOOK_FLICK`, and `LOOK_AT_HIDDEN_PROP` checks, fixed actor framing checks, and stopped auto-repair from injecting random `peek_lean` camera leans.
+- **Clean repository:** Removed unrelated pelican/octopus demos & tests, dead `cameraDirector.js`, and broken upstairs legacy presets (`zombie_fort_5m`, `floor_is_lava_4m`). All 71 unit tests, 11 presets, pacing audits, and story audits pass cleanly.
 
 ---
 
-## Staging Safety Gate (no more clipping renders)
-
-Every script is validated **before** it renders — spawn standoffs, prop support, doorway routing, camera sightlines, reaction facing, dead air and framing:
+## Quick Start
 
 ```bash
-npm run validate:episode -- --preset granny_cookie_heist_15s   # human report + fixes
-npm run validate:episode -- --file my-episode.json --out fixed.json
-npm test                                                       # 13 geometry/rule tests
-```
-
-- `src/stagingSafety.js` — actor capsules, camera standoffs, prop surface snapping, `isEmbedded` geometry probe, wall-aware routing (pure JS, testable in Node).
-- `src/episodeSafety.js` — 15 linter codes with deterministic auto-repair; `EpisodeRunner.loadEpisode()` runs it automatically and keeps the report on `runner.staging`.
-- The export workflow runs `node --test` **and** the same gate before installing Playwright, and writes the results into `export-summary.json` (`STRICT_STAGING=1` fails the build).
-
-## Run & Preview Locally
-
-```bash
+# 1. Preview locally
 python3 -m http.server 8000
+# Open http://localhost:8000
+# Single gag:  http://localhost:8000/?gag=cookieHeist
+# Single show: http://localhost:8000/?show=mountain_dew_run
+
+# 2. Inspect supported animations, props, and beats
+npm run catalogue
+
+# 3. Run the full verification gate
+npm test
+npm run validate:episode
+npm run story -- --all
+node scripts/audit-pacing.mjs --all
 ```
-- Full Studio: `http://localhost:8000`
-- Instant Gag Preview: `http://localhost:8000/?gag=cookieHeist`
-- Choose Room Pack: `http://localhost:8000/?gag=cookieHeist&location=living_to_hall`
-- Specific Preset: `http://localhost:8000/?preset=cookie_heist_15s`
 
 ---
 
-## Verify Pacing & 3D Collisions
+## Presets (`src/config.js`)
 
-```bash
-# Audit pacing, dead air, gag schema, and waypoint references across all presets & gags
-node scripts/audit-pacing.mjs --all
-
-# Simulate 3D geometry against GrannyHouse.fbx (catches wall clips & cross-cut prop leaks)
-npm install --no-save three@0.170.0
-node scripts/verify-3d.mjs --gags
-node scripts/verify-3d.mjs comedy_variety_1m
-```
+| Preset Key | Format | Description |
+| --- | --- | --- |
+| `mountain_dew_run` | Continuous Show (`src/shows/`) | 4-scene continuous story (wake → argument → fridge → bed) |
+| `granny_cookie_heist_15s` | Reference POV (`14.8s`) | Clean 0-error, 0-warning POV cookie heist benchmark |
+| `comedy_variety_1m` | Modular Gags (`70.6s`) | 5 ground-floor comedy gags chained with leak-free `0.4s` cuts |
+| `cookie_marathon_150s` | Modular Gags + Story Spine (`2:30`) | 8-scene modular marathon passing the full story-spine gate |
+| `cookie_heist_15s` | Single Gag (`15.0s`) | Standalone `cookieHeist` showcase |
+| `rocket_ball_test` / `rocket_ball_x3` | Modular Gags (`14s` / `43s`) | Single & 3-room `ballRace` showcases |
+| `cookie_caper_30s` | Vertical Short (`9:16`, `30.2s`) | Kid-safe vertical comedy short |
+| `the_great_escape_68s` | Fast-Cut POV (`67.6s`) | High-tempo multi-room escape |
+| `grandpa_key_pov_44s` | Classic POV (`43.9s`) | Mystery chest adventure |
+| `jump_run_walk_6s` | Locomotion Test (`7.9s`) | Quick rig & locomotion check |
 
 ---
 
 ## Cloud Video Rendering (GitHub Actions)
 
-### Short / Standard Episodes (`<= 3 min`)
 ```bash
-gh workflow run export-video.yml -f preset=cookie_heist_15s -f fps=30 -f sfx_pacer=true -f format=mp4
-gh workflow run export-video.yml -f preset=granny_cookie_heist_15s -f fps=30 -f sfx_pacer=true -f format=mp4
-```
-The rendered `.mp4` + `export-summary.json` (including the staging report) are published automatically to the `latest-export` GitHub Release.
+# Standard episode (<= 3 min)
+gh workflow run export-video.yml -f preset=mountain_dew_run -f fps=30 -f sfx_pacer=true -f format=mp4
 
-### Long Multi-Gag Episodes (`5–40+ min`, Parallel Matrix + FFmpeg Concat)
-```bash
-gh workflow run export-long-episode.yml -f preset=comedy_variety_1m -f max_chunk_sec=180 -f fps=30
+# Long multi-gag episode (parallel matrix + FFmpeg concat)
+gh workflow run export-long-episode.yml -f preset=cookie_marathon_150s -f max_chunk_sec=180 -f fps=30
 ```
-Completed videos are uploaded as workflow artifacts (and `export-video.yml` also publishes to the `latest-export` GitHub Release).

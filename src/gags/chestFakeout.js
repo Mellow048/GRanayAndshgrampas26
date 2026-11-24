@@ -20,8 +20,8 @@ export function chestFakeout({
       [prankster]: { spawn: loc.chaserSpawn, facing: loc.start },
     },
     props: [
-      { id: "chest", type: "treasure_chest", spawn: loc.start, yOffset: 0, visible: true },
-      { id: "surprise", type: "emoji_ball", spawn: loc.start, yOffset: 0.35, visible: false },
+      { id: "chest", type: "treasure_chest", spawn: loc.start, visible: true },
+      { id: "surprise", type: "emoji_ball", spawn: loc.start, spawnOffset: { x: 0.35, z: 0 }, visible: false },
     ],
     beats: [
       { at: 0.0, type: "bgm", sound: "fluffing_a_duck", volume: 0.24 },

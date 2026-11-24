@@ -32,7 +32,8 @@ export function talkSofa({
       ...react({ at: 2.0, actor: guest, anim: "talk", loop: true, icon: "laugh", bubbleDur: 1.4 }),
       { at: 2.2, type: "char_gesture", actor: guest, gesture: "nod", duration: 1.1 },
       { at: 3.6, type: "char_gesture", actor: guest, gesture: "nod", duration: 1.1 },
-      { at: 4.6, type: "char_gesture", actor: host, gesture: "tilt", duration: 1.3 },
+      ...react({ at: 4.1, actor: host, anim: "talk", loop: true, icon: "food", bubbleDur: 1.3 }),
+      { at: 4.6, type: "char_gesture", actor: host, gesture: "tilt", duration: 1.0 },
 
       // ...until he asks about the cookie, and she changes her tune
       { at: 5.6, type: "char_bubble", actor: guest, icon: "question", duration: 1.4 },

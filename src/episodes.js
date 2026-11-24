@@ -19,7 +19,7 @@ export const COMEDY_VARIETY_1M = buildEpisode({
     couchHog({ winner: "granny", loser: "grandpa" }),
     chestFakeout({ location: "living_to_hall" }),
     sneakPhotobomb({ location: "foyer_to_dining" }),
-    ballRace({ location: "upstairs_hall" }),
+    ballRace({ location: "hall_to_foyer" }),
   ],
 });
 
@@ -45,8 +45,8 @@ export const COOKIE_HEIST_15S = buildEpisode({
  * is what makes an actor *acknowledge* it, so the object is part of the action
  * rather than scenery.
  */
-function withGoalProp(gag, { id, spawn, at, actor, yOffset = 0.4 }) {
-  const props = [...(gag.props || []), { id, type: "cookie", spawn, yOffset, visible: true }];
+function withGoalProp(gag, { id, spawn, at, actor, spawnOffset = { x: 0.42, z: 0 } }) {
+  const props = [...(gag.props || []), { id, type: "cookie", spawn, spawnOffset, visible: true }];
   const beats = [...gag.beats];
   if (actor) {
     beats.push({ at: Math.min(at, gag.duration - 1.2), type: "char_face", actor, target: id, instant: true });
@@ -65,7 +65,6 @@ export const COOKIE_MARATHON_150S = buildEpisode({
       spawn: "living_room_sofa",
       at: 8.4,
       actor: "granny",
-      yOffset: 0.5,
     }),
     cookieTrial({}),
     kickabout({}),
@@ -73,26 +72,23 @@ export const COOKIE_MARATHON_150S = buildEpisode({
     // the payoff, so the episode is about one object from start to finish.
     withGoalProp(chestFakeout({ location: "living_to_hall" }), {
       id: "chest_cookie",
-      spawn: "living_room",
+      spawn: "living_room_left",
       at: 9.6,
       actor: "grandpa",
-      yOffset: 0.62,
     }),
     withGoalProp(talkSofa({}), {
       id: "sofa_cookie",
-      spawn: "living_room_left",
+      spawn: "living_room_shelf_top",
       at: 14.2,
       actor: "granny",
-      yOffset: 0.55,
     }),
     sneakPhotobomb({ location: "foyer_to_dining" }),
     cookiePayback({}),
     withGoalProp(cookieHeist({ location: "kitchen_to_hall" }), {
       id: "heist_cookie",
-      spawn: "kitchen",
+      spawn: "kitchen_table_top",
       at: 11.4,
       actor: "grandpa",
-      yOffset: 0.58,
     }),
   ],
   story: {

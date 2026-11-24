@@ -21,11 +21,11 @@ export function ballRace({
       [victim]: { spawn: loc.hit, facing: loc.mid },
       [chaser]: { spawn: loc.chaserSpawn, facing: loc.start },
     },
-    props: [{ id: prop, type: "emoji_ball", spawn: loc.start, yOffset: 0.3, visible: false }],
+    props: [{ id: prop, type: "emoji_ball", spawn: loc.start, visible: false }],
     beats: [
       { at: 0.0, type: "bgm", sound: "monkeys_spinning_monkeys", volume: 0.24 },
       ...lookAt({ at: 0.0, target: loc.start, duration: 0.2 }),
-      { at: 0.3, type: "prop_action", prop, action: "show", waypoint: loc.start, yOffset: 0.3 },
+      { at: 0.3, type: "prop_action", prop, action: "show", waypoint: loc.start },
       { at: 0.4, type: "sfx", sound: "pop" },
       { at: 0.5, type: "char_bubble", actor: chaser, icon: "exclamation", duration: 1.2 },
 

@@ -112,13 +112,14 @@ export function sneakUp({
 /**
  * Player POV walk with optional `via` spine and quick look at destination.
  */
-export function walkTo({ at, to, via = [], duration = 1.8, speed = undefined, lookTarget = null } = {}) {
+export function walkTo({ at, to, via = [], duration = 1.8, speed = undefined, lookTarget = null, track = true } = {}) {
   const w = { at, type: "player_walk", to, duration };
   if (via.length > 0) w.via = [...via];
   if (speed !== undefined) w.speed = speed;
+  if (lookTarget) w.lookAhead = false;
   const beats = [w];
   if (lookTarget) {
-    beats.push({ at: +(at + 0.1).toFixed(3), type: "player_look", target: lookTarget, duration: 0.24 });
+    beats.push({ at: +(at + 0.05).toFixed(3), type: "player_look", target: lookTarget, duration: 0.26, track });
   }
   return beats;
 }

@@ -19,7 +19,7 @@ export function cookieHeist({
       [thief]: { spawn: loc.mid, facing: loc.start },
       [cop]: { spawn: loc.exit, facing: loc.hit },
     },
-    props: [{ id: "cookie_jar", type: "cookie_jar", spawn: loc.start, yOffset: 0.72, visible: true }],
+    props: [{ id: "cookie_jar", type: "cookie_jar", spawn: loc.start, visible: true }],
     beats: [
       { at: 0.0, type: "bgm", sound: "fluffing_a_duck", volume: 0.24 },
       ...lookAt({ at: 0.0, target: thief, duration: 0.22, track: true }),

@@ -13,48 +13,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ASSET_MANIFEST, EPISODE_PRESETS } from "./config.js";
 import { HEAD_GESTURES, isHeadGesture } from "./headGestures.js";
+import { PROP_TYPES, BEAT_TYPES } from "./schema.js";
+
+export { PROP_TYPES, BEAT_TYPES };
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Props `createPropMesh()` can build. Kept in sync by tests/catalog.test.mjs. */
-export const PROP_TYPES = [
-  "golden_key",
-  "padlock",
-  "red_button",
-  "emoji_ball",
-  "toy_blaster",
-  "treasure_chest",
-  "delivery_box",
-  "rising_lava",
-  "cookie",
-  "cookie_jar",
-];
-
-/** Beat types `EpisodeRunner._applyBeat()` understands. Also test-guarded. */
-export const BEAT_TYPES = [
-  "anim",
-  "char_anim",
-  "char_bubble",
-  "char_cut",
-  "char_face",
-  "face",
-  "char_gesture",
-  "char_move",
-  "move",
-  "char_prop",
-  "char_prop_action",
-  "cut",
-  "fade",
-  "player_crouch",
-  "player_gesture",
-  "player_hold",
-  "player_look",
-  "player_walk",
-  "prop_action",
-  "bgm",
-  "stop_bgm",
-  "sfx",
-];
+// PROP_TYPES and BEAT_TYPES are re-exported from ./schema.js (single source of truth).
 
 const BEAT_NOTES = {
   anim: "play an animation on an actor (alias of char_anim)",
@@ -70,10 +35,11 @@ const BEAT_NOTES = {
   player_look: "first-person look at a waypoint or actor",
   player_gesture: "first-person camera gesture (nod_yes, shake_no, peek_lean, shake_panic)",
   player_crouch: "first-person crouch state",
+  player_pose: "first-person body pose (lie on a surface or stand back up)",
   player_hold: "put a prop in the player's hands / use it",
   fade: "fade the frame to a colour",
   cut: "hard camera cut",
-  prop_action: "drive a placed scene prop: open | close | bounce | spin | bite | hide",
+  prop_action: "drive a placed scene prop: show | hide | pickup | place | open | close | bounce | bite | pop_out | stop",
   bgm: "start a music bed",
   stop_bgm: "stop the music bed",
   sfx: "fire a one-shot sound effect",

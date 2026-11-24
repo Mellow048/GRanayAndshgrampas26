@@ -131,6 +131,14 @@ export class PlayerCamera {
     this.prevYaw = 0;
     this.idleBreathPhase = 0;
 
+    // Pose state (stand / lie)
+    this.poseRoll = 0;
+    this.poseStartRoll = 0;
+    this.poseTargetRoll = 0;
+    this.poseElapsed = 1;
+    this.poseDuration = 0.4;
+    this.activePose = "stand";
+
     // Gestures (nod_yes, shake_no, shake_panic, shake_earthquake, peek_lean)
     this.activeGesture = null;
     this.shakeIntensity = 0;
@@ -304,6 +312,11 @@ export class PlayerCamera {
     this.crouchStartHeight = PLAYER_EYE_HEIGHT;
     this.crouchTargetHeight = PLAYER_EYE_HEIGHT;
     this.crouchElapsed = 1;
+    this.poseRoll = 0;
+    this.poseStartRoll = 0;
+    this.poseTargetRoll = 0;
+    this.poseElapsed = 1;
+    this.activePose = "stand";
 
     if (lookAtPos) {
       const { yaw, pitch } = this._computeYawPitchTo(lookAtPos);
@@ -467,6 +480,7 @@ export class PlayerCamera {
 
     const taggedObj = this._resolveTaggedObject(ref, resolver);
     if (taggedObj) {
+      if (liveTrack && taggedObj.visible === false) return false;
       if (liveTrack && taggedObj.userData?.actorId) {
         const actor = resolver?.getActor?.(taggedObj.userData.actorId);
         if (actor) {
@@ -495,12 +509,15 @@ export class PlayerCamera {
     if (!resolver) return false;
     const actor = resolver.getActor(ref);
     if (actor) {
+      if (liveTrack && actor.root && actor.root.visible === false) return false;
       actor.getHeadWorldPosition(out);
       out.y -= 0.08;
       return true;
     }
     const prop = resolver.getProp ? resolver.getProp(ref) : null;
     if (prop) {
+      // Never track an invisible or picked-up prop (prevents staring at empty air).
+      if (liveTrack && prop.mesh && prop.mesh.visible === false) return false;
       out.copy(prop.mesh.position);
       out.y += 0.08;
       return true;
@@ -680,12 +697,14 @@ export class PlayerCamera {
       walkSpeed,
       maxVerticalSpeed,
       autoLook,
+      manualLookOverride: false,
       faceTarget: resolvedFaceTarget,
       _resolve: resolveWalk,
     };
     this.isWalking = true;
 
-    if (!resolvedFaceTarget && autoLook && totalLength > 0.08) {
+    // Only auto-look along the path when the script has not explicitly locked gaze onto a target.
+    if (!resolvedFaceTarget && autoLook && !this.trackingRef && totalLength > 0.08) {
       const lookAhead = this._sampleAlongWalk(this.activeWalk, Math.min(totalLength, 1.25));
       lookAhead.y = this.playerPos.y + this.baseEyeHeight - 0.05;
       this.lookAtPosition(lookAhead, { duration: 0.35, trackRef: null });
@@ -715,7 +734,11 @@ export class PlayerCamera {
     });
   }
 
-  lookAt(ref, { duration = 0.25, track = false, maxDuration = null } = {}, resolver) {
+  lookAt(ref, { duration = 0.25, track = false, maxDuration = null, fromBeat = false } = {}, resolver) {
+    if (fromBeat && this.activeWalk) {
+      // An explicit player_look beat owns the camera for the rest of this walk so autoLook never yanks it back.
+      this.activeWalk.manualLookOverride = true;
+    }
     if (this._resolveTargetPosition(ref, resolver, this._tmpTargetPos)) {
       return this.lookAtPosition(this._tmpTargetPos, {
         duration,
@@ -723,6 +746,35 @@ export class PlayerCamera {
         maxDuration,
       });
     }
+    return Promise.resolve();
+  }
+
+  setPose({ pose = "stand", surface = null, duration = 0.6, roll = null, pitch = null } = {}, resolver = null) {
+    const dur = Math.max(0.05, Number(duration) || 0.6);
+    this.activePose = pose;
+    this.crouchStartHeight = this.baseEyeHeight;
+    this.poseStartRoll = this.poseRoll;
+    if (pose === "lie") {
+      const wp = typeof surface === "string" ? resolver?.getWaypoint?.(surface) : surface;
+      const surfaceOffset = wp && typeof wp.y === "number" ? Math.max(0.28, wp.y - this.playerPos.y + 0.22) : 0.68;
+      this.crouchTargetHeight = clamp(surfaceOffset, 0.35, 0.95);
+      this.poseTargetRoll = roll !== null && roll !== undefined ? Number(roll) : -0.65;
+      if (pitch !== null && pitch !== undefined) {
+        this.lookStartYaw = this.yaw;
+        this.lookStartPitch = this.pitch;
+        this.lookTargetYaw = this.yaw;
+        this.lookTargetPitch = clamp(Number(pitch), MIN_CAMERA_PITCH, MAX_CAMERA_PITCH);
+        this.lookElapsed = 0;
+        this.lookDuration = dur;
+      }
+    } else {
+      this.crouchTargetHeight = PLAYER_EYE_HEIGHT;
+      this.poseTargetRoll = 0;
+    }
+    this.crouchElapsed = 0;
+    this.crouchDuration = dur;
+    this.poseElapsed = 0;
+    this.poseDuration = dur;
     return Promise.resolve();
   }
 
@@ -926,16 +978,10 @@ export class PlayerCamera {
           this.activeWalk.faceTarget &&
           (this.activeWalk.totalLength - targetDist <= 0.75 || rawT >= 0.82);
 
-        if (lookDuringApproach && !this.activeWalk.finalLookTriggered && !this.trackingRef) {
-          this.activeWalk.finalLookTriggered = true;
-          this.lookAt(
-            this.activeWalk.faceTarget,
-            { duration: Math.max(0.22, this.activeWalk.duration - this.activeWalk.elapsed) },
-            resolver
-          );
-        } else if (
+        if (
           !this.activeWalk.faceTarget &&
           this.activeWalk.autoLook &&
+          !this.activeWalk.manualLookOverride &&
           !this.trackingRef &&
           this.lookElapsed >= this.lookDuration
         ) {
@@ -988,18 +1034,26 @@ export class PlayerCamera {
       this.bobAmount *= Math.exp(-10 * dt);
     }
 
-    // Look tracking / whip-pan
-    if (
-      this.trackingRef &&
-      this._resolveTargetPosition(this.trackingRef, resolver, this._tmpTargetPos, { liveTrack: true })
-    ) {
-      const { yaw, pitch } = this._computeYawPitchTo(this._tmpTargetPos);
-      if (this.lookElapsed < this.lookDuration) {
-        this.lookTargetYaw = this.lookStartYaw + wrapAngleDiff(yaw, this.lookStartYaw);
-        this.lookTargetPitch = pitch;
+    // Pose roll interpolation
+    if (this.poseElapsed < this.poseDuration) {
+      this.poseElapsed = Math.min(this.poseDuration, this.poseElapsed + dt);
+      const pt = easeInOutSine(this.poseElapsed / this.poseDuration);
+      this.poseRoll = this.poseStartRoll + (this.poseTargetRoll - this.poseStartRoll) * pt;
+    }
+
+    // Look tracking / whip-pan (auto-releases if a tracked prop or actor becomes hidden)
+    if (this.trackingRef) {
+      if (this._resolveTargetPosition(this.trackingRef, resolver, this._tmpTargetPos, { liveTrack: true })) {
+        const { yaw, pitch } = this._computeYawPitchTo(this._tmpTargetPos);
+        if (this.lookElapsed < this.lookDuration) {
+          this.lookTargetYaw = this.lookStartYaw + wrapAngleDiff(yaw, this.lookStartYaw);
+          this.lookTargetPitch = pitch;
+        } else {
+          this.yaw += wrapAngleDiff(yaw, this.yaw) * Math.min(1, dt * 10);
+          this.pitch += (pitch - this.pitch) * Math.min(1, dt * 10);
+        }
       } else {
-        this.yaw += wrapAngleDiff(yaw, this.yaw) * Math.min(1, dt * 10);
-        this.pitch += (pitch - this.pitch) * Math.min(1, dt * 10);
+        this.trackingRef = null;
       }
     }
 
@@ -1143,8 +1197,7 @@ export class PlayerCamera {
       this.lensShield.updateFade(this.camera);
     }
 
-    this.camera.rotation.set(finalPitch, finalYaw, gestureRoll + shakeRoll, "YXZ");
-    this.camera.rotation.set(finalPitch, finalYaw, gestureRoll + shakeRoll + this.turnRoll, "YXZ");
+    this.camera.rotation.set(finalPitch, finalYaw, gestureRoll + shakeRoll + this.turnRoll + this.poseRoll, "YXZ");
 
     // Animate bottom-right FPS held prop (deterministic viewmodel pass)
     if (this.heldPropMesh) {
