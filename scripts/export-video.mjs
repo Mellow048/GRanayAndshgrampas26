@@ -27,7 +27,7 @@ const MIME_TYPES = {
 
 function parseArgs(argv) {
   const opts = {
-    preset: "comedy_variety_1m",
+    preset: "mountain_dew_run",
     episodeFile: "",
     aspect: "",
     fps: 30,

@@ -16,7 +16,7 @@
 import { HOUSE_NAV } from "../data/houseNav.js";
 
 const CELL = HOUSE_NAV.cell;
-const NODES = HOUSE_NAV.nodes; // [ix, iz, x, y, z, comp, compSize, stairs]
+const NODES = HOUSE_NAV.nodes.map((n) => [...n]); // mutable copy so we can inject the staircase bridge
 const MAX_STEP = 0.34;
 const MAX_SNAP = 1.1; // how far a named waypoint may sit from real floor
 const MAX_SNAP_Y = 0.65; // ...and how far off its height it may be
@@ -33,6 +33,51 @@ const neighbours = NODES.map(() => []);
 for (const [a, b] of HOUSE_NAV.edges) {
   neighbours[a].push(b);
   neighbours[b].push(a);
+}
+
+// Inject the 14-step staircase bridge linking Ground Floor (stairs_bottom: -1.9, 0.0, 4.0)
+// to Second Floor (stairs_top: -1.9, 2.85, 1.25 -> upstairs_landing: -1.9, 2.85, 0.95).
+function findNearestBakedNode(tx, ty, tz) {
+  let bestId = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < NODES.length; i += 1) {
+    const n = NODES[i];
+    if (Math.abs(n[3] - ty) > 0.5) continue;
+    const d = Math.hypot(n[2] - tx, n[4] - tz);
+    if (d < bestD) {
+      bestD = d;
+      bestId = i;
+    }
+  }
+  return bestId;
+}
+
+{
+  const bottomAnchor = findNearestBakedNode(-1.9, 0.0, 4.0);
+  const topAnchor = findNearestBakedNode(-1.9, 2.85, 0.95);
+  if (bottomAnchor >= 0 && topAnchor >= 0) {
+    const STAIR_STEPS = 22;
+    let prevId = bottomAnchor;
+    for (let s = 1; s <= STAIR_STEPS; s += 1) {
+      const t = s / (STAIR_STEPS + 1);
+      const x = -1.9;
+      const y = +(2.85 * t).toFixed(3);
+      const z = +(4.0 + (1.25 - 4.0) * t).toFixed(3);
+      const ix = Math.floor((x - HOUSE_NAV.bounds.x0) / CELL);
+      const iz = Math.floor((z - HOUSE_NAV.bounds.z0) / CELL);
+      const newId = NODES.length;
+      NODES.push([ix, iz, x, y, z, 0, 1, 1]);
+      neighbours.push([]);
+      const key = `${ix},${iz}`;
+      if (!byColumn.has(key)) byColumn.set(key, []);
+      byColumn.get(key).push(newId);
+      neighbours[prevId].push(newId);
+      neighbours[newId].push(prevId);
+      prevId = newId;
+    }
+    neighbours[prevId].push(topAnchor);
+    neighbours[topAnchor].push(prevId);
+  }
 }
 
 function cellKey(ix, iz) {
@@ -191,7 +236,7 @@ function smooth(points) {
     const c = points[i + 1];
     const cross = (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
     const dot = (b.x - a.x) * (c.x - b.x) + (b.z - a.z) * (c.z - b.z);
-    if (Math.abs(cross) < 0.0016 && dot > 0) continue; // same direction
+    if (Math.abs(b.y - a.y) < 0.04 && Math.abs(c.y - b.y) < 0.04 && Math.abs(cross) < 0.0016 && dot > 0) continue; // same direction
     out.push(b);
   }
   out.push(points[points.length - 1]);

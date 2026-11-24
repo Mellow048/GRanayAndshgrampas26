@@ -3,7 +3,7 @@
  * validate-episode.mjs — run the staging rules over an episode before rendering.
  *
  *   node scripts/validate-episode.mjs                        # every preset
- *   node scripts/validate-episode.mjs --preset cookie_marathon_150s
+ *   node scripts/validate-episode.mjs --preset floor_is_lava_4m
  *   node scripts/validate-episode.mjs --file scripts/out/my-episode.json
  *   node scripts/validate-episode.mjs --json                 # machine readable
  *   node scripts/validate-episode.mjs --no-fix               # report only

@@ -654,8 +654,8 @@ export function createPropMesh(propType) {
 
     case "cookie_jar":
     default: {
-      if (propType !== "cookie_jar") {
-        console.warn(`[comedyProps] Unknown prop type "${propType}" — falling back to cookie_jar. Register it in src/schema.js and createPropMesh().`);
+      if (type !== "cookie_jar") {
+        console.warn(`[comedyProps] Unknown prop type "${type}" — falling back to cookie_jar. Register it in src/schema.js and createPropMesh().`);
       }
       // Bigger than a real jar (48cm) plus a few cookies inside, so the camera
       // can actually tell what the heist is about.

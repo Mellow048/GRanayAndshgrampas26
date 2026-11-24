@@ -138,8 +138,8 @@ Measured facts (do not re-invent them):
 | Thing | Where | Height |
 | --- | --- | --- |
 | Ground floor | whole footprint | **0.00** |
-| Second floor | whole footprint | **2.85** — decorative: **the model has no staircase**, so nothing may walk up |
-| Bed (the show's) | `bed_home` (-7.4, -4.1) | prop we spawn once; mattress **0.5** |
+| Second floor | whole footprint | **2.85** — connected to Floor 1 via the built-in wooden staircase (`stairs_bottom` ↔ `stairs_top`) |
+| Spawn Bedroom Bed | `up_bed_mattress` (-7.5, 3.56, -2.4) | real built-in 2nd-floor Granny 1 bed (stand beside it at `up_bed_side`); NEVER spawn a fake 1st-floor bed |
 | Fridge (kitchen) | x -6.9..-5.1, z -0.6..-0.1, front z -0.61 | shelf **1.1** (`kitchen_fridge_shelf`) |
 | Dining table | x -5.6..-4.2, z 2.0..3.6 | top **1.11** (`dining_table_top`) |
 

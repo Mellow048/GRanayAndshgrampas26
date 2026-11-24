@@ -416,18 +416,15 @@ export class EpisodeRunner {
     let cursor = from;
     for (const stop of stops) {
       const dst = this.resolveWaypoint(stop);
-      // Ground-floor moves consult the baked house floor mesh (src/nav/houseNav.js)
-      // so characters and POV never float or cut walls at runtime.
-      const groundLeg = Math.abs(cursor.y ?? 0) < 0.35 && Math.abs(dst.y ?? 0) < 0.35 && !isElevatedSurfacePos(dst);
+      // Non-elevated floor moves (both Floor 1, Floor 2, and Floor 1 <-> Floor 2 via stairs)
+      // consult the baked house floor + staircase graph (`src/nav/houseNav.js`).
+      const floorLeg = !isElevatedSurfacePos(dst) && !isElevatedSurfacePos(cursor);
       let points;
       let segments;
-      if (groundLeg) {
+      if (floorLeg) {
         const baked = planFloorRoute(cursor, dst);
         if (baked && baked.length >= 2) {
-          points = baked.map((p) => {
-            const snapped = snapToFloor(p);
-            return new THREE.Vector3(p.x, snapped ? snapped.y : (p.y ?? 0), p.z);
-          });
+          points = baked.map((p) => new THREE.Vector3(p.x, p.y ?? 0, p.z));
           segments = points.slice(1).map(() => ({ isJumpArc: false, arcHeight: 0 }));
         } else {
           ({ points, segments } = this.buildPathWithSegments(cursor, dst));
@@ -1032,7 +1029,11 @@ export class EpisodeRunner {
       if (m.anim === "run" || m.anim === "run2") fastestMoveAnim = m.anim;
 
       if (t >= 1) {
-        m.actor.root.position.copy(m.points[m.points.length - 1]);
+        const endPt = m.points[m.points.length - 1];
+        m.actor.root.position.copy(endPt);
+        if (isElevatedSurfacePos(endPt)) {
+          m.actor.seatOnSurface?.(endPt.y);
+        }
         m.actor.playAnim(m.endAnim || "idle", 0.2, null, true);
         this.activeCharMoves.splice(i, 1);
         if (m.resolve) m.resolve();

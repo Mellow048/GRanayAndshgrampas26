@@ -85,6 +85,7 @@ export class PlayerCamera {
     this.viewmodelScene.add(this.heldItemMount);
     this.heldPropMesh = null;
     this.heldPropType = null;
+    this.heldBaseScale = 0.55;
     this.heldEquipPop = 1;
     this.heldUseTimer = 0;
     this.vmBobTime = 0;
@@ -756,9 +757,11 @@ export class PlayerCamera {
     this.poseStartRoll = this.poseRoll;
     if (pose === "lie") {
       const wp = typeof surface === "string" ? resolver?.getWaypoint?.(surface) : surface;
-      const surfaceOffset = wp && typeof wp.y === "number" ? Math.max(0.28, wp.y - this.playerPos.y + 0.22) : 0.68;
-      this.crouchTargetHeight = clamp(surfaceOffset, 0.35, 0.95);
-      this.poseTargetRoll = roll !== null && roll !== undefined ? Number(roll) : -0.65;
+      const surfaceOffset = wp && typeof wp.y === "number" ? Math.max(0.52, wp.y - this.playerPos.y + 0.28) : 0.72;
+      this.crouchTargetHeight = clamp(surfaceOffset, 0.52, 0.95);
+      // Clamp roll to [-0.30, +0.30] so the frustum corners never slice through walls into the sky void.
+      const rawRoll = roll !== null && roll !== undefined ? Number(roll) : -0.24;
+      this.poseTargetRoll = clamp(rawRoll, -0.3, 0.3);
       if (pitch !== null && pitch !== undefined) {
         this.lookStartYaw = this.yaw;
         this.lookStartPitch = this.pitch;
@@ -845,8 +848,16 @@ export class PlayerCamera {
     if (!propType) return;
 
     const mesh = createPropMesh(propType);
-    // Scale cleanly for crisp FPS bottom-right framing
-    mesh.scale.setScalar(propType === "emoji_ball" ? 0.45 : 0.72);
+    // Auto-normalize held FPS prop size by its real bounding box so large/custom props
+    // (like cars or chests) never fill half the screen.
+    mesh.updateMatrixWorld(true);
+    const heldBox = new THREE.Box3().setFromObject(mesh);
+    const heldSize = new THREE.Vector3();
+    heldBox.getSize(heldSize);
+    const maxDim = Math.max(heldSize.x, heldSize.y, heldSize.z, 0.06);
+    const targetDim = propType === "emoji_ball" ? 0.2 : 0.26;
+    this.heldBaseScale = clamp(targetDim / maxDim, 0.12, 0.85);
+    mesh.scale.setScalar(this.heldBaseScale);
     if (propType === "golden_key") {
       mesh.rotation.set(0.3, -0.4, -0.35);
     } else if (propType === "toy_blaster") {
@@ -1204,7 +1215,7 @@ export class PlayerCamera {
       this.vmBobTime += dt;
       this.heldEquipPop = Math.min(1, this.heldEquipPop + dt * 6);
       const popScale = easeOutCubic(this.heldEquipPop);
-      const baseScale = this.heldPropType === "emoji_ball" ? 0.36 : 0.72;
+      const baseScale = this.heldBaseScale || 0.55;
       this.heldPropMesh.scale.setScalar(baseScale * popScale);
 
       const baseX = this.aspectKey === "9:16" ? 0.18 : 0.28;
