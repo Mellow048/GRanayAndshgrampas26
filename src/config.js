@@ -6,10 +6,10 @@
 import { GRANNY_COOKIE_HEIST_15S } from "./episodes/cookieHeist15s.js";
 import { THE_GREAT_ESCAPE_68S } from "./episodes/greatEscape75.js";
 import { COOKIE_CAPER_30S } from "./episodes/cookieCaper30.js";
-import { COMEDY_VARIETY_1M, COOKIE_HEIST_15S, COOKIE_MARATHON_150S, ROCKET_BALL_TEST, ROCKET_BALL_x3, BREAKFAST_SURPRISE_20S } from "./episodes.js";
+import { COMEDY_VARIETY_1M, COOKIE_HEIST_15S, COOKIE_MARATHON_150S, ROCKET_BALL_TEST, ROCKET_BALL_x3, BREAKFAST_SURPRISE_20S, GOLDEN_PIZZA_SHENANIGANS_4M } from "./episodes.js";
 import { SHOWS, buildShow } from "./shows/index.js";
 
-export { COMEDY_VARIETY_1M, COOKIE_HEIST_15S, COOKIE_MARATHON_150S, COOKIE_CAPER_30S, ROCKET_BALL_TEST, ROCKET_BALL_x3, SHOWS };
+export { COMEDY_VARIETY_1M, COOKIE_HEIST_15S, COOKIE_MARATHON_150S, COOKIE_CAPER_30S, ROCKET_BALL_TEST, ROCKET_BALL_x3, GOLDEN_PIZZA_SHENANIGANS_4M, SHOWS };
 
 export const CONFIG = {
   threeVersion: "0.170.0",
@@ -2072,6 +2072,7 @@ export const EPISODE_PRESETS = {
   // Long-form, scene-built shows (each scene is its own file under src/shows/).
   mountain_dew_run: buildShow("mountain_dew_run"),
   comedy_variety_1m: COMEDY_VARIETY_1M,
+  golden_pizza_shenanigans_4m: GOLDEN_PIZZA_SHENANIGANS_4M,
   breakfast_surprise_20s: BREAKFAST_SURPRISE_20S,
   cookie_heist_15s: COOKIE_HEIST_15S,
   cookie_marathon_150s: COOKIE_MARATHON_150S,

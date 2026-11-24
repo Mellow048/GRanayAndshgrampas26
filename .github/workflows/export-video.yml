@@ -9,6 +9,8 @@ on:
         default: "comedy_variety_1m"
         options:
           - comedy_variety_1m
+          - golden_pizza_shenanigans_4m
+          - breakfast_surprise_20s
           - granny_cookie_heist_15s
           - cookie_heist_15s
           - rocket_ball_test
@@ -19,7 +21,6 @@ on:
           - mountain_dew_run
           - cookie_marathon_150s
           - jump_run_walk_6s
-          - cookie_marathon_150s
           - custom_json
       episode_json:
         description: "Custom Episode JSON (used when preset is custom_json, or overrides preset if provided)"

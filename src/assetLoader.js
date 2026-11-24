@@ -977,11 +977,20 @@ export function instantiateCharacter(id, template, animationClips) {
   const handBone = rigHolder.getObjectByName(handBoneName) || null;
 
   // Procedural arm & upper-spine bones for expressive acting (`src/armGestures.js`).
+  // Note: grandpach3.fbx names forearms `lowArm_L` / `lowArm_R_001`, so probe both spellings.
   const armBones = {
     rUpper: rigHolder.getObjectByName(isBip01 ? "Bip01_R_UpperArm" : "upArm_R_001") || null,
-    rFore: rigHolder.getObjectByName(isBip01 ? "Bip01_R_Forearm" : "loArm_R_001") || null,
+    rFore:
+      (isBip01
+        ? rigHolder.getObjectByName("Bip01_R_Forearm")
+        : rigHolder.getObjectByName("lowArm_R_001") || rigHolder.getObjectByName("loArm_R_001")) ||
+      null,
     lUpper: rigHolder.getObjectByName(isBip01 ? "Bip01_L_UpperArm" : "upArm_L") || null,
-    lFore: rigHolder.getObjectByName(isBip01 ? "Bip01_L_Forearm" : "loArm_L") || null,
+    lFore:
+      (isBip01
+        ? rigHolder.getObjectByName("Bip01_L_Forearm")
+        : rigHolder.getObjectByName("lowArm_L") || rigHolder.getObjectByName("loArm_L")) ||
+      null,
     spine:
       rigHolder.getObjectByName(isBip01 ? "Bip01_Spine1" : "Spine1") ||
       rigHolder.getObjectByName("spine_01") ||

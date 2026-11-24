@@ -11,6 +11,16 @@ import {
   talkSofa,
   cookiePayback,
   breakfastSurprise,
+  goldenPizzaWakeup,
+  goldenPizzaBalcony,
+  goldenPizzaKitchen,
+  goldenPizzaDecoy,
+  goldenPizzaDanceoff,
+  goldenPizzaDelivery,
+  goldenPizzaShootout,
+  goldenPizzaChest,
+  goldenPizzaLava,
+  goldenPizzaFinale,
 } from "./gags/index.js";
 
 export const COMEDY_VARIETY_1M = buildEpisode({
@@ -164,4 +174,80 @@ export const ROCKET_BALL_x3 = buildEpisode({
 export const BREAKFAST_SURPRISE_20S = buildEpisode({
   title: "Granny's Breakfast Surprise (20s Physical Acting Reference)",
   gags: [breakfastSurprise({})],
+});
+
+export const GOLDEN_PIZZA_SHENANIGANS_4M = buildEpisode({
+  title: "Granny & Grandpa: The Golden Pizza Shenanigans (4:38)",
+  gags: [
+    goldenPizzaWakeup(),
+    goldenPizzaBalcony(),
+    goldenPizzaKitchen(),
+    goldenPizzaDecoy(),
+    goldenPizzaDanceoff(),
+    goldenPizzaDelivery(),
+    goldenPizzaShootout(),
+    goldenPizzaChest(),
+    goldenPizzaLava(),
+    goldenPizzaFinale(),
+  ],
+  story: {
+    premise:
+      "A steaming, legendary Golden Pizza appears upstairs and Granny, Grandpa, and the Player turn the entire two-story house into a slapstick obstacle course over who gets the first slice.",
+    goal: "Keep track of the Golden Pizza across every wacky prank and bring it safely to the family dining table.",
+    goalProp: "golden_pizza",
+    resolution:
+      "After surviving balcony drops, decoy cakes, dance-offs, flying blasters, hallway penalties, and a bubbling pizza-sauce floor, everyone shares a celebratory feast — until Grandpa tries sneaking the last slice.",
+    scenes: [
+      {
+        objective: "Discover the steaming Golden Pizza in the upstairs bedroom before Grandpa wakes up",
+        obstacle: "Grandpa catches the scent mid-nap and snatches it first",
+        turn: "Granny bursts around the corner and intercepts the pizza downstairs",
+      },
+      {
+        objective: "Intercept Granny along the upstairs balcony before she reaches the stairs",
+        obstacle: "Granny uses spin-kicks and ego-parades to block the hallway",
+        turn: "Grandpa accidentally sends a bouncy ball flying over the railing while Granny escapes",
+      },
+      {
+        objective: "Survive Granny's turbo pizza-flipping stunt inside the kitchen",
+        obstacle: "Granny launches the Golden Pizza high onto the refrigerator shelf",
+        turn: "Grandpa bonks his head trying to reach it while Granny reels it back down",
+      },
+      {
+        objective: "Pull off a decoy-cake switcheroo on the dining room table",
+        obstacle: "Granny inspects the frosting up close with suspicious eyes",
+        turn: "She discovers the cake is hollow cardboard and bonks Grandpa back into line",
+      },
+      {
+        objective: "Win custody of the Golden Pizza in a living room boombox dance-off",
+        obstacle: "Granny throws down robot disco moves and martial-arts kicks",
+        turn: "Grandpa trips over the runaway emoji ball and Granny takes the trophy",
+      },
+      {
+        objective: "Unbox the mystery foyer delivery package during Granny and Grandpa's argument",
+        obstacle: "Both seniors bicker loudly right in front of the front door",
+        turn: "A toy blaster and soda can pop out, sending Grandpa diving into the stairs",
+      },
+      {
+        objective: "Referee Granny and Grandpa's chaotic back-hall pizza trophy penalty shootout",
+        obstacle: "High-speed emoji ball shots ricochet across the narrow hallway",
+        turn: "Grandpa blocks one with his forehead while Granny snatches the pizza off the bed",
+      },
+      {
+        objective: "Crack open the locked treasure chest guarding the Golden Pizza",
+        obstacle: "Granny parades around with the golden key and locks the padlock tight",
+        turn: "Grandpa slams the prank red button, blasting the lock open and bolting with the pie",
+      },
+      {
+        objective: "Rescue the Golden Pizza from a bubbling floor-is-pizza-sauce disaster in the foyer",
+        obstacle: "Spilled spicy sauce floods the ground floor as Granny scrambles up the stairs",
+        turn: "The Golden Pizza hovers safely above the sauce until everyone calls a temporary truce",
+      },
+      {
+        objective: "Celebrate a peaceful family pizza feast at the dining table",
+        obstacle: "Nobody can resist eyeing the final steaming slice",
+        turn: "Grandpa reaches in for one last sneak grab and Granny raises her giant spatula laughing",
+      },
+    ],
+  },
 });

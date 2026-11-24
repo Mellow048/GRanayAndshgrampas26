@@ -23,6 +23,18 @@ export { kickabout } from "./kickabout.js";
 export { talkSofa } from "./talkSofa.js";
 export { cookiePayback } from "./cookiePayback.js";
 export { breakfastSurprise } from "./breakfastSurprise.js";
+export {
+  goldenPizzaWakeup,
+  goldenPizzaBalcony,
+  goldenPizzaKitchen,
+  goldenPizzaDecoy,
+  goldenPizzaDanceoff,
+  goldenPizzaDelivery,
+  goldenPizzaShootout,
+  goldenPizzaChest,
+  goldenPizzaLava,
+  goldenPizzaFinale,
+} from "./goldenPizzaShenanigans.js";
 
 import { ballRace } from "./ballRace.js";
 import { cookieHeist } from "./cookieHeist.js";
@@ -34,6 +46,18 @@ import { kickabout } from "./kickabout.js";
 import { talkSofa } from "./talkSofa.js";
 import { cookiePayback } from "./cookiePayback.js";
 import { breakfastSurprise } from "./breakfastSurprise.js";
+import {
+  goldenPizzaWakeup,
+  goldenPizzaBalcony,
+  goldenPizzaKitchen,
+  goldenPizzaDecoy,
+  goldenPizzaDanceoff,
+  goldenPizzaDelivery,
+  goldenPizzaShootout,
+  goldenPizzaChest,
+  goldenPizzaLava,
+  goldenPizzaFinale,
+} from "./goldenPizzaShenanigans.js";
 
 // Registry of previewable gag factories for Studio "Gag Lab" & `?gag=<name>`
 export const GAG_REGISTRY = {
@@ -47,4 +71,14 @@ export const GAG_REGISTRY = {
   talkSofa,
   cookiePayback,
   breakfastSurprise,
+  goldenPizzaWakeup,
+  goldenPizzaBalcony,
+  goldenPizzaKitchen,
+  goldenPizzaDecoy,
+  goldenPizzaDanceoff,
+  goldenPizzaDelivery,
+  goldenPizzaShootout,
+  goldenPizzaChest,
+  goldenPizzaLava,
+  goldenPizzaFinale,
 };
