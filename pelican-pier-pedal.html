@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pier Pedal — a pelican on a bicycle</title>
+<style>
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: #0a2233;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    font-family: ui-rounded, "Segoe UI", system-ui, sans-serif;
+  }
+  svg.scene {
+    width: min(100vw, 177.7vh);
+    height: auto;
+    display: block;
+    border-radius: 16px;
+    box-shadow: 0 26px 80px rgba(3, 18, 30, 0.6);
+  }
+
+  /* ---- wheels and cranks ------------------------------------------------ */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes spinBack { to { transform: rotate(-360deg); } }
+
+  .wheel {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: spin 1.05s linear infinite;
+  }
+  .crank {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: spin 1.3s linear infinite;
+  }
+  .pedal {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: spinBack 1.3s linear infinite;
+  }
+  .chain {
+    animation: chainRoll 0.9s linear infinite;
+  }
+  @keyframes chainRoll { to { stroke-dashoffset: -24; } }
+
+  /* ---- legs swing with the pedals -------------------------------------- */
+  .leg {
+    transform-origin: 512px 326px;
+    animation: legSwing 1.3s ease-in-out infinite;
+  }
+  .leg-far {
+    transform-origin: 506px 320px;
+    animation: legSwing 1.3s ease-in-out infinite reverse;
+  }
+  @keyframes legSwing {
+    0%, 100% { transform: rotate(-7deg); }
+    50%      { transform: rotate(7deg); }
+  }
+
+  /* ---- the rider bobs -------------------------------------------------- */
+  .bob { animation: bob 0.65s ease-in-out infinite; }
+  @keyframes bob {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-4px); }
+  }
+
+  /* ---- scarf / pennant / wing flaps ------------------------------------ */
+  .flutter { transform-box: fill-box; transform-origin: 0% 50%; animation: flutter 0.62s ease-in-out infinite; }
+  .flutter-2 { transform-box: fill-box; transform-origin: 0% 50%; animation: flutter 0.62s ease-in-out infinite 0.14s; }
+  @keyframes flutter {
+    0%, 100% { transform: rotate(-8deg) skewY(4deg); }
+    50%      { transform: rotate(7deg) skewY(-5deg); }
+  }
+
+  /* ---- blinking -------------------------------------------------------- */
+  .eye { transform-box: fill-box; transform-origin: center; animation: blink 4.6s infinite; }
+  @keyframes blink {
+    0%, 92%, 100% { transform: scaleY(1); }
+    95%           { transform: scaleY(0.08); }
+  }
+
+  /* ---- sea sparkle ----------------------------------------------------- */
+  .glint { animation: glint 2.8s ease-in-out infinite; }
+  @keyframes glint {
+    0%, 100% { opacity: 0.15; }
+    50%      { opacity: 0.95; }
+  }
+
+  /* ---- sun rays -------------------------------------------------------- */
+  .rays { transform-box: fill-box; transform-origin: center; animation: spin 48s linear infinite; }
+
+  /* ---- hot air balloon drift (pure CSS parallax) ----------------------- */
+  .drift { animation: drift 34s linear infinite; }
+  @keyframes drift {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-1500px); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<svg class="scene" viewBox="0 0 1200 675" role="img" aria-labelledby="ttl dsc">
+  <title id="ttl">Pier Pedal</title>
+  <desc id="dsc">A cartoon pelican in a straw hat rides a turquoise bicycle along a sunny seaside boardwalk, with a baguette in the front basket, a pennant fluttering behind, gulls overhead and a butterfly keeping pace.</desc>
+
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"    stop-color="#5fbcff" />
+      <stop offset="0.55" stop-color="#a8ddfb" />
+      <stop offset="1"    stop-color="#e8f6ff" />
+    </linearGradient>
+
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#1f88a6" />
+      <stop offset="0.5" stop-color="#2aa6bd" />
+      <stop offset="1"   stop-color="#63cbd8" />
+    </linearGradient>
+
+    <linearGradient id="sand" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6e2b6" />
+      <stop offset="1" stop-color="#e6c98d" />
+    </linearGradient>
+
+    <linearGradient id="boards" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d9a066" />
+      <stop offset="1" stop-color="#bd7f47" />
+    </linearGradient>
+
+    <radialGradient id="sunGlow">
+      <stop offset="0"   stop-color="#fff6c2" stop-opacity="0.95" />
+      <stop offset="0.55" stop-color="#ffe79a" stop-opacity="0.35" />
+      <stop offset="1"   stop-color="#ffe79a" stop-opacity="0" />
+    </radialGradient>
+
+    <linearGradient id="beak" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"   stop-color="#ffc24a" />
+      <stop offset="1"   stop-color="#ff9f2e" />
+    </linearGradient>
+
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="7" />
+    </filter>
+
+    <!-- one tile of boardwalk seams, repeated for a seamless scroll -->
+    <g id="boardTile" stroke="#a76c39" stroke-width="3" opacity="0.85">
+      <line x1="40"   y1="520" x2="40"   y2="675" />
+      <line x1="180"  y1="520" x2="180"  y2="675" />
+      <line x1="320"  y1="520" x2="320"  y2="675" />
+      <line x1="460"  y1="520" x2="460"  y2="675" />
+      <line x1="600"  y1="520" x2="600"  y2="675" />
+      <line x1="740"  y1="520" x2="740"  y2="675" />
+      <line x1="880"  y1="520" x2="880"  y2="675" />
+      <line x1="1020" y1="520" x2="1020" y2="675" />
+      <line x1="1160" y1="520" x2="1160" y2="675" />
+    </g>
+
+    <!-- one tile of wave crests -->
+    <g id="waveTile" fill="none" stroke="#bfeef4" stroke-width="4" stroke-linecap="round" opacity="0.55">
+      <path d="M-20 380 q 22 -12 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0" />
+      <path d="M-10 412 q 26 -10 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0 t 52 0" opacity="0.8" />
+    </g>
+  </defs>
+
+  <!-- ============================ SKY ============================ -->
+  <rect width="1200" height="675" fill="url(#sky)" />
+
+  <!-- sun -->
+  <g>
+    <circle cx="1010" cy="104" r="180" fill="url(#sunGlow)" />
+    <g class="rays" stroke="#ffe27a" stroke-width="8" stroke-linecap="round" opacity="0.75">
+      <line x1="1010" y1="4"   x2="1010" y2="34" />
+      <line x1="1010" y1="174" x2="1010" y2="204" />
+      <line x1="910"  y1="104" x2="880"  y2="104" />
+      <line x1="1140" y1="104" x2="1110" y2="104" />
+      <line x1="940"  y1="34"  x2="919"  y2="13" />
+      <line x1="1080" y1="34"  x2="1101" y2="13" />
+      <line x1="940"  y1="174" x2="919"  y2="195" />
+      <line x1="1080" y1="174" x2="1101" y2="195" />
+    </g>
+    <circle cx="1010" cy="104" r="62" fill="#fff4b8" />
+    <circle cx="1010" cy="104" r="62" fill="none" stroke="#ffd85e" stroke-width="5" />
+  </g>
+
+  <!-- clouds drifting -->
+  <g class="drift" fill="#ffffff" opacity="0.92">
+    <g>
+      <ellipse cx="240" cy="122" rx="74" ry="26" />
+      <ellipse cx="292" cy="104" rx="48" ry="22" />
+      <ellipse cx="196" cy="108" rx="40" ry="18" />
+    </g>
+    <g transform="translate(620 46) scale(0.78)">
+      <ellipse cx="240" cy="122" rx="74" ry="26" />
+      <ellipse cx="292" cy="104" rx="48" ry="22" />
+      <ellipse cx="196" cy="108" rx="40" ry="18" />
+    </g>
+  </g>
+
+  <!-- gulls, following motion paths -->
+  <g fill="none" stroke="#2b3b55" stroke-width="4" stroke-linecap="round">
+    <g>
+      <path d="M-14 6 q 14 -14 28 0" />
+      <path d="M14 6 q 14 -14 28 0" />
+      <animateMotion dur="17s" repeatCount="indefinite" rotate="auto"
+        path="M120 210 q 220 -70 460 -30 q 260 44 520 -10" />
+    </g>
+    <g opacity="0.75">
+      <path d="M-10 5 q 11 -11 22 0" />
+      <path d="M12 5 q 11 -11 22 0" />
+      <animateMotion dur="23s" repeatCount="indefinite" rotate="auto" begin="-6s"
+        path="M1240 168 q -260 -54 -520 -6 q -240 44 -520 -14" />
+    </g>
+  </g>
+
+  <!-- far sailboat -->
+  <g transform="translate(232 300)">
+    <path d="M0 0 l 0 -70 l 52 70 z" fill="#fdfdff" stroke="#2b3b55" stroke-width="4" />
+    <path d="M-6 0 l -44 0 l 12 20 l 78 0 l 12 -20 z" fill="#e8604f" stroke="#2b3b55" stroke-width="4" />
+  </g>
+
+  <!-- ============================ SEA ============================ -->
+  <rect x="0" y="332" width="1200" height="130" fill="url(#sea)" />
+  <rect x="0" y="332" width="1200" height="9" fill="#8ee6f2" opacity="0.8" />
+
+  <g class="drift" style="animation-duration:19s">
+    <use href="#waveTile" />
+    <use href="#waveTile" x="1200" />
+  </g>
+
+  <g fill="#eafcff">
+    <circle cx="150" cy="356" r="3.4" class="glint" style="animation-delay:-0.4s" />
+    <circle cx="330" cy="374" r="2.6" class="glint" style="animation-delay:-1.5s" />
+    <circle cx="520" cy="352" r="3"   class="glint" style="animation-delay:-2.3s" />
+    <circle cx="690" cy="392" r="2.4" class="glint" style="animation-delay:-0.9s" />
+    <circle cx="860" cy="360" r="3.2" class="glint" style="animation-delay:-1.9s" />
+    <circle cx="1040" cy="386" r="2.6" class="glint" style="animation-delay:-2.8s" />
+  </g>
+
+  <!-- ============================ BEACH ============================ -->
+  <path d="M0 452 q 150 -26 300 -8 q 180 22 360 4 q 200 -20 380 6 q 90 12 160 6 L1200 540 L0 540 z" fill="url(#sand)" />
+
+  <!-- dune grass -->
+  <g fill="#a9c86a" stroke="#6f8c3c" stroke-width="2.5">
+    <path d="M96 470 q 6 -34 18 -46 q 4 26 -2 46 z" />
+    <path d="M124 474 q 10 -28 24 -36 q 0 22 -8 36 z" />
+    <path d="M948 484 q 8 -32 22 -42 q 2 26 -6 42 z" />
+    <path d="M986 488 q 10 -26 24 -34 q 0 22 -8 34 z" />
+  </g>
+
+  <!-- ============================ BOARDWALK ============================ -->
+  <rect x="0" y="520" width="1200" height="155" fill="url(#boards)" />
+  <rect x="0" y="520" width="1200" height="8" fill="#efc48c" />
+  <g class="drift" style="animation-duration:3.4s">
+    <use href="#boardTile" />
+    <use href="#boardTile" x="1200" />
+  </g>
+  <g stroke="#a76c39" stroke-width="3" opacity="0.6">
+    <line x1="0" y1="596" x2="1200" y2="596" />
+    <line x1="0" y1="672" x2="1200" y2="672" />
+  </g>
+
+  <!-- ============================ RIDER ============================ -->
+  <g class="bob">
+    <!-- contact shadow -->
+    <ellipse cx="600" cy="545" rx="250" ry="16" fill="#6b3f1d" opacity="0.28" filter="url(#soft)" />
+
+    <!-- wheels -->
+    <g class="wheel">
+      <circle cx="400" cy="455" r="86" fill="none" stroke="#243044" stroke-width="14" />
+      <circle cx="400" cy="455" r="76" fill="none" stroke="#3d4b66" stroke-width="4" />
+      <g stroke="#9aa8c2" stroke-width="3">
+        <line x1="400" y1="379" x2="400" y2="531" />
+        <line x1="324" y1="455" x2="476" y2="455" />
+        <line x1="346" y1="401" x2="454" y2="509" />
+        <line x1="454" y1="401" x2="346" y2="509" />
+      </g>
+      <circle cx="400" cy="455" r="10" fill="#dfe7f5" stroke="#243044" stroke-width="3" />
+    </g>
+    <g class="wheel" style="animation-delay:-0.35s">
+      <circle cx="800" cy="455" r="86" fill="none" stroke="#243044" stroke-width="14" />
+      <circle cx="800" cy="455" r="76" fill="none" stroke="#3d4b66" stroke-width="4" />
+      <g stroke="#9aa8c2" stroke-width="3">
+        <line x1="800" y1="379" x2="800" y2="531" />
+        <line x1="724" y1="455" x2="876" y2="455" />
+        <line x1="746" y1="401" x2="854" y2="509" />
+        <line x1="854" y1="401" x2="746" y2="509" />
+      </g>
+      <circle cx="800" cy="455" r="10" fill="#dfe7f5" stroke="#243044" stroke-width="3" />
+    </g>
+
+    <!-- frame -->
+    <g fill="none" stroke-linecap="round">
+      <g stroke="#20303f" stroke-width="18">
+        <path d="M400 455 L 560 458" />
+        <path d="M560 458 L 492 350" />
+        <path d="M492 350 L 712 338" />
+        <path d="M712 338 L 800 455" />
+        <path d="M400 455 L 492 350" />
+      </g>
+      <g stroke="#2fa8a0" stroke-width="12">
+        <path d="M400 455 L 560 458" />
+        <path d="M560 458 L 492 350" />
+        <path d="M492 350 L 712 338" />
+        <path d="M712 338 L 800 455" />
+        <path d="M400 455 L 492 350" />
+      </g>
+      <!-- chainring + chain -->
+      <circle cx="560" cy="458" r="22" fill="#243044" stroke="#101a26" stroke-width="4" />
+      <circle cx="560" cy="458" r="22" fill="none" stroke="#7f8ea8" stroke-width="3" stroke-dasharray="4 5" class="chain" />
+      <path d="M560 436 L 400 455" stroke="#6b7a94" stroke-width="4" stroke-dasharray="6 6" class="chain" />
+      <path d="M560 480 L 400 455" stroke="#6b7a94" stroke-width="4" stroke-dasharray="6 6" class="chain" opacity="0.75" />
+    </g>
+
+    <!-- seat -->
+    <path d="M456 344 q 26 -16 62 -10 q 16 3 18 12 q -34 12 -80 0 z" fill="#2c3b52" stroke="#101a26" stroke-width="4" />
+
+    <!-- handlebars -->
+    <g fill="none" stroke-linecap="round" stroke="#243044">
+      <path d="M712 338 l 2 -24" stroke-width="10" />
+      <path d="M672 308 q 40 -16 76 2" stroke-width="10" />
+      <path d="M748 312 l 16 10" stroke-width="10" />
+      <path d="M672 308 l -16 12" stroke-width="10" />
+    </g>
+    <circle cx="740" cy="316" r="10" fill="#ffd45e" stroke="#8d6a12" stroke-width="3" />
+    <circle cx="737" cy="313" r="3.4" fill="#fff8d8" />
+
+    <!-- front basket with a baguette, riding above the front wheel -->
+    <g transform="translate(742 286)">
+      <path d="M8 26 q 22 -30 62 -24 q 30 4 40 24 z" fill="#f6d79b" stroke="#7c5a25" stroke-width="4" />
+      <g stroke="#b98a3e" stroke-width="3" stroke-linecap="round">
+        <path d="M14 22 q 12 -12 26 -14" />
+        <path d="M38 22 q 10 -12 24 -14" />
+      </g>
+      <path d="M6 40 h 96 l -10 40 h -76 z" fill="#cf9350" stroke="#6d471a" stroke-width="4" />
+      <g stroke="#a4712f" stroke-width="3" opacity="0.9">
+        <path d="M12 54 h 86" />
+        <path d="M10 70 h 90" />
+        <path d="M36 40 l -5 40" />
+        <path d="M60 40 l 0 40" />
+        <path d="M84 40 l 5 40" />
+      </g>
+      <g stroke="#6d471a" stroke-width="4" stroke-linecap="round" opacity="0.9">
+        <path d="M28 76 l 8 26" />
+        <path d="M80 76 l -4 26" />
+      </g>
+      <g transform="translate(22 4) rotate(-20)">
+        <rect x="0" y="-14" width="72" height="18" rx="9" fill="#e6b071" stroke="#7c5a25" stroke-width="4" />
+        <g stroke="#a9743a" stroke-width="3" stroke-linecap="round">
+          <path d="M14 -8 l 10 6" />
+          <path d="M32 -8 l 10 6" />
+          <path d="M50 -8 l 10 6" />
+        </g>
+      </g>
+    </g>
+
+    <!-- pennant on a short post over the back wheel -->
+    <g>
+      <path d="M352 352 l 0 -92" stroke="#243044" stroke-width="7" stroke-linecap="round" />
+      <circle cx="352" cy="256" r="6" fill="#243044" />
+      <g class="flutter" style="transform-origin: 352px 260px">
+        <path d="M352 260 l -58 9 l 58 15 z" fill="#e8604f" stroke="#a23427" stroke-width="3.5" stroke-linejoin="round" />
+      </g>
+    </g>
+
+    <!-- ======================= pelican ======================= -->
+    <!-- far leg -->
+    <g class="leg-far">
+      <path d="M506 322 q 16 32 6 58 q -6 18 4 32" fill="none" stroke="#c9832f" stroke-width="18" stroke-linecap="round" />
+    </g>
+
+    <!-- body -->
+    <ellipse cx="500" cy="282" rx="86" ry="71" fill="#fffdf6" stroke="#22304a" stroke-width="5" />
+    <path d="M556 234 q 42 42 12 92 q -22 32 -58 24 q 40 -50 46 -116 z" fill="#f0ece0" />
+
+    <!-- tail feathers -->
+    <path d="M424 262 q -34 -16 -56 -6 q 22 12 24 26 q 20 -6 32 -4 z" fill="#fffdf6" stroke="#22304a" stroke-width="4" stroke-linejoin="round" />
+    <path d="M420 292 q -28 6 -42 20 q 22 4 30 14 q 12 -16 12 -34 z" fill="#f4f0e4" stroke="#22304a" stroke-width="4" stroke-linejoin="round" />
+
+    <!-- neck -->
+    <path d="M544 244 q 26 -40 56 -58 l 46 38 q -30 34 -60 54 z" fill="#fffdf6" stroke="#22304a" stroke-width="5" stroke-linejoin="round" />
+
+    <!-- head -->
+    <circle cx="642" cy="178" r="46" fill="#fffdf6" stroke="#22304a" stroke-width="5" />
+
+    <!-- beak -->
+    <path d="M680 162 q 92 -8 172 18 q -78 14 -170 12 z" fill="url(#beak)" stroke="#22304a" stroke-width="5" stroke-linejoin="round" />
+    <path d="M686 192 q 68 64 120 50 q 38 -12 44 -44 q -80 20 -164 -6 z" fill="#ffcf6b" stroke="#22304a" stroke-width="5" stroke-linejoin="round" />
+    <path d="M696 196 q 70 44 114 32" fill="none" stroke="#d99a4a" stroke-width="3" opacity="0.65" />
+
+    <!-- eye -->
+    <g class="eye">
+      <circle cx="656" cy="166" r="8.6" fill="#1c2333" />
+      <circle cx="659" cy="163" r="2.8" fill="#ffffff" />
+    </g>
+
+    <!-- straw hat -->
+    <g>
+      <ellipse cx="640" cy="138" rx="62" ry="15" fill="#efd08c" stroke="#8a6a2c" stroke-width="4" />
+      <path d="M604 136 q 4 -40 38 -40 q 34 0 38 40 q -38 10 -76 0 z" fill="#f7dfa5" stroke="#8a6a2c" stroke-width="4" />
+      <path d="M606 122 q 36 10 74 0" fill="none" stroke="#e8604f" stroke-width="9" />
+      <circle cx="672" cy="120" r="6" fill="#e8604f" stroke="#a23427" stroke-width="2.5" />
+    </g>
+
+    <!-- near wing, holding the bar -->
+    <g>
+      <path d="M548 246 q 60 8 102 56 q 22 24 50 26" fill="none" stroke="#22304a" stroke-width="36" stroke-linecap="round" />
+      <path d="M548 246 q 60 8 102 56 q 22 24 50 26" fill="none" stroke="#fbf8ee" stroke-width="28" stroke-linecap="round" />
+      <path d="M588 274 q 40 16 64 44 q 12 14 30 18" fill="none" stroke="#d8d2c2" stroke-width="4" opacity="0.9" />
+      <path d="M684 320 q 18 12 34 12 q -8 -18 -24 -26 z" fill="#fbf8ee" stroke="#22304a" stroke-width="3.5" stroke-linejoin="round" />
+      <circle cx="716" cy="330" r="12" fill="#fffdf6" stroke="#22304a" stroke-width="4" />
+    </g>
+
+    <!-- near leg -->
+    <g class="leg">
+      <path d="M528 328 q 30 22 34 54 q 2 22 26 44" fill="none" stroke="#f6a33c" stroke-width="22" stroke-linecap="round" />
+      <path d="M528 328 q 30 22 34 54 q 2 22 26 44" fill="none" stroke="#d3832c" stroke-width="6" opacity="0.3" stroke-linecap="round" />
+    </g>
+
+    <!-- cranks, pedals, feet -->
+    <g class="crank">
+      <line x1="560" y1="458" x2="596" y2="458" stroke="#20303f" stroke-width="10" stroke-linecap="round" />
+      <line x1="560" y1="458" x2="524" y2="458" stroke="#20303f" stroke-width="10" stroke-linecap="round" />
+      <g class="pedal" transform="translate(0 0)">
+        <rect x="580" y="453" width="34" height="10" rx="4" fill="#20303f" />
+        <ellipse cx="597" cy="443" rx="19" ry="10" fill="#f6a33c" stroke="#22304a" stroke-width="3.5" />
+      </g>
+      <g class="pedal">
+        <rect x="508" y="453" width="34" height="10" rx="4" fill="#16202c" />
+        <ellipse cx="525" cy="443" rx="19" ry="10" fill="#c9832f" stroke="#22304a" stroke-width="3.5" />
+      </g>
+    </g>
+
+    <!-- a butterfly keeping pace beside the basket.
+         The outer group parks it where it should sit if motion is off or
+         unsupported; the inner group flies a small closed loop from there. -->
+    <g transform="translate(884 236)">
+      <g>
+        <ellipse cx="-12" cy="-6" rx="14" ry="9.5" fill="#ffb3d1" stroke="#8d3f63" stroke-width="2.5" transform="rotate(-20 -12 -6)" />
+        <ellipse cx="12"  cy="-6" rx="14" ry="9.5" fill="#ffd0e2" stroke="#8d3f63" stroke-width="2.5" transform="rotate(20 12 -6)" />
+        <ellipse cx="-9"  cy="7"  rx="9.5" ry="7" fill="#ffd0e2" stroke="#8d3f63" stroke-width="2.5" transform="rotate(16 -9 7)" />
+        <ellipse cx="9"   cy="7"  rx="9.5" ry="7" fill="#ffb3d1" stroke="#8d3f63" stroke-width="2.5" transform="rotate(-16 9 7)" />
+        <path d="M0 -13 q 3 13 0 24" fill="none" stroke="#5d3a2c" stroke-width="3.4" stroke-linecap="round" />
+        <path d="M-1 -13 q -7 -8 -12 -10 M1 -13 q 7 -8 12 -10" fill="none" stroke="#5d3a2c" stroke-width="2.2" stroke-linecap="round" />
+        <animateMotion dur="6.5s" repeatCount="indefinite"
+          path="M0 0 q 26 -34 50 -6 q 18 24 -14 32 q -34 8 -36 -26 z" />
+      </g>
+    </g>
+  </g>
+
+  <!-- speed lines trailing the back wheel -->
+  <g stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity="0.45">
+    <line x1="236" y1="452" x2="296" y2="452" />
+    <line x1="206" y1="484" x2="280" y2="484" />
+    <line x1="252" y1="516" x2="304" y2="516" />
+  </g>
+</svg>
+</body>
+</html>
