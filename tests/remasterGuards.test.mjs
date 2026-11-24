@@ -229,3 +229,74 @@ test("v2.2: rejects spawning a fake bed prop on the 1st floor with FAKE_GROUND_F
   const { issues } = validateEpisode(ep, { ...opts, autoFix: false });
   assert.ok(issues.some((i) => i.code === "FAKE_GROUND_FLOOR_BED" && i.severity === "error"));
 });
+
+
+test("v3.0: flags thought bubbles with no physical acting via BUBBLE_WITHOUT_ACTING", () => {
+  const ep = {
+    title: "Lazy Bubble",
+    playerSpawn: "living_room_view",
+    cast: [{ id: "granny", asset: "granny", spawn: "living_room_left" }],
+    props: [],
+    skits: [
+      {
+        name: "S1",
+        beats: [
+          { at: 1.0, type: "char_bubble", actor: "granny", icon: "food", duration: 1.5 },
+          { at: 3.5, type: "fade", to: 1, duration: 0.5 },
+        ],
+      },
+    ],
+  };
+  const { issues } = validateEpisode(ep, { ...opts, autoFix: false });
+  assert.ok(issues.some((i) => i.code === "BUBBLE_WITHOUT_ACTING"));
+});
+
+test("v3.0: flags magically popping props without arm acting or glide via LAZY_PROP_POP", () => {
+  const ep = {
+    title: "Magic Prop Pop",
+    playerSpawn: "dining_center",
+    cast: [{ id: "granny", asset: "granny", spawn: "kitchen" }],
+    props: [{ id: "plate", type: "breakfast_plate", spawn: "dining_table_top", visible: false }],
+    skits: [
+      {
+        name: "S1",
+        beats: [
+          { at: 1.5, type: "prop_action", prop: "plate", action: "place", waypoint: "dining_table_top" },
+          { at: 3.0, type: "fade", to: 1, duration: 0.5 },
+        ],
+      },
+    ],
+  };
+  const { issues } = validateEpisode(ep, { ...opts, autoFix: false });
+  assert.ok(issues.some((i) => i.code === "LAZY_PROP_POP"));
+});
+
+
+test("v3.1: validates declarative custom props and rejects empty/invalid custom parts", () => {
+  const validCustom = {
+    title: "Valid Custom Car",
+    playerSpawn: "living_room_view",
+    cast: [{ id: "grandpa", asset: "grandpa", spawn: "grandpa_chest_side" }],
+    props: [
+      {
+        id: "toy_car",
+        type: "custom",
+        spawn: "chest_spot",
+        parts: [
+          { shape: "box", size: [0.4, 0.14, 0.22], pos: [0, 0.08, 0], color: 0xdc2626 },
+          { shape: "cylinder", size: [0.05, 0.05, 0.04], pos: [0.12, 0.04, 0.11], color: 0x111827 },
+        ],
+      },
+    ],
+    skits: [{ name: "S1", beats: [{ at: 1.0, type: "fade", to: 1, duration: 0.5 }] }],
+  };
+  const okRes = validateEpisode(validCustom, { ...opts, autoFix: false });
+  assert.equal(okRes.issues.some((i) => i.code === "INVALID_CUSTOM_PROP" || i.code === "UNKNOWN_PROP_TYPE"), false);
+
+  const badCustom = {
+    ...validCustom,
+    props: [{ id: "empty_prop", type: "custom", spawn: "chest_spot", parts: [] }],
+  };
+  const badRes = validateEpisode(badCustom, { ...opts, autoFix: false });
+  assert.ok(badRes.issues.some((i) => i.code === "INVALID_CUSTOM_PROP" && i.severity === "error"));
+});

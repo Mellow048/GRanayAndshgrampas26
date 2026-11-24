@@ -10,6 +10,7 @@ import {
   kickabout,
   talkSofa,
   cookiePayback,
+  breakfastSurprise,
 } from "./gags/index.js";
 
 export const COMEDY_VARIETY_1M = buildEpisode({
@@ -158,4 +159,9 @@ export const ROCKET_BALL_x3 = buildEpisode({
     ballRace({ location: "living_to_hall", victim: "granny", chaser: "grandpa" }),
     ballRace({ location: "foyer_to_dining" }),
   ],
+});
+
+export const BREAKFAST_SURPRISE_20S = buildEpisode({
+  title: "Granny's Breakfast Surprise (20s Physical Acting Reference)",
+  gags: [breakfastSurprise({})],
 });

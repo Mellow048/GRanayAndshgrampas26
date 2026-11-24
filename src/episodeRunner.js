@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { isHeadGesture } from "./headGestures.js";
+import { isArmGesture } from "./armGestures.js";
 import { CONFIG, SET_MAP, NAV_GRAPH } from "./config.js";
 import { route as planFloorRoute, snap as snapToFloor } from "./nav/houseNav.js";
 import { findTaggedObject, getObjectBounds } from "./assetLoader.js";
@@ -1128,6 +1129,27 @@ export class EpisodeRunner {
     }
 
     // 5. Update 3D Comedy Props
+    // Sync hand-attached props directly to their actor's live hand bone (zero drift!)
+    if (this.comedyProps?.props) {
+      for (const entry of this.comedyProps.props.values()) {
+        const actorId = entry.state?.attachedActor;
+        if (!actorId) continue;
+        const holder = this.characters[actorId];
+        if (!holder) continue;
+        const handPos = holder.getHandWorldPosition?.(new THREE.Vector3());
+        if (!handPos) continue;
+        const off = entry.state.attachOffset || [0, 0.04, 0.22];
+        const yaw = holder.root.rotation.y || 0;
+        const sinY = Math.sin(yaw);
+        const cosY = Math.cos(yaw);
+        const wx = handPos.x + off[0] * cosY + off[2] * sinY;
+        const wy = handPos.y + off[1];
+        const wz = handPos.z - off[0] * sinY + off[2] * cosY;
+        entry.basePos.set(wx, wy, wz);
+        entry.mesh.position.set(wx, wy, wz);
+        entry.mesh.rotation.y = yaw;
+      }
+    }
     this.comedyProps?.update(dt, playerCamPos);
 
     // 6. Advance SFX Pacer & movement footsteps
@@ -1338,6 +1360,25 @@ export class EpisodeRunner {
       return this._waitSim(waitDur, runToken);
     }
 
+    if (type === "char_arm") {
+      const actor = this.characters[ev.actor];
+      if (!actor) return;
+      this._faceActorToCamera(actor, ev);
+      const dur = ev.duration ?? 1.4;
+      actor.playArmGesture?.(ev.gesture || "custom", {
+        duration: dur,
+        amplitude: ev.amplitude,
+        cycles: ev.cycles,
+        rUpper: ev.rUpper,
+        rFore: ev.rFore,
+        lUpper: ev.lUpper,
+        lFore: ev.lFore,
+        spine: ev.spine,
+        oscillate: ev.oscillate,
+      });
+      return this._waitSim(dur, runToken);
+    }
+
     if (type === "char_gesture") {
       // Fire-and-forget: the gesture layers onto the current clip, so a beat
       // after it is not delayed. Use `anim: "nod"` instead if you *want* a wait.
@@ -1524,19 +1565,44 @@ export class EpisodeRunner {
     }
 
     if (type === "prop_action") {
-      this.comedyProps?.performAction(ev.prop, ev.action, {
+      const params = {
         at: ev.waypoint,
+        waypoint: ev.waypoint,
+        actor: ev.actor,
+        offset: ev.offset,
+        from: ev.from,
         to: ev.to,
+        arc: ev.arc,
+        enabled: ev.enabled,
+        seat: ev.seat,
         travelDuration: ev.travelDuration,
         targetY: ev.targetY,
         duration: ev.duration,
-        yOffset: ev.yOffset ?? (ev.action === "reset" ? 0 : 0.25),
+        // Only pop_out defaults to a +0.25m launch lift; place/show/glide/reset sit cleanly at 0.
+        yOffset: ev.yOffset ?? (ev.action === "pop_out" ? 0.25 : 0),
         rotationY: ev.rotationY,
         scale: ev.scale,
         visible: ev.visible,
         spin: ev.spin,
         float: ev.float,
-      });
+      };
+      if (ev.action === "glide") {
+        if (ev.fromActor && this.characters[ev.fromActor]) {
+          params.fromPos = this.characters[ev.fromActor].getHandWorldPosition?.() || null;
+        }
+        if (typeof ev.to === "string" && this.characters[ev.to]) {
+          const targetActor = this.characters[ev.to];
+          const headPos = targetActor.getHeadWorldPosition(new THREE.Vector3());
+          const yaw = targetActor.root.rotation.y || 0;
+          const noseOffset = ev.targetHeight === "nose" ? -0.05 : 0.0;
+          params.toPos = {
+            x: headPos.x + Math.sin(yaw) * 0.34,
+            y: headPos.y + noseOffset,
+            z: headPos.z + Math.cos(yaw) * 0.34,
+          };
+        }
+      }
+      this.comedyProps?.performAction(ev.prop, ev.action, params);
       return this._waitSim(ev.duration ?? 0, runToken);
     }
 

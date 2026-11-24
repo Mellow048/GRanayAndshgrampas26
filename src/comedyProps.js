@@ -329,7 +329,7 @@ function makeEmojiFaceTexture(angry = false) {
  * Builds reusable low-poly cartoon slapstick props (Golden Key, Padlock,
  * Opening Treasure Chest, Emoji Ball, Toy Blaster, Cookie Jar).
  */
-export function createPropMesh(propType) {
+export function createPropMesh(propType, def = null) {
   const group = new THREE.Group();
   group.name = `Prop_${propType}`;
 
@@ -652,6 +652,154 @@ export function createPropMesh(propType) {
       break;
     }
 
+    case "frying_pan": {
+      const ironMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.55, metalness: 0.65 });
+      const eggWhiteMat = new THREE.MeshStandardMaterial({ color: 0xfefce8, roughness: 0.4 });
+      const yolkMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.25 });
+      const pan = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.16, 0.045, 20), ironMat);
+      pan.position.y = 0.025;
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.022, 0.24), ironMat);
+      handle.position.set(0, 0.045, 0.26);
+      const eggWhite = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.09, 0.012, 16), eggWhiteMat);
+      eggWhite.position.set(-0.02, 0.05, -0.02);
+      const yolk = new THREE.Mesh(new THREE.SphereGeometry(0.034, 12, 10), yolkMat);
+      yolk.scale.set(1, 0.55, 1);
+      yolk.position.set(-0.02, 0.06, -0.02);
+      group.add(pan, handle, eggWhite, yolk);
+      const steamMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.48, roughness: 1 });
+      for (let i = 0; i < 3; i += 1) {
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(0.038 + i * 0.008, 8, 8), steamMat);
+        puff.name = `SteamPuff_${i}`;
+        puff.position.set((i - 1) * 0.04, 0.12 + i * 0.07, 0);
+        group.add(puff);
+      }
+      group.userData.hasSteam = true;
+      break;
+    }
+
+    case "breakfast_plate": {
+      const plateMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.22, metalness: 0.08 });
+      const pancakeMat = new THREE.MeshStandardMaterial({ color: 0xc27832, roughness: 0.78 });
+      const butterMat = new THREE.MeshStandardMaterial({ color: 0xfde047, roughness: 0.4 });
+      const baconMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.65 });
+      const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.16, 0.026, 22), plateMat);
+      plate.position.y = 0.013;
+      const p1 = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.095, 0.022, 16), pancakeMat);
+      p1.position.set(-0.04, 0.036, 0.01);
+      const p2 = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.022, 16), pancakeMat);
+      p2.position.set(-0.04, 0.058, 0.01);
+      const butter = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.016, 0.04), butterMat);
+      butter.position.set(-0.04, 0.075, 0.01);
+      const bacon1 = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.01, 0.14), baconMat);
+      bacon1.position.set(0.08, 0.032, 0.02);
+      bacon1.rotation.y = 0.22;
+      const bacon2 = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.01, 0.13), baconMat);
+      bacon2.position.set(0.11, 0.036, -0.01);
+      bacon2.rotation.y = -0.15;
+      group.add(plate, p1, p2, butter, bacon1, bacon2);
+      const steamMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, roughness: 1 });
+      for (let i = 0; i < 3; i += 1) {
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(0.036 + i * 0.008, 8, 8), steamMat);
+        puff.name = `SteamPuff_${i}`;
+        puff.position.set((i - 1) * 0.035, 0.14 + i * 0.08, 0);
+        group.add(puff);
+      }
+      group.userData.hasSteam = true;
+      break;
+    }
+
+    case "coffee_mug": {
+      const mugMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.28, metalness: 0.1 });
+      const coffeeMat = new THREE.MeshStandardMaterial({ color: 0x3b1f0e, roughness: 0.2 });
+      const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.052, 0.13, 18), mugMat);
+      cup.position.y = 0.065;
+      const coffee = new THREE.Mesh(new THREE.CylinderGeometry(0.051, 0.051, 0.01, 16), coffeeMat);
+      coffee.position.y = 0.122;
+      const handle = new THREE.Mesh(new THREE.TorusGeometry(0.036, 0.01, 8, 14, Math.PI), mugMat);
+      handle.position.set(0.056, 0.068, 0);
+      handle.rotation.z = -Math.PI * 0.5;
+      group.add(cup, coffee, handle);
+      const steamMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, roughness: 1 });
+      for (let i = 0; i < 2; i += 1) {
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(0.028 + i * 0.007, 8, 8), steamMat);
+        puff.name = `SteamPuff_${i}`;
+        puff.position.set((i - 0.5) * 0.025, 0.17 + i * 0.06, 0);
+        group.add(puff);
+      }
+      group.userData.hasSteam = true;
+      break;
+    }
+
+    case "serving_tray": {
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.72 });
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.024, 0.36), woodMat);
+      base.position.y = 0.012;
+      const rimL = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.05, 0.36), woodMat);
+      rimL.position.set(-0.25, 0.028, 0);
+      const rimR = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.05, 0.36), woodMat);
+      rimR.position.set(0.25, 0.028, 0);
+      group.add(base, rimL, rimR);
+      break;
+    }
+
+    case "pillow": {
+      const fabricMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.92 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.14, 0.36), fabricMat);
+      body.position.y = 0.07;
+      group.add(body);
+      break;
+    }
+
+    case "custom": {
+      const parts = Array.isArray(def?.parts) ? def.parts : [];
+      for (let i = 0; i < parts.length; i += 1) {
+        const p = parts[i] || {};
+        const sz = Array.isArray(p.size) ? p.size : [0.2, 0.2, 0.2];
+        let geom;
+        switch (p.shape) {
+          case "cylinder":
+            geom = new THREE.CylinderGeometry(sz[0] ?? 0.1, sz[1] ?? sz[0] ?? 0.1, sz[2] ?? 0.2, 16);
+            break;
+          case "sphere":
+            geom = new THREE.SphereGeometry(sz[0] ?? 0.12, 14, 12);
+            break;
+          case "cone":
+            geom = new THREE.ConeGeometry(sz[0] ?? 0.12, sz[1] ?? 0.24, 16);
+            break;
+          case "torus":
+            geom = new THREE.TorusGeometry(sz[0] ?? 0.12, sz[1] ?? 0.03, 10, 18);
+            break;
+          case "box":
+          default:
+            geom = new THREE.BoxGeometry(sz[0] ?? 0.2, sz[1] ?? 0.2, sz[2] ?? 0.2);
+            break;
+        }
+        const mat = new THREE.MeshStandardMaterial({
+          color: p.color ?? 0x94a3b8,
+          roughness: p.roughness ?? 0.55,
+          metalness: p.metalness ?? 0.1,
+          transparent: (p.opacity ?? 1) < 1,
+          opacity: p.opacity ?? 1,
+        });
+        const m = new THREE.Mesh(geom, mat);
+        m.name = p.name || `CustomPart_${i}`;
+        if (Array.isArray(p.pos)) m.position.set(p.pos[0] || 0, p.pos[1] || 0, p.pos[2] || 0);
+        if (Array.isArray(p.rot)) m.rotation.set(p.rot[0] || 0, p.rot[1] || 0, p.rot[2] || 0);
+        group.add(m);
+      }
+      if (def?.steam) {
+        const steamMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.48, roughness: 1 });
+        for (let i = 0; i < 3; i += 1) {
+          const puff = new THREE.Mesh(new THREE.SphereGeometry(0.036 + i * 0.008, 8, 8), steamMat);
+          puff.name = `SteamPuff_${i}`;
+          puff.position.set((i - 1) * 0.035, 0.14 + i * 0.08, 0);
+          group.add(puff);
+        }
+        group.userData.hasSteam = true;
+      }
+      break;
+    }
+
     case "cookie_jar":
     default: {
       if (propType !== "cookie_jar") {
@@ -798,7 +946,7 @@ export class ComedyPropManager {
   loadProps(propDefs = []) {
     this.clear();
     for (const def of propDefs) {
-      const mesh = createPropMesh(def.type);
+      const mesh = createPropMesh(def.type, def);
       const propTag = def.tag || def.id;
       const propLabel = def.label || def.id;
       mesh.name = `Prop_${def.id}`;
@@ -862,6 +1010,15 @@ export class ComedyPropManager {
           riseTargetY: basePos.y,
           riseElapsed: 0,
           riseDuration: 1,
+          glideActive: false,
+          glideStartPos: null,
+          glideEndPos: null,
+          glideElapsed: 0,
+          glideDuration: 1,
+          glideArc: 0.12,
+          steamOn: Boolean(mesh.userData.hasSteam || def.steam),
+          attachedActor: null,
+          attachOffset: [0, 0.04, 0.22],
           phase: 0,
         },
       });
@@ -943,12 +1100,63 @@ export class ComedyPropManager {
       case "hide":
       case "pickup":
         mesh.visible = false;
+        state.attachedActor = null;
         state.bounce = false;
         state.popOut = false;
         state.spin = false;
         break;
+      case "steam":
+        mesh.visible = true;
+        state.steamOn = params.enabled !== false;
+        break;
+      case "attach":
+        mesh.visible = true;
+        state.bounce = false;
+        state.popOut = false;
+        state.glideActive = false;
+        state.spin = false;
+        state.float = false;
+        state.attachedActor = params.actor || null;
+        state.attachOffset = Array.isArray(params.offset) ? params.offset : [0, 0.04, 0.22];
+        break;
+      case "detach":
+        state.attachedActor = null;
+        break;
+      case "glide": {
+        mesh.visible = true;
+        state.attachedActor = null;
+        state.bounce = false;
+        state.popOut = false;
+        state.spin = false;
+        state.float = false;
+        if (params.fromPos) {
+          basePos.set(params.fromPos.x, params.fromPos.y, params.fromPos.z);
+          mesh.position.copy(basePos);
+        } else if (params.from && this.waypoints[params.from]) {
+          const fwp = this.waypoints[params.from];
+          basePos.set(fwp.x, fwp.y + (params.yOffset || 0), fwp.z);
+          mesh.position.copy(basePos);
+        }
+        let endVec = null;
+        if (params.toPos) {
+          endVec = new THREE.Vector3(params.toPos.x, params.toPos.y, params.toPos.z);
+        } else if (params.to && this.waypoints[params.to]) {
+          const dst = this.waypoints[params.to];
+          endVec = new THREE.Vector3(dst.x, dst.y + (params.yOffset || 0), dst.z);
+        }
+        if (endVec) {
+          state.glideActive = true;
+          state.glideStartPos = mesh.position.clone();
+          state.glideEndPos = endVec;
+          state.glideElapsed = 0;
+          state.glideDuration = Math.max(0.2, Number(params.duration) || 1.0);
+          state.glideArc = Number.isFinite(params.arc) ? Number(params.arc) : 0.12;
+        }
+        break;
+      }
       case "place": {
         mesh.visible = true;
+        state.attachedActor = null;
         state.bounce = false;
         state.popOut = false;
         state.spin = false;
@@ -1073,6 +1281,33 @@ export class ComedyPropManager {
         basePos.lerpVectors(state.popStartPos, state.popEndPos, u);
         mesh.position.x = basePos.x;
         mesh.position.z = basePos.z;
+      }
+
+      if (state.glideActive && state.glideStartPos && state.glideEndPos) {
+        state.glideElapsed += dt;
+        const gt = Math.min(1, state.glideElapsed / Math.max(0.05, state.glideDuration));
+        const ease = gt < 0.5 ? 2 * gt * gt : 1 - Math.pow(-2 * gt + 2, 2) / 2;
+        mesh.position.lerpVectors(state.glideStartPos, state.glideEndPos, ease);
+        mesh.position.y += Math.sin(gt * Math.PI) * state.glideArc;
+        if (gt >= 1) {
+          state.glideActive = false;
+          basePos.copy(state.glideEndPos);
+          mesh.position.copy(basePos);
+        }
+      }
+
+      if (state.steamOn) {
+        for (let i = 0; i < 3; i += 1) {
+          const puff = mesh.getObjectByName(`SteamPuff_${i}`);
+          if (!puff) continue;
+          puff.visible = true;
+          const cycle = (state.phase * 0.75 + i * 0.33) % 1;
+          puff.position.y = 0.11 + cycle * 0.28;
+          puff.position.x = Math.sin(state.phase * 2.2 + i * 2.1) * 0.035;
+          const sc = 0.65 + cycle * 0.85;
+          puff.scale.setScalar(sc);
+          if (puff.material) puff.material.opacity = Math.sin(cycle * Math.PI) * 0.5;
+        }
       }
 
       if (state.riseActive) {

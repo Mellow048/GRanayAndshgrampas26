@@ -13,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ASSET_MANIFEST, EPISODE_PRESETS } from "./config.js";
 import { HEAD_GESTURES, isHeadGesture } from "./headGestures.js";
+import { ARM_GESTURES, isArmGesture } from "./armGestures.js";
 import { PROP_TYPES, BEAT_TYPES } from "./schema.js";
 
 export { PROP_TYPES, BEAT_TYPES };
@@ -25,6 +26,7 @@ const BEAT_NOTES = {
   anim: "play an animation on an actor (alias of char_anim)",
   char_anim: "play an animation on an actor; waits for it unless duration is given",
   char_gesture: "layer a head gesture on an actor *without* interrupting its clip",
+  char_arm: "layer a procedural arm/upper-body acting gesture (stir | offer | carry | place_down | wave | point | sniff)",
   char_prop: "put a comedy prop in an actor's hand (null to drop it)",
   char_prop_action: "act on the prop already in hand: bite | hide",
   char_move: "walk/move an actor along the nav graph",
@@ -39,7 +41,7 @@ const BEAT_NOTES = {
   player_hold: "put a prop in the player's hands / use it",
   fade: "fade the frame to a colour",
   cut: "hard camera cut",
-  prop_action: "drive a placed scene prop: show | hide | pickup | place | open | close | bounce | bite | pop_out | stop",
+  prop_action: "drive a placed scene prop: show | hide | pickup | place | glide | steam | open | close | bounce | bite | pop_out | stop",
   bgm: "start a music bed",
   stop_bgm: "stop the music bed",
   sfx: "fire a one-shot sound effect",
@@ -61,6 +63,15 @@ export function listAnimations() {
     loop: def.loop !== false,
     speed: def.defaultSpeed ?? 1,
     duration: def.duration ?? null,
+  }));
+}
+
+export function listArmGestures() {
+  return Object.entries(ARM_GESTURES).map(([name, spec]) => ({
+    name,
+    cycles: spec.cycles,
+    hold: Boolean(spec.hold),
+    label: spec.label,
   }));
 }
 
@@ -102,6 +113,7 @@ export function buildCatalog() {
     generatedFrom: "src/config.js + src/headGestures.js",
     animations,
     gestures: listGestures(),
+    armGestures: listArmGestures(),
     props: listProps(),
     beats: listBeats(),
     presets: listPresets(),
@@ -118,5 +130,5 @@ export function buildCatalog() {
 
 /** True when `name` may be written in an `anim` field. */
 export function isKnownAnimation(name) {
-  return Object.prototype.hasOwnProperty.call(ASSET_MANIFEST.animations, name) || isHeadGesture(name);
+  return Object.prototype.hasOwnProperty.call(ASSET_MANIFEST.animations, name) || isHeadGesture(name) || isArmGesture(name);
 }

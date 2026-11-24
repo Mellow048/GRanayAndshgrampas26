@@ -20,7 +20,15 @@ export const PROP_TYPES = [
   "soda_can",
   "bed",
   "shelf",
+  "frying_pan",
+  "breakfast_plate",
+  "coffee_mug",
+  "serving_tray",
+  "pillow",
+  "custom",
 ];
+
+export const CUSTOM_PART_SHAPES = new Set(["box", "cylinder", "sphere", "cone", "torus"]);
 
 export const PROP_TYPE_SET = new Set(PROP_TYPES);
 
@@ -32,6 +40,7 @@ export const BEAT_TYPES = [
   "char_face",
   "face",
   "char_gesture",
+  "char_arm",
   "char_move",
   "move",
   "char_prop",
@@ -58,6 +67,10 @@ export const PROP_ACTIONS = [
   "hide",
   "pickup",
   "place",
+  "glide",
+  "attach",
+  "detach",
+  "steam",
   "open",
   "close",
   "press",

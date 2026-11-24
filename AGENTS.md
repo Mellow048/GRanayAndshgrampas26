@@ -107,3 +107,29 @@ gh workflow run export-video.yml -f preset=mountain_dew_run -f fps=30 -f format=
 5. **Never spawn actors on narrow tables (`ACTOR_ON_NARROW_TABLE`):** Spawn actors on floor waypoints beside tables; elevated landings automatically seat via live bounding-box bottom (`seatOnSurface`).
 6. **Held FPS items (`player_hold`):** Reserved for handheld items (auto-normalized to `0.26m` max viewmodel size so custom props never fill half the screen).
 7. **Kid-safe defaults & clean audio:** Granny's `BatBloody` is hidden by default unless `prop: "bat"` is explicitly passed; random phantom `pop`/`ding`/`click` audio gap-spam is disabled; idle actors have subtle breathing/sway; `player_pose: "lie"` roll is clamped to `[-0.30, +0.30]` so the camera never clips into the sky void.
+
+---
+
+## 8. v3.0 Expressive Physical Acting ("Show, Don't Tell")
+
+Never leave actors standing motionless with a thought bubble or teleport props out of thin air (`BUBBLE_WITHOUT_ACTING` & `LAZY_PROP_POP`):
+
+- **Procedural arm & upper-body acting (`char_arm`):** Layer on top of any clip (no FBX needed):
+  - `stir` (cooking/stirring), `offer` / `reach_out` (holding food/item right up to someone's face), `carry` (holding a tray/plate with both arms), `place_down` (setting down on a table), `wave`, `point`, `sniff` (leaning in to smell hot food).
+- **Smooth physical prop motion (`prop_action: "glide"`):** Glides a prop along a curved arc from a counter or actor's hand (`fromActor`) directly to a table waypoint OR right under another actor's nose (`to: "grandpa", targetHeight: "nose"`).
+- **Everyday storytelling props (with animated rising steam):** `frying_pan`, `breakfast_plate`, `coffee_mug`, `serving_tray`, `pillow`.
+- **Gold-standard reference:** Read `src/gags/breakfastSurprise.js` (`preset=breakfast_surprise_20s`) before writing any cooking, serving, or object-interaction scene.
+
+---
+
+## 9. v3.1 Out-of-the-Box Primitives (Zero Engine Edits Required)
+
+1. **Invent ANY 3D prop inline (`type: "custom"`):** Never edit `comedyProps.js` just to add a toy car, cake, pizza box, or broom. Declare `parts: [{ shape: "box"|"cylinder"|"sphere"|"cone"|"torus", size: [...], pos: [...], rot?: [...], color: 0x... }]` (plus optional `steam: true`) directly inside `props: [...]`.
+2. **Lock props to live hands (`prop_action: "attach"` / `"detach"`):** Attach any prop to an actor's hand (`{ type: "prop_action", prop: "plate", action: "attach", actor: "granny", offset: [0, 0.05, 0.24] }`) so it moves 100% locked to their hand while walking and turning, then `glide` or `place` it smoothly.
+3. **Invent ANY arm/torso motion inline (`char_arm` with `gesture: "custom"`):** Pass `rUpper`, `rFore`, `lUpper`, `lFore`, `spine` (`[x, y, z]` radians) + optional `oscillate: [x, y, z]` and `cycles` right inside a `char_arm` beat.
+4. **High-level physical macros (`src/gags/helpers.js`):** Use `cookAndServe()`, `handItemTo()`, and `dialogueExchange()` to author rich physical scenes in 1 line.
+5. **Instant scaffolding & strict zero-warning gate:**
+   ```bash
+   npm run new:episode -- --name my_scene --mode gag   # or --mode show
+   npm run validate:strict -- --preset <your_preset>   # fails on ANY error OR warning
+   ```

@@ -26,7 +26,7 @@ import {
   isEmbedded,
 } from "./stagingSafety.js";
 import { route as planFloorRoute, validateRoute, snap as snapToFloor } from "./nav/houseNav.js";
-import { PROP_TYPE_SET, BEAT_TYPE_SET } from "./schema.js";
+import { PROP_TYPE_SET, BEAT_TYPE_SET, CUSTOM_PART_SHAPES } from "./schema.js";
 
 /* ------------------------------------------------------------------ *
  * Tunables
@@ -1193,9 +1193,28 @@ export function validateEpisode(episode, options = {}) {
     if (prop?.type && !PROP_TYPE_SET.has(prop.type)) {
       issues.push(
         issue("UNKNOWN_PROP_TYPE", "error", 0, `Prop "${prop.id}" uses unknown type "${prop.type}" — runtime has no mesh for it.`, {
-          ...fixNote(false, `Use a registered prop type from \`npm run catalogue\` (${[...PROP_TYPE_SET].join(", ")}).`),
+          ...fixNote(false, `Use a registered prop type or type: "custom" with a parts array.`),
         })
       );
+    }
+    if (prop?.type === "custom") {
+      if (!Array.isArray(prop.parts) || prop.parts.length === 0) {
+        issues.push(
+          issue("INVALID_CUSTOM_PROP", "error", 0, `Custom prop "${prop.id}" has no parts array — nothing will render.`, {
+            ...fixNote(false, 'Add parts: [{ shape: "box"|"cylinder"|"sphere"|"cone"|"torus", size: [...], pos: [...], color: 0x... }].'),
+          })
+        );
+      } else {
+        for (const part of prop.parts) {
+          if (part?.shape && !CUSTOM_PART_SHAPES.has(part.shape)) {
+            issues.push(
+              issue("INVALID_CUSTOM_PROP", "error", 0, `Custom prop "${prop.id}" uses unknown part shape "${part.shape}".`, {
+                ...fixNote(false, `Allowed shapes: ${[...CUSTOM_PART_SHAPES].join(", ")}.`),
+              })
+            );
+          }
+        }
+      }
     }
     if (prop?.type === "bed") {
       const wp = setMap[prop.spawn || prop.waypoint];
@@ -1449,6 +1468,40 @@ export function validateEpisode(episode, options = {}) {
       } else {
         emptyRunStart = null;
         reportedEmpty = false;
+      }
+    }
+  }
+
+  /* ---------------- 7d. Show-Don't-Tell Anti-Laziness Guards ---------------- */
+  for (const beat of beats) {
+    const at = Number(beat.at) || 0;
+    if (beat.type === "char_bubble" && beat.actor) {
+      const hasActing = beats.some(
+        (b) =>
+          b.actor === beat.actor &&
+          ["char_anim", "anim", "char_arm", "char_gesture", "char_move", "move"].includes(b.type) &&
+          Math.abs((Number(b.at) || 0) - at) <= 1.6
+      );
+      if (!hasActing) {
+        issues.push(
+          issue("BUBBLE_WITHOUT_ACTING", "warn", at, `"${beat.actor}" shows a "${beat.icon}" bubble without any physical animation or arm/head gesture within 1.6s.`, {
+            ...fixNote(false, "Pair thought bubbles with visible physical acting (`char_arm`, `char_gesture`, or `char_anim`) so viewers see what is happening."),
+          })
+        );
+      }
+    }
+    if (beat.type === "prop_action" && (beat.action === "show" || beat.action === "place") && at > 0.5) {
+      const hasHandMotion = beats.some(
+        (b) =>
+          (b.type === "char_arm" || b.type === "player_hold" || (b.type === "prop_action" && (b.action === "glide" || b.action === "attach"))) &&
+          Math.abs((Number(b.at) || 0) - at) <= 1.5
+      );
+      if (!hasHandMotion) {
+        issues.push(
+          issue("LAZY_PROP_POP", "warn", at, `Prop "${beat.prop}" pops in via "${beat.action}" with no arm gesture or smooth glide — looks like magic teleportation.`, {
+            ...fixNote(false, 'Use `char_arm` (`offer` / `place_down` / `stir`) + `prop_action: "glide"` to show the prop physically moving into place.'),
+          })
+        );
       }
     }
   }

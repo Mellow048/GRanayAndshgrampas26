@@ -3,7 +3,7 @@
  * validate-episode.mjs — run the staging rules over an episode before rendering.
  *
  *   node scripts/validate-episode.mjs                        # every preset
- *   node scripts/validate-episode.mjs --preset cookie_marathon_150s
+ *   node scripts/validate-episode.mjs --preset floor_is_lava_4m
  *   node scripts/validate-episode.mjs --file scripts/out/my-episode.json
  *   node scripts/validate-episode.mjs --json                 # machine readable
  *   node scripts/validate-episode.mjs --no-fix               # report only
@@ -26,6 +26,7 @@ const value = (flag) => {
 };
 
 const asJson = has("--json");
+const strict = has("--strict");
 const autoFix = !has("--no-fix");
 const outPath = value("--out");
 const filePath = value("--file");
@@ -61,7 +62,7 @@ for (const target of targets) {
   if (result.repaired) console.log("(repaired episode is what the renderer will play)");
   console.log(formatStoryReport(story));
 
-  worst = Math.max(worst, result.stats.errorsAfter + storyErrors);
+  worst = Math.max(worst, result.stats.errorsAfter + storyErrors + (strict ? result.stats.warningsAfter : 0));
 }
 
 if (asJson) {

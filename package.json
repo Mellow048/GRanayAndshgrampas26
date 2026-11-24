@@ -6,6 +6,8 @@
   "description": "First-person POV kids-comedy 3D cartoon studio (zero-build Three.js).",
   "scripts": {
     "validate:episode": "node scripts/validate-episode.mjs",
+    "validate:strict": "node scripts/validate-episode.mjs --strict",
+    "new:episode": "node scripts/new-episode.mjs",
     "story": "node scripts/audit-story.mjs",
     "probe": "node scripts/export-video.mjs --probe",
     "test": "node --test tests/*.test.mjs",

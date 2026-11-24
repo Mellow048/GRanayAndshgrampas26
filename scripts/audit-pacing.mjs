@@ -36,6 +36,8 @@ const VISUAL = new Set([
   "char_face",
   "face",
   "char_bubble",
+  "char_gesture",
+  "char_arm",
   "char_prop",
   "char_cut",
   "prop_action",

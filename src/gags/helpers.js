@@ -154,3 +154,53 @@ export function panic({ at, duration = 0.7, gesture = "shake_panic", sfx = null 
   if (sfx) beats.push({ at, type: "sfx", sound: sfx });
   return beats;
 }
+
+export function handItemTo({
+  at,
+  giver,
+  receiver,
+  prop,
+  targetHeight = "nose",
+  duration = 2.4,
+  sfx = "whoosh",
+} = {}) {
+  const beats = [
+    { at, type: "char_face", actor: giver, targetActor: receiver, duration: 0.2 },
+    { at: +(at + 0.1).toFixed(3), type: "char_arm", actor: giver, gesture: "offer", duration },
+    { at: +(at + 0.1).toFixed(3), type: "prop_action", prop, action: "glide", fromActor: giver, to: receiver, targetHeight, duration: Math.min(1.1, duration * 0.5), arc: 0.08 },
+    { at: +(at + 0.9).toFixed(3), type: "char_face", actor: receiver, targetActor: giver, duration: 0.2 },
+    { at: +(at + 1.0).toFixed(3), type: "char_arm", actor: receiver, gesture: targetHeight === "nose" ? "sniff" : "offer", duration: 1.4 },
+  ];
+  if (sfx) beats.push({ at: +(at + 0.2).toFixed(3), type: "sfx", sound: sfx, volume: 0.48 });
+  return beats;
+}
+
+export function cookAndServe({ at, chef = "granny", guest = "grandpa", plateProp, serveWp, tableWp } = {}) {
+  return [
+    { at, type: "char_arm", actor: chef, gesture: "stir", duration: 2.2 },
+    { at: +(at + 0.2).toFixed(3), type: "sfx", sound: "pop", volume: 0.5 },
+    { at: +(at + 2.3).toFixed(3), type: "prop_action", prop: plateProp, action: "attach", actor: chef, offset: [0, 0.05, 0.24] },
+    { at: +(at + 2.3).toFixed(3), type: "char_arm", actor: chef, gesture: "carry", duration: 2.2 },
+    { at: +(at + 2.3).toFixed(3), type: "char_move", actor: chef, to: serveWp, anim: "walk", duration: 2.0 },
+    ...handItemTo({ at: +(at + 4.5).toFixed(3), giver: chef, receiver: guest, prop: plateProp, targetHeight: "nose", duration: 2.4 }),
+    { at: +(at + 7.1).toFixed(3), type: "char_arm", actor: chef, gesture: "place_down", duration: 1.3 },
+    { at: +(at + 7.2).toFixed(3), type: "prop_action", prop: plateProp, action: "glide", to: tableWp, duration: 1.0, arc: 0.1 },
+    { at: +(at + 8.1).toFixed(3), type: "sfx", sound: "checkmark", volume: 0.55 },
+  ];
+}
+
+export function dialogueExchange({ at, a, b, turns = 3, step = 1.6, icons = ["question", "exclamation", "laugh"] } = {}) {
+  const beats = [];
+  for (let i = 0; i < turns; i += 1) {
+    const t = +(at + i * step).toFixed(3);
+    const speaker = i % 2 === 0 ? a : b;
+    const listener = i % 2 === 0 ? b : a;
+    beats.push(
+      { at: t, type: "char_face", actor: speaker, targetActor: listener, duration: 0.2 },
+      { at: t, type: "char_anim", actor: speaker, anim: "talk", loop: true, duration: step * 0.85 },
+      { at: +(t + 0.1).toFixed(3), type: "char_gesture", actor: speaker, gesture: i % 2 === 0 ? "nod" : "shake_no", duration: 0.9 },
+      { at: +(t + 0.1).toFixed(3), type: "char_bubble", actor: speaker, icon: icons[i % icons.length], duration: 1.2, facePlayer: false }
+    );
+  }
+  return beats;
+}

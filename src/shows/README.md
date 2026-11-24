@@ -119,9 +119,8 @@ Studio previews:
 
 - a route cannot cross a wall — there is no edge through it;
 - a route cannot float — the height of every point comes from the floor;
-- the two floors are connected by the built-in wooden staircase, so cross-floor
-  walks route through `stairs_bottom` → `stairs_top`; a route to somewhere with
-  no walkable link returns `null`, and the gate reports `NO_WALKABLE_ROUTE`.
+- a route to somewhere that does not exist (the second floor, with no
+  staircase) returns `null`, and the gate reports `NO_WALKABLE_ROUTE`.
 
 Write `to:` and let the router plan. **Do not hand-author `via:` chains** — that
 is how earlier cuts walked through walls.
@@ -147,7 +146,7 @@ Measured facts (do not re-invent them):
 Cell tags in the bake: `0` open floor, `1` stairs/ramp, `2` doorway (a passage
 two cells wide), `3` narrow strip along a wall.
 
-## The seven rules that keep a 6-minute show clean
+## The six rules that keep a 6-minute show clean
 
 1. **One room cluster per scene.** A scene may cross one doorway; if it crosses
    three rooms, split it.

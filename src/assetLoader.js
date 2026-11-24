@@ -5,6 +5,7 @@ import { ASSET_MANIFEST, CONFIG, SEMANTIC_MESH_TAGS, SEMANTIC_OBJECT_REGIONS } f
 import { createPropMesh, biteCookie, ThoughtBubbleCache } from "./comedyProps.js";
 import { headAimAngles, headAimWeight, aimStep } from "./stagingSafety.js";
 import { isHeadGesture, headGestureSpec, sampleHeadGesture } from "./headGestures.js";
+import { isArmGesture, armGestureSpec, sampleArmGesture } from "./armGestures.js";
 
 const sharedBubbleCache = new ThoughtBubbleCache();
 
@@ -971,9 +972,33 @@ export function instantiateCharacter(id, template, animationClips) {
   const headRestQuat = headBone ? headBone.quaternion.clone() : null;
   const lastAimQuat = new THREE.Quaternion();
   let headAimApplied = false;
-  const handBoneName =
-    template.spec.rigType === "bip01" ? "Bip01_R_Hand" : "hand_R_001";
+  const isBip01 = template.spec.rigType === "bip01";
+  const handBoneName = isBip01 ? "Bip01_R_Hand" : "hand_R_001";
   const handBone = rigHolder.getObjectByName(handBoneName) || null;
+
+  // Procedural arm & upper-spine bones for expressive acting (`src/armGestures.js`).
+  const armBones = {
+    rUpper: rigHolder.getObjectByName(isBip01 ? "Bip01_R_UpperArm" : "upArm_R_001") || null,
+    rFore: rigHolder.getObjectByName(isBip01 ? "Bip01_R_Forearm" : "loArm_R_001") || null,
+    lUpper: rigHolder.getObjectByName(isBip01 ? "Bip01_L_UpperArm" : "upArm_L") || null,
+    lFore: rigHolder.getObjectByName(isBip01 ? "Bip01_L_Forearm" : "loArm_L") || null,
+    spine:
+      rigHolder.getObjectByName(isBip01 ? "Bip01_Spine1" : "Spine1") ||
+      rigHolder.getObjectByName("spine_01") ||
+      null,
+  };
+  const armRestQuats = {
+    rUpper: armBones.rUpper ? armBones.rUpper.quaternion.clone() : null,
+    rFore: armBones.rFore ? armBones.rFore.quaternion.clone() : null,
+    lUpper: armBones.lUpper ? armBones.lUpper.quaternion.clone() : null,
+    lFore: armBones.lFore ? armBones.lFore.quaternion.clone() : null,
+    spine: armBones.spine ? armBones.spine.quaternion.clone() : null,
+  };
+  let activeArmGesture = null;
+  let armGestureApplied = false;
+  const tmpArmEuler = new THREE.Euler(0, 0, 0, "XYZ");
+  const tmpArmQuat = new THREE.Quaternion();
+  let lastBuiltInPropMode = "cane";
 
   // Embedded character hand/head sub-meshes (Grandpa's Shotgun vs Cane, spare Glasses, Granny's Bat)
   const embeddedProps = {
@@ -991,6 +1016,7 @@ export function instantiateCharacter(id, template, animationClips) {
    * Guarantees Shotgun and Cane can NEVER both be visible at the same time.
    */
   function toggleBuiltInProp(mode = "default") {
+    lastBuiltInPropMode = mode;
     if (embeddedProps.spareGlasses) embeddedProps.spareGlasses.visible = false;
     if (embeddedProps.redEyes) embeddedProps.redEyes.visible = false;
 
@@ -1083,6 +1109,16 @@ export function instantiateCharacter(id, template, animationClips) {
     if (isHeadGesture(name)) {
       playHeadGesture(name, typeof fadeDuration === "number" && fadeDuration > 0.2 ? fadeDuration : 0.8);
       return null;
+    }
+    if (isArmGesture(name)) {
+      playArmGesture(name, { duration: typeof fadeDuration === "number" && fadeDuration > 0.25 ? fadeDuration : 1.4 });
+      return null;
+    }
+    // Auto-stow Grandpa's cane during `sit` so it never tilts through his chin/glasses.
+    if (name === "sit" && embeddedProps.cane.length > 0) {
+      for (const m of embeddedProps.cane) m.visible = false;
+    } else if (name !== "sit" && lastBuiltInPropMode !== "none" && lastBuiltInPropMode !== "shotgun" && embeddedProps.cane.length > 0) {
+      for (const m of embeddedProps.cane) m.visible = true;
     }
 
     const entry = actions[name] || actions.idle || Object.values(actions)[0];
@@ -1276,6 +1312,40 @@ export function instantiateCharacter(id, template, animationClips) {
    * Starts a layered head gesture (nod / shake / tilt). The base clip keeps
    * playing underneath; passing null stops whatever is running.
    */
+  function playArmGesture(name, { duration = 1.4, amplitude, cycles, rUpper, rFore, lUpper, lFore, spine, oscillate } = {}) {
+    const spec = armGestureSpec(name, { amplitude, cycles, rUpper, rFore, lUpper, lFore, spine, oscillate });
+    if (!spec) return false;
+    activeArmGesture = {
+      name: spec.name,
+      spec,
+      elapsed: 0,
+      duration: Math.max(0.25, Number(duration) || 1.4),
+    };
+    return true;
+  }
+
+  function applyArmGesturePose(sample) {
+    if (!sample || sample.envelope <= 1e-6) {
+      if (armGestureApplied) {
+        for (const k of Object.keys(armBones)) {
+          if (armBones[k] && armRestQuats[k]) armBones[k].quaternion.copy(armRestQuats[k]);
+        }
+        armGestureApplied = false;
+      }
+      return;
+    }
+    for (const k of ["rUpper", "rFore", "lUpper", "lFore", "spine"]) {
+      const bone = armBones[k];
+      const rot = sample[k];
+      if (!bone || !rot) continue;
+      if (Math.abs(rot.x) + Math.abs(rot.y) + Math.abs(rot.z) < 1e-5) continue;
+      tmpArmEuler.set(rot.x, rot.y, rot.z, "XYZ");
+      tmpArmQuat.setFromEuler(tmpArmEuler);
+      bone.quaternion.multiply(tmpArmQuat);
+    }
+    armGestureApplied = true;
+  }
+
   function playHeadGesture(name, duration = 0.8, overrides = {}) {
     if (name == null) {
       headGesture = null;
@@ -1382,6 +1452,15 @@ export function instantiateCharacter(id, template, animationClips) {
     jumpOffsetY = yOffset;
   }
 
+  function getHandWorldPosition(out = new THREE.Vector3()) {
+    root.updateMatrixWorld(true);
+    if (handBone) {
+      handBone.getWorldPosition(out);
+      return out;
+    }
+    return out.set(root.position.x, root.position.y + 1.05, root.position.z);
+  }
+
   function getHeadWorldPosition(out = new THREE.Vector3()) {
     if (headBone) {
       headBone.getWorldPosition(out);
@@ -1427,6 +1506,25 @@ export function instantiateCharacter(id, template, animationClips) {
     // Head-only aim on top of whatever the clip is doing (taunts, laughs, idle).
     if ((headTrack.enabled && playerCameraPos) || gestureSample) {
       applyHeadPose(playerCameraPos, dt, gestureSample);
+    }
+
+    // Procedural arm & upper-spine acting layer on top of any clip.
+    if (activeArmGesture) {
+      activeArmGesture.elapsed += Math.max(0, dt || 0);
+      if (activeArmGesture.elapsed >= activeArmGesture.duration) {
+        activeArmGesture = null;
+        applyArmGesturePose(null);
+      } else {
+        const armSample = sampleArmGesture(
+          activeArmGesture.name,
+          activeArmGesture.elapsed,
+          activeArmGesture.duration,
+          activeArmGesture.spec
+        );
+        applyArmGesturePose(armSample);
+      }
+    } else if (armGestureApplied) {
+      applyArmGesturePose(null);
     }
 
     // Subtle cartoon squash/bounce + head accent while speaking
@@ -1564,6 +1662,8 @@ export function instantiateCharacter(id, template, animationClips) {
     playAnim: playAnimation,
     playAnimation,
     playHeadGesture,
+    playArmGesture,
+    getHandWorldPosition,
     stopHeadGesture,
     actOnHeldProp,
     get headGesture() {

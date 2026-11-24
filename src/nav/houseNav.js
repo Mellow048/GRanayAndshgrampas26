@@ -246,8 +246,8 @@ function smooth(points) {
 /**
  * Plan a walk. `from`/`to` are world positions; the result starts at the
  * snapped floor point nearest `from` and ends at the snapped point nearest `to`.
- * Returns null when the two spots are not connected by real floor (e.g. a roof
- * or a spot outside the house footprint).
+ * Returns null when the two spots are not connected by real floor (e.g. roof to
+ * upstairs with no staircase in the house).
  */
 export function route(from, to) {
   const a = snap(from.x, from.z, from.y ?? null);

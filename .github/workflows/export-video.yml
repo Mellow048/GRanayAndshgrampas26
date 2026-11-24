@@ -19,6 +19,7 @@ on:
           - mountain_dew_run
           - cookie_marathon_150s
           - jump_run_walk_6s
+          - cookie_marathon_150s
           - custom_json
       episode_json:
         description: "Custom Episode JSON (used when preset is custom_json, or overrides preset if provided)"
