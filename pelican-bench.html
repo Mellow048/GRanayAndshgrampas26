@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#e9dfcf" />
+    <title>The Quiet Hour — Pelican on a Bench</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --paper: #eee5d6;
+        --ink: #263d3c;
+        --muted: #657b74;
+        --coral: #df7458;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100svh;
+        display: grid;
+        place-items: center;
+        padding: clamp(14px, 3vw, 38px);
+        background:
+          radial-gradient(ellipse at 50% 0%, #f8f1e6 0, transparent 60%),
+          #ddd2c1;
+        color: var(--ink);
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      main { width: min(1180px, 100%); }
+      .art {
+        overflow: hidden;
+        border: 1px solid rgba(39, 62, 59, .16);
+        border-radius: 18px;
+        background: var(--paper);
+        box-shadow: 0 28px 70px rgba(37, 48, 43, .2), 0 2px 8px rgba(37, 48, 43, .08);
+      }
+      svg { display: block; width: 100%; height: auto; }
+      .caption {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px 22px;
+        padding: 16px 4px 0;
+        color: #6d786f;
+        font-size: 12px;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+      }
+      .caption strong { color: #334b46; font-weight: 650; }
+      .caption span:last-child { color: #988b79; }
+      .reed { transform-box: fill-box; transform-origin: bottom center; animation: sway 4.8s ease-in-out infinite; }
+      .reed.delay { animation-delay: -2.2s; }
+      .scarf-tail { transform-box: fill-box; transform-origin: left center; animation: flutter 3.4s ease-in-out infinite; }
+      .blink { transform-box: fill-box; transform-origin: center; animation: blink 5.5s ease-in-out infinite; }
+      .waterline { animation: water 7s ease-in-out infinite alternate; }
+      @keyframes sway { 0%,100% { transform: rotate(-2deg); } 50% { transform: rotate(3deg); } }
+      @keyframes flutter { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-4deg); } }
+      @keyframes blink { 0%,46%,50%,100% { transform: scaleY(1); } 48% { transform: scaleY(.08); } }
+      @keyframes water { from { transform: translateX(-5px); } to { transform: translateX(8px); } }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="art" aria-label="Illustration">
+        <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+          <title id="title">The Quiet Hour — a pelican resting on a park bench</title>
+          <desc id="desc">An original, gently animated storybook illustration of a cream-white pelican in a teal scarf perched on a green wooden bench beside a still pond at sunset.</desc>
+          <defs>
+            <linearGradient id="sky" x2="0" y2="1">
+              <stop stop-color="#f6d9b7"/><stop offset=".56" stop-color="#f6c69f"/><stop offset="1" stop-color="#dcae91"/>
+            </linearGradient>
+            <linearGradient id="pond" x2="0" y2="1">
+              <stop stop-color="#80aaa0"/><stop offset="1" stop-color="#456f6c"/>
+            </linearGradient>
+            <linearGradient id="feather" x1=".18" y1="0" x2=".8" y2="1">
+              <stop stop-color="#fffaf0"/><stop offset=".62" stop-color="#f4ecdc"/><stop offset="1" stop-color="#dfd4c2"/>
+            </linearGradient>
+            <linearGradient id="beak" x1="0" y1="0" x2="1" y2=".65">
+              <stop stop-color="#f2ad45"/><stop offset=".55" stop-color="#e78d31"/><stop offset="1" stop-color="#ce6530"/>
+            </linearGradient>
+            <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
+              <stop stop-color="#66887b"/><stop offset="1" stop-color="#3d665f"/>
+            </linearGradient>
+            <pattern id="paperSpeck" width="34" height="34" patternUnits="userSpaceOnUse">
+              <circle cx="4" cy="8" r=".8" fill="#273c37" opacity=".08"/>
+              <circle cx="25" cy="27" r=".65" fill="#fff8e9" opacity=".32"/>
+            </pattern>
+            <filter id="softShadow" x="-30%" y="-30%" width="160%" height="180%">
+              <feGaussianBlur stdDeviation="9"/>
+            </filter>
+          </defs>
+
+          <!-- A quiet, late-summer pond in a rounded old travel-poster frame. -->
+          <rect width="1200" height="800" fill="url(#sky)"/>
+          <circle cx="925" cy="178" r="88" fill="#e98566" opacity=".88"/>
+          <circle cx="925" cy="178" r="105" fill="none" stroke="#f6dfbf" stroke-width="2" opacity=".65"/>
+          <path d="M0 327 C154 286 248 334 379 314 C523 292 606 327 735 303 C894 273 1059 320 1200 281 L1200 491 L0 491Z" fill="#738f7b"/>
+          <path d="M0 371 C168 340 274 385 420 353 C557 323 668 376 816 345 C955 317 1087 366 1200 337 L1200 520 L0 520Z" fill="#55786e"/>
+          <path d="M0 437 C206 414 343 445 492 423 C663 398 797 443 949 419 C1069 400 1138 420 1200 410 L1200 800 L0 800Z" fill="url(#pond)"/>
+          <g class="waterline" fill="none" stroke="#c2d6bd" stroke-linecap="round" opacity=".6">
+            <path d="M82 490h148M337 532h112M812 489h190M100 585h205M739 568h138M914 640h160" stroke-width="3"/>
+            <path d="M270 616h96M510 495h148M622 681h92M1000 535h112" stroke-width="2" opacity=".7"/>
+          </g>
+          <!-- distant bank flowers -->
+          <g fill="#f4d28e" opacity=".9">
+            <circle cx="120" cy="421" r="4"/><circle cx="137" cy="429" r="3"/><circle cx="1070" cy="408" r="4"/><circle cx="1090" cy="416" r="3"/>
+            <circle cx="340" cy="403" r="3"/><circle cx="366" cy="410" r="4"/><circle cx="811" cy="411" r="3"/>
+          </g>
+
+          <!-- Framing trees: graphic silhouettes, kept behind the central scene. -->
+          <g fill="#3f665a">
+            <path d="M44 478 76 236l22 1 19 241Z"/><path d="M1083 472 1118 188l23 0 26 284Z"/>
+          </g>
+          <g fill="#527964">
+            <circle cx="86" cy="229" r="96"/><circle cx="27" cy="291" r="67"/><circle cx="155" cy="292" r="72"/>
+            <circle cx="1126" cy="195" r="100"/><circle cx="1065" cy="272" r="74"/><circle cx="1180" cy="273" r="67"/>
+          </g>
+          <g fill="#789578" opacity=".8">
+            <circle cx="64" cy="188" r="27"/><circle cx="120" cy="244" r="20"/><circle cx="1095" cy="162" r="25"/><circle cx="1164" cy="220" r="20"/>
+          </g>
+          <!-- Reeds at the water's edge. -->
+          <g fill="none" stroke-linecap="round">
+            <g class="reed" stroke="#d2b66f" stroke-width="5"><path d="M190 476Q182 419 196 366"/><path d="M196 366q-20-15-15-38 19 5 15 38Z" fill="#8b6d52" stroke="#8b6d52"/></g>
+            <g class="reed delay" stroke="#d2b66f" stroke-width="4"><path d="M1040 469Q1059 414 1048 365"/><path d="M1048 365q18-18 13-40-19 8-13 40Z" fill="#8b6d52" stroke="#8b6d52"/></g>
+          </g>
+
+          <!-- Bench shadow and cast shadow make the perch feel grounded. -->
+          <ellipse cx="622" cy="640" rx="310" ry="34" fill="#1d423e" opacity=".3" filter="url(#softShadow)"/>
+          <!-- Bench back: rounded, hand-painted slats and sturdy side supports. -->
+          <g stroke="#294e49" stroke-width="10" stroke-linejoin="round">
+            <path d="M337 353Q337 340 352 340H888Q903 340 903 355V461H337Z" fill="url(#wood)"/>
+            <path d="M361 358v91M423 353v96M485 353v96M547 353v96M609 353v96M671 353v96M733 353v96M795 353v96M857 353v96" fill="none" stroke="#92aa8f" stroke-width="4" opacity=".72"/>
+            <path d="M330 458H910" fill="none" stroke="#d0b481" stroke-width="15"/>
+            <path d="M382 466 365 622M859 466 878 622" fill="none" stroke="#315c55" stroke-width="22"/>
+          </g>
+          <!-- Bench seat and lower stretcher. -->
+          <path d="M315 466Q315 455 328 455H912Q925 455 925 468V500H315Z" fill="#66897c" stroke="#294e49" stroke-width="10"/>
+          <path d="M384 576H858" stroke="#315c55" stroke-width="18" stroke-linecap="round"/>
+          <g stroke="#9eb397" stroke-width="3" opacity=".55">
+            <path d="M350 473h517M371 486h495M396 587h433"/>
+          </g>
+
+          <!-- Pelican's feet, dangling comfortably in front of the bench. -->
+          <g stroke="#a94e38" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M552 485q-4 43 8 81" fill="none"/><path d="M648 482q9 41 1 83" fill="none"/>
+          </g>
+          <g fill="#d96f4b" stroke="#a94e38" stroke-width="5" stroke-linejoin="round">
+            <path d="M559 558q-22 2-39 16 23 5 42 0 10 4 27 1 4-4-2-9l-16-9Z"/>
+            <path d="M648 559q-18 0-32 15 21 7 38 1 12 3 28-1 5-4-2-9l-18-8Z"/>
+          </g>
+          <g stroke="#f6b17a" stroke-width="3" stroke-linecap="round"><path d="M530 574h14M548 578h15M626 574h14M646 578h15"/></g>
+
+          <!-- Main feathered body and folded wing. -->
+          <ellipse cx="599" cy="415" rx="137" ry="120" transform="rotate(-8 599 415)" fill="url(#feather)" stroke="#344f4b" stroke-width="8"/>
+          <path d="M500 398Q514 343 578 340Q643 338 687 390Q657 433 604 466Q551 475 506 439Z" fill="#d8dfd1" stroke="#526d63" stroke-width="7"/>
+          <path d="M520 404q50-39 117-14M521 421q51-29 105-7M534 440q38-20 77-8" fill="none" stroke="#9bad99" stroke-width="5" stroke-linecap="round" opacity=".8"/>
+          <!-- Tail feathers peek out behind the seat. -->
+          <path d="M478 437q-56 26-91 4 21 41 82 34M477 452q-47 42-83 29 31 30 89 15" fill="#f8f1e3" stroke="#455f57" stroke-width="7" stroke-linejoin="round"/>
+
+          <!-- Long neck and rounded head. -->
+          <path d="M632 375Q613 330 625 289Q635 251 668 235Q693 253 687 284Q681 316 694 356L687 390Z" fill="url(#feather)" stroke="#344f4b" stroke-width="8" stroke-linejoin="round"/>
+          <circle cx="675" cy="234" r="49" fill="url(#feather)" stroke="#344f4b" stroke-width="8"/>
+          <path d="M646 209q13-20 37-21" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" opacity=".75"/>
+          <!-- A calm, half-lidded eye. -->
+          <g class="blink">
+            <ellipse cx="691" cy="228" rx="9" ry="11" fill="#243c38"/>
+            <circle cx="694" cy="224" r="2.8" fill="#fff5df"/>
+            <path d="M680 216q12-10 25 0" fill="none" stroke="#53675a" stroke-width="5" stroke-linecap="round"/>
+          </g>
+          <!-- Bill and pouch: broad, unmistakable pelican silhouette. -->
+          <path d="M706 241Q781 233 897 268Q916 274 899 285Q824 316 709 287Z" fill="url(#beak)" stroke="#85482f" stroke-width="8" stroke-linejoin="round"/>
+          <path d="M709 252Q789 257 895 275Q839 292 716 282Z" fill="#f6b84f" opacity=".8"/>
+          <path d="M715 285Q768 308 837 300Q820 340 772 345Q734 337 715 285Z" fill="#df774a" stroke="#9e5036" stroke-width="7" stroke-linejoin="round"/>
+          <path d="M745 302q38 24 76 7" fill="none" stroke="#f3a26a" stroke-width="5" stroke-linecap="round"/>
+          <circle cx="899" cy="277" r="5" fill="#f4d48f"/>
+
+          <!-- Teal scarf, tucked neatly around the neck with one loose end. -->
+          <path d="M626 321Q652 337 692 321L705 347Q674 367 637 352Z" fill="#3f7770" stroke="#294f4b" stroke-width="7"/>
+          <path class="scarf-tail" d="M649 345Q635 377 624 406Q650 393 672 363Z" fill="#538c81" stroke="#294f4b" stroke-width="6" stroke-linejoin="round"/>
+          <path d="M645 339q14 10 31 7" fill="none" stroke="#a9c0a3" stroke-width="4" stroke-linecap="round"/>
+
+          <!-- One wing rests on the bench rail, the other folds over the lap. -->
+          <path d="M691 389Q735 376 774 402Q804 421 820 443Q794 462 766 449L723 425Q700 418 682 430Z" fill="#f7f0e3" stroke="#344f4b" stroke-width="8" stroke-linejoin="round"/>
+          <path d="M730 407q34 4 61 31M718 419q31 6 55 26" fill="none" stroke="#b4bba8" stroke-width="5" stroke-linecap="round"/>
+          <path d="M473 385Q450 411 462 443Q476 463 510 452L548 431" fill="#eae5d7" stroke="#344f4b" stroke-width="8" stroke-linejoin="round"/>
+
+          <!-- Foreground bank and small stepping stones. -->
+          <path d="M0 681Q166 657 303 687Q476 720 619 686Q783 647 922 681Q1067 714 1200 674V800H0Z" fill="#d8bd91"/>
+          <path d="M0 725Q175 695 322 727T623 727T922 718T1200 714V800H0Z" fill="#cba97b" opacity=".6"/>
+          <g fill="#f3e0bb" stroke="#b49168" stroke-width="4">
+            <ellipse cx="277" cy="697" rx="49" ry="15"/><ellipse cx="938" cy="697" rx="56" ry="17"/><ellipse cx="1018" cy="715" rx="30" ry="10"/>
+          </g>
+          <g fill="#5d8067">
+            <path d="M70 693q6-41 21-47 16 14 7 50Z"/><path d="M88 697q18-36 33-36 11 22-11 42Z"/>
+            <path d="M1100 693q7-43 23-47 15 17 4 53Z"/><path d="M1121 698q18-37 33-37 11 22-11 43Z"/>
+          </g>
+          <g fill="#d77b59"><circle cx="87" cy="658" r="5"/><circle cx="116" cy="661" r="4"/><circle cx="1121" cy="656" r="5"/></g>
+
+          <!-- Paper grain overlay and editorial frame. -->
+          <rect width="1200" height="800" fill="url(#paperSpeck)" opacity=".7" pointer-events="none"/>
+          <rect x="20" y="20" width="1160" height="760" rx="12" fill="none" stroke="#314b45" stroke-width="2" opacity=".58"/>
+          <g font-family="Georgia, 'Times New Roman', serif" fill="#294640">
+            <text x="66" y="84" font-size="15" letter-spacing="4" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="700">FIELD NOTES · No. 08</text>
+            <text x="66" y="132" font-size="37" font-weight="700">The Quiet Hour</text>
+            <path d="M67 149h191" stroke="#d77b59" stroke-width="4"/>
+            <text x="1135" y="746" text-anchor="end" font-size="16" font-style="italic" fill="#365d55">pond-side, just before dusk</text>
+          </g>
+        </svg>
+      </section>
+      <footer class="caption">
+        <strong>A small pause by the water</strong>
+        <span>Original SVG illustration · gentle motion · reduced-motion friendly</span>
+      </footer>
+    </main>
+  </body>
+</html>

@@ -25,6 +25,7 @@ import { GAG_REGISTRY, GAG_LOCATIONS } from "../src/gags/index.js";
 const VISUAL = new Set([
   "player_look",
   "player_walk",
+  "player_ride",
   "player_gesture",
   "player_crouch",
   "player_hold",
@@ -166,6 +167,11 @@ export function auditEpisode(name, episode, opts = {}) {
       const climbed = Math.abs((prev?.y ?? 0) - playerPos.y) > 0.15;
       effective = Math.max(ev.duration, dist / (climbed ? CONFIG.baseStairSpeed ?? 1.85 : speed));
       if (prev) playerPos = { x: prev.x, y: prev.y ?? 0, z: prev.z };
+    } else if (ev.type === "player_ride") {
+      for (const ref of ev.path || []) checkRef(ref, "player_ride path");
+      const last = posOfRef((ev.path || []).at(-1));
+      if (last) playerPos = { x: last.x, y: last.y ?? 0, z: last.z };
+      effective = Math.max(ev.duration, Number(ev.duration) || 0);
     } else if (ev.type === "char_move" || ev.type === "move") {
       checkRef(ev.to, "char_move to");
       checkRef(ev.from, "char_move from");

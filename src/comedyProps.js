@@ -762,7 +762,7 @@ export class ComedyPropManager {
     const box = new THREE.Box3().setFromObject(mesh);
     if (box.isEmpty()) return desiredOrigin.clone();
     const size = box.getSize(new THREE.Vector3());
-    const centerOffsetY = (box.min.y + box.max.y) / 2;
+    const centerOffsetY = (box.min.y + box.max.y) / 2 - desiredOrigin.y;
     const half = {
       x: Math.max(0.03, size.x / 2),
       y: Math.max(0.03, size.y / 2),
@@ -828,12 +828,14 @@ export class ComedyPropManager {
 
       mesh.position.copy(basePos);
       if (def.rotationY) mesh.rotation.y = def.rotationY;
+      // Scale before computing bounds/surface contact; otherwise a tiny car is
+      // seated using full-size bounds and visibly hovers above the counter.
+      if (def.scale) mesh.scale.setScalar(def.scale);
       if (this.world) {
         const seated = this.seatProp(mesh, basePos, def.id);
         mesh.position.copy(seated);
         basePos.copy(seated);
       }
-      if (def.scale) mesh.scale.setScalar(def.scale);
       mesh.visible = def.visible !== false;
 
       this.group.add(mesh);
@@ -1070,6 +1072,9 @@ export class ComedyPropManager {
       case "stop":
         state.bounce = false;
         state.spin = false;
+        if (!state.drive && !state.riseActive) {
+          mesh.position.y = basePos.y;
+        }
         break;
       default:
         break;
@@ -1165,11 +1170,14 @@ export class ComedyPropManager {
         mesh.position.y = basePos.y + Math.sin(state.phase * 3.5) * 0.06;
       } else if (state.bounce) {
         // Initial dramatic +0.95m spring launch out of chest, then lively bounce
+        const carScale = entry.type === "car" ? Math.min(1, Math.max(0.025, mesh.scale.x)) : 1;
+        const launchHeight = entry.type === "car" ? 0.2 * carScale : 0.95;
+        const hopHeight = entry.type === "car" ? 0.12 * carScale : 0.58;
         const launch =
           state.popOut && state.phase < 0.75
-            ? Math.sin((state.phase / 0.75) * Math.PI) * 0.95
+            ? Math.sin((state.phase / 0.75) * Math.PI) * launchHeight
             : 0;
-        const hop = Math.abs(Math.sin(state.phase * 6.0)) * 0.58;
+        const hop = Math.abs(Math.sin(state.phase * 6.0)) * hopHeight;
         mesh.position.y = basePos.y + Math.max(launch, hop);
       }
 

@@ -199,7 +199,7 @@ export class PlayerCamera {
     }
   }
 
-  reset(spawnPos = null, lookAtPos = null) {
+  reset(spawnPos = null, lookAtPos = null, { posture = "standing" } = {}) {
     if (this.activeWalk?._resolve) this.activeWalk._resolve();
     if (this._lookResolve) {
       this._lookResolve();
@@ -231,9 +231,12 @@ export class PlayerCamera {
     this.panicTimer = 0;
     this.trackingRef = null;
 
-    this.baseEyeHeight = PLAYER_EYE_HEIGHT;
-    this.crouchStartHeight = PLAYER_EYE_HEIGHT;
-    this.crouchTargetHeight = PLAYER_EYE_HEIGHT;
+    const spawnEyeHeight = posture === "lying"
+      ? (CONFIG.playerLyingEyeHeight ?? 0.56)
+      : PLAYER_EYE_HEIGHT;
+    this.baseEyeHeight = spawnEyeHeight;
+    this.crouchStartHeight = spawnEyeHeight;
+    this.crouchTargetHeight = spawnEyeHeight;
     this.crouchElapsed = 1;
 
     this.fadeAlpha = 0;
@@ -556,6 +559,7 @@ export class PlayerCamera {
     maxVerticalSpeed = 1.55,
     faceTarget = null,
     resolver = null,
+    vehicleRide = false,
   }) {
     if (this.activeWalk?._resolve) {
       this.activeWalk._resolve();
@@ -581,7 +585,7 @@ export class PlayerCamera {
     if (!resolvedPoints || resolvedPoints.length < 2) return Promise.resolve();
 
     // ---- Staging gate: never walk through a body or a wall ----
-    {
+    if (!vehicleRide) {
       const caps = this._actorCapsules();
       const last = resolvedPoints[resolvedPoints.length - 1];
       if (caps.length) {
@@ -681,6 +685,7 @@ export class PlayerCamera {
       maxVerticalSpeed,
       autoLook,
       faceTarget: resolvedFaceTarget,
+      vehicleRide: Boolean(vehicleRide),
       _resolve: resolveWalk,
     };
     this.isWalking = true;
@@ -693,12 +698,57 @@ export class PlayerCamera {
     return donePromise;
   }
 
+  startVehicleRide(points, {
+    duration = null,
+    speed = null,
+    sideOffset = 0.3,
+    forwardOffset = -0.05,
+    eyeHeight = 1.12,
+  } = {}) {
+    if (!Array.isArray(points) || points.length < 2) return Promise.resolve();
+    const seatPath = points.map((point, i) => {
+      const a = points[Math.max(0, i - 1)];
+      const b = points[Math.min(points.length - 1, i + 1)];
+      let dx = b.x - a.x;
+      let dz = b.z - a.z;
+      const length = Math.hypot(dx, dz) || 1;
+      dx /= length;
+      dz /= length;
+      // Car local +X is forward; local +Z is the driver's side.
+      return new THREE.Vector3(
+        point.x + dx * forwardOffset - dz * sideOffset,
+        point.y ?? 0,
+        point.z + dz * forwardOffset + dx * sideOffset
+      );
+    });
+    this.baseEyeHeight = eyeHeight;
+    this.crouchStartHeight = eyeHeight;
+    this.crouchTargetHeight = eyeHeight;
+    this.crouchElapsed = this.crouchDuration;
+    this.playerPos.copy(seatPath[0]);
+    return this.startWalk({
+      points: seatPath,
+      duration,
+      speed,
+      autoLook: true,
+      vehicleRide: true,
+    });
+  }
+
   lookAtPosition(targetPos, { duration = 0.25, trackRef = null, maxDuration = null } = {}) {
     if (this._lookResolve) {
       this._lookResolve();
       this._lookResolve = null;
     }
     const { yaw, pitch } = this._computeYawPitchTo(targetPos);
+    // Do not twitch toward near-identical waypoints (a common authoring error
+    // when two targets differ by only a few centimetres).
+    if (
+      Math.abs(wrapAngleDiff(yaw, this.yaw)) < 0.045 &&
+      Math.abs(pitch - this.pitch) < 0.04
+    ) {
+      return Promise.resolve();
+    }
     this.lookStartYaw = this.yaw;
     this.lookStartPitch = this.pitch;
     this.lookTargetYaw = this.yaw + wrapAngleDiff(yaw, this.yaw);
@@ -708,7 +758,8 @@ export class PlayerCamera {
     // larger `maxDuration` (or Infinity for intentional slow scans).
     const cap =
       maxDuration ?? CONFIG.maxLookDuration ?? Number.POSITIVE_INFINITY;
-    this.lookDuration = Math.max(0.01, Math.min(duration, cap));
+    const requestedDuration = Math.max(0.48, Number(duration) || 0.48);
+    this.lookDuration = Math.max(0.01, Math.min(requestedDuration, cap));
     this.trackingRef = trackRef;
     return new Promise((resolve) => {
       this._lookResolve = resolve;
@@ -907,7 +958,7 @@ export class PlayerCamera {
         }
 
         // Slide around bodies instead of ghosting through them.
-        if (this.actorProvider) {
+        if (this.actorProvider && !this.activeWalk.vehicleRide) {
           const caps = this._actorCapsules();
           if (caps.length) {
             const slid = pushOutOfCapsules(

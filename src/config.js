@@ -18,9 +18,9 @@ export const CONFIG = {
   fixedDt: 1 / 60,
   maxFrameDt: 0.05,
   defaultFadeDuration: 0.18,
-  // Framework guardrail: `player_look` is a whip-pan by default. Episodes can
-  // opt into longer scans with `maxLookDuration` or `allowSlowScans`.
-  maxLookDuration: 0.55,
+  // Camera looks ease into the target rather than whip-pan; near-identical
+  // target bearings are ignored by PlayerCamera's angular dead zone.
+  maxLookDuration: 0.95,
   defaultAspect: "16:9",
   aspectModes: {
     "16:9": { width: 1280, height: 720, aspect: 16 / 9, fov: 68, label: "16:9 YouTube POV" },
@@ -31,7 +31,8 @@ export const CONFIG = {
   exportFps: 30,
   playerEyeHeight: 1.55,
   playerCrouchHeight: 0.42,
-  baseWalkSpeed: 2.5,
+  playerLyingEyeHeight: 0.56,
+  baseWalkSpeed: 3.5,
   baseRunSpeed: 3.8,
   baseSneakSpeed: 1.65,
   baseStairSpeed: 1.85,

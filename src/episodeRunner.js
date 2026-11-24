@@ -615,6 +615,13 @@ export class EpisodeRunner {
           z: last.z,
           _name: typeof lastStop === "string" ? lastStop : undefined,
         };
+      } else if (ev.type === "player_ride") {
+        const route = Array.isArray(ev.path) ? ev.path : [];
+        if (route.length) {
+          const last = this.resolveWaypoint(route[route.length - 1]);
+          playerPos = { x: last.x, y: last.y ?? 0, z: last.z, _name: typeof route.at(-1) === "string" ? route.at(-1) : undefined };
+        }
+        effDur = Math.max(effDur, Number(ev.duration) || 0);
       } else if (ev.type === "char_move" || ev.type === "move") {
         const start = ev.from
           ? this.resolveWaypoint(ev.from)
@@ -827,6 +834,9 @@ export class EpisodeRunner {
       }
       char.playAnim(castEntry.anim || "idle", 0.01, null, true);
       char.mixer.update(0.016);
+      if (castEntry.pose && castEntry.pose !== "standing") {
+        char.setBodyPose?.(castEntry.pose);
+      }
     }
 
     this.comedyProps?.loadProps(this.episode.props || []);
@@ -839,7 +849,7 @@ export class EpisodeRunner {
       const lookVec = pLook
         ? new THREE.Vector3(pLook.x, (pLook.y ?? 0) + 1.35, pLook.z)
         : null;
-      this.playerCamera.reset(pSpawn, lookVec);
+      this.playerCamera.reset(pSpawn, lookVec, { posture: this.episode.playerPosture || "standing" });
       this.playerCamera.setInspectionMode(false);
     }
 
@@ -1168,6 +1178,25 @@ export class EpisodeRunner {
 
   async executeBeat(ev, { silentSeek = false, runToken = this._runToken } = {}) {
     const type = ev.type;
+
+    if (type === "player_ride" && this.playerCamera) {
+      const prop = this.comedyProps?.getProp(ev.prop);
+      if (!prop?.mesh || !Array.isArray(ev.path) || ev.path.length === 0) return Promise.resolve();
+      const points = [prop.mesh.position.clone()];
+      for (const ref of ev.path) {
+        const wp = typeof ref === "string" ? this.resolveWaypoint(ref) : ref;
+        if (wp && Number.isFinite(wp.x) && Number.isFinite(wp.z)) {
+          points.push(new THREE.Vector3(wp.x, wp.y ?? 0, wp.z));
+        }
+      }
+      return this.playerCamera.startVehicleRide(points, {
+        duration: ev.duration,
+        speed: ev.speed,
+        sideOffset: ev.sideOffset ?? 0.3,
+        forwardOffset: ev.forwardOffset ?? -0.05,
+        eyeHeight: ev.eyeHeight ?? 1.12,
+      });
+    }
 
     if (type === "player_walk" && this.playerCamera) {
       const from = {

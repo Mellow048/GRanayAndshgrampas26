@@ -676,7 +676,22 @@ export function validateEpisode(episode, options = {}) {
 
     const isMove = type === "char_move" || type === "move";
     const isWalk = type === "player_walk";
-    if (!isMove && !isWalk) continue;
+    const isRide = type === "player_ride";
+    if (!isMove && !isWalk && !isRide) continue;
+
+    if (isRide) {
+      const route = Array.isArray(beat.path) ? beat.path : [];
+      for (const ref of route) {
+        if (typeof ref === "string" && !resolved(ref)) {
+          issues.push(issue("UNKNOWN_MOVE_TARGET", "error", beat.at, `Player ride uses unknown waypoint "${ref}".`, { ...fixNote(false, "Use a name from SET_MAP.") }));
+        }
+      }
+      const lastRef = route.at(-1);
+      const last = resolved(lastRef);
+      if (last) playerState = { x: last.x, y: last.y ?? 0, z: last.z, name: typeof lastRef === "string" ? lastRef : undefined };
+      movesByActor.set("__player", beat);
+      continue;
+    }
 
     const key = isWalk ? "__player" : beat.actor;
     const prev = movesByActor.get(key);
@@ -773,7 +788,15 @@ export function validateEpisode(episode, options = {}) {
       // route can only follow floor that exists. If no such route exists the
       // character would have to fly, and that is an error, not a style note.
       if (isWalk) {
-        const planned = planFloorRoute(startPos, endWp);
+        // A player waking on a declared elevated surface may step to its
+        // authored approach waypoint before joining the floor nav; validate
+        // the traversable floor segment from that approach rather than
+        // incorrectly demanding a floor polygon underneath the mattress.
+        const authoredStart = fromName ? resolved(fromName) : null;
+        const routeStart = authoredStart?.elevated && authoredStart.approach
+          ? (resolved(authoredStart.approach) || startPos)
+          : startPos;
+        const planned = planFloorRoute(routeStart, endWp);
         plannedRoute = planned;
         if (!planned) {
           issues.push(
@@ -1135,7 +1158,7 @@ export function validateEpisode(episode, options = {}) {
 
   const activity = [];
   for (const beat of beats) {
-    const moves = beat.type === "char_move" || beat.type === "move" || beat.type === "player_walk";
+    const moves = beat.type === "char_move" || beat.type === "move" || beat.type === "player_walk" || beat.type === "player_ride";
     const acts = ["char_anim", "anim", "player_look", "player_gesture", "char_gesture", "char_bubble", "prop_action", "player_hold", "player_pose", "char_face", "fade", "sfx", "char_prop"].includes(beat.type);
     if (moves || acts) activity.push({ at: beat.at, end: beat.at + Math.max(0.15, beat.duration || 0), type: beat.type, beat });
   }

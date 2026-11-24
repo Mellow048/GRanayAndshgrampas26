@@ -240,6 +240,7 @@ export function buildEpisode({
   aspect = "16:9",
   playerSpawn,
   playerFacing,
+  playerPosture = undefined,
   maxLookDuration = undefined,
   allowSlowScans = undefined,
   gags = [],
@@ -268,6 +269,7 @@ export function buildEpisode({
   );
   const rootSpawn = playerSpawn || resolvedGags[0]?.playerSpawn || "back_hall";
   const rootFacing = playerFacing || resolvedGags[0]?.playerFacing || "kitchen";
+  const rootPosture = playerPosture || resolvedGags[0]?.playerPosture || "standing";
 
   resolvedGags.forEach((g, i) => {
     const sceneStart = t;
@@ -352,6 +354,7 @@ export function buildEpisode({
           spawn: c.spawn,
           facing: c.facing,
           anim: c.anim || "idle",
+          pose: c.pose || "standing",
           visible: c.visible !== false,
         });
       }
@@ -411,6 +414,7 @@ export function buildEpisode({
     aspect,
     playerSpawn: rootSpawn,
     playerFacing: rootFacing,
+    playerPosture: rootPosture,
     cast: [...cast.values()],
     props: [...props.values()],
     skits,

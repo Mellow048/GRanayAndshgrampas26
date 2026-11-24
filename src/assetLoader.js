@@ -1458,6 +1458,17 @@ export function instantiateCharacter(id, template, animationClips) {
     }
   }
 
+  function setBodyPose(pose = "standing") {
+    rigHolder.position.set(0, 0, 0);
+    rigHolder.rotation.set(0, 0, 0);
+    if (pose === "lying") {
+      // Procedural rest pose for table/bed staging when the supplied FBX has no
+      // horizontal sleep clip. Rotating only the rig preserves the waypoint root.
+      rigHolder.position.y = 0.08;
+      rigHolder.rotation.z = -Math.PI / 2;
+    }
+  }
+
   function resetPose() {
     speaking = false;
     speakPhase = 0;
@@ -1508,6 +1519,7 @@ export function instantiateCharacter(id, template, animationClips) {
     playAnimation,
     playHeadGesture,
     stopHeadGesture,
+    setBodyPose,
     actOnHeldProp,
     get headGesture() {
       return headGesture ? headGesture.name : null;
