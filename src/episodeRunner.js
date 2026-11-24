@@ -1212,6 +1212,7 @@ export class EpisodeRunner {
         sideOffset: ev.sideOffset ?? 0.3,
         forwardOffset: ev.forwardOffset ?? -0.05,
         eyeHeight: ev.eyeHeight ?? 1.12,
+        mountDuration: ev.mountDuration ?? 0.65,
       });
     }
 

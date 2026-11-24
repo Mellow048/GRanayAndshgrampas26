@@ -723,11 +723,32 @@ export class PlayerCamera {
     sideOffset = 0.3,
     forwardOffset = -0.05,
     eyeHeight = 1.12,
+    mountDuration = 0.65,
   } = {}) {
     if (!Array.isArray(points) || points.length < 2) return Promise.resolve();
-    const seatPath = points.map((point, i) => {
-      const a = points[Math.max(0, i - 1)];
-      const b = points[Math.min(points.length - 1, i + 1)];
+
+    // Remove duplicate waypoints before deriving the car's forward direction.
+    // Continuous scene joins commonly repeat the point where the previous route
+    // ended; treating that zero-length segment as a heading used to snap the
+    // camera to the car's center.
+    const ridePoints = [points[0]];
+    for (const point of points.slice(1)) {
+      const prev = ridePoints.at(-1);
+      if (Math.hypot(point.x - prev.x, point.z - prev.z) > 0.04) ridePoints.push(point);
+    }
+    if (ridePoints.length < 2) return Promise.resolve();
+
+    const seatPath = ridePoints.map((point, i) => {
+      let a = ridePoints[Math.max(0, i - 1)];
+      let b = ridePoints[Math.min(ridePoints.length - 1, i + 1)];
+      if (Math.hypot(b.x - a.x, b.z - a.z) < 1e-4) {
+        for (let j = i + 1; j < ridePoints.length; j += 1) {
+          if (Math.hypot(ridePoints[j].x - point.x, ridePoints[j].z - point.z) > 1e-4) {
+            b = ridePoints[j];
+            break;
+          }
+        }
+      }
       let dx = b.x - a.x;
       let dz = b.z - a.z;
       const length = Math.hypot(dx, dz) || 1;
@@ -740,11 +761,43 @@ export class PlayerCamera {
         point.z + dz * forwardOffset + dx * sideOffset
       );
     });
+
+    const mountStart = this.playerPos.clone();
+    const mountEnd = seatPath[0];
+    const mountDistance = mountStart.distanceTo(mountEnd);
+    const heightChange = Math.abs(this.baseEyeHeight - eyeHeight);
+    if (mountDistance > 0.08 || heightChange > 0.08) {
+      const mountDur = Math.max(0.25, Number(mountDuration) || 0.65);
+      this.crouchStartHeight = this.baseEyeHeight;
+      this.crouchTargetHeight = eyeHeight;
+      this.crouchElapsed = 0;
+      this.crouchDuration = mountDur;
+      const approach = this.startWalk({
+        points: [mountStart, mountEnd],
+        duration: mountDur,
+        speed: Math.max(0.6, mountDistance / mountDur),
+        autoLook: true,
+        vehicleRide: true,
+      });
+      return approach.then(() => {
+        this.baseEyeHeight = eyeHeight;
+        this.crouchStartHeight = eyeHeight;
+        this.crouchTargetHeight = eyeHeight;
+        this.crouchElapsed = this.crouchDuration;
+        return this.startWalk({
+          points: seatPath,
+          duration,
+          speed,
+          autoLook: true,
+          vehicleRide: true,
+        });
+      });
+    }
+
     this.baseEyeHeight = eyeHeight;
     this.crouchStartHeight = eyeHeight;
     this.crouchTargetHeight = eyeHeight;
     this.crouchElapsed = this.crouchDuration;
-    this.playerPos.copy(seatPath[0]);
     return this.startWalk({
       points: seatPath,
       duration,

@@ -163,25 +163,26 @@ export const SHENANIGANS_45S = buildEpisode({
 });
 
 /**
- * Two-minute framework smoke test: wake, find a toy car, throw/grow it,
- * drive a waypoint loop through the actual house, and stage a safe Granny
- * pratfall. The house has no navigable stair flight or exterior road, so the
- * upstairs-to-kitchen descent is an explicit black-frame cut.
+ * Two-minute framework smoke test: wake in the measured ground-floor bedroom,
+ * follow a real walkable route to Grandpa and the toy car, toss/grow it in the
+ * living room, then drive the house loop. Granny enters on foot from a blind
+ * doorway; the player remains mounted through the safe comic bump and ending.
+ * The imported house has no navigable staircase, so the wake bed is staged on the ground floor rather than faking an upstairs descent.
  */
 export const WAKE_TO_RIDE_120S = buildEpisode({
   title: "Wake Up, Grow a Car, and Drive Around the House (2-Minute Test)",
   transitions: "continuous",
   gags: [wakeAndFindCar(), carTransformation(), carHouseLoop(), rideWrap()],
   story: {
-    premise: "The player wakes upstairs to find a tiny toy car waiting on the kitchen counter beside Grandpa, asleep at the table; Granny is nowhere in sight.",
+    premise: "The player wakes in a ground-floor bed, follows the house hall to find Grandpa asleep on the kitchen table and a tiny toy car on the counter; Granny is out of sight.",
     goal: "carry the toy car to open space, see if it can become a real ride, and take it around the house.",
     goalProp: "car",
-    resolution: "The toy grows into a little open-top car. On the first loop, hidden Granny meets it at a blind corner and gets a safe, exaggerated jump; the car parks and everyone nods that the ride was fun.",
+    resolution: "The toy bounces into open floor and grows into an open-top car. Granny walks into the blind dining doorway, gets a safe exaggerated comic tumble as the car passes, and walks back to the parked driver without a cut or vehicle exit.",
     scenes: [
-      { objective: "wake up and find out why a tiny car is on the counter", obstacle: "the trip to the kitchen is long and Grandpa is still asleep on the table", turn: "the player picks up the very small car while Grandpa nods in his sleep", beats: ["wake beside the bed", "make the implied descent", "discover Grandpa and pick up the car"] },
-      { objective: "carry the toy to an open patch and test it", obstacle: "it is only a palm-sized toy", turn: "the toss lands and the car grows into an open-top ride" },
-      { objective: "drive a full loop through the house", obstacle: "Granny appears from a blind doorway just as the car arrives", turn: "a gentle staged bump sends her into a comic jump and trip", beats: ["start the house loop", "round the blind dining doorway", "finish the loop after the gag"] },
-      { objective: "finish the loop and check on the family", obstacle: "Granny has to walk back from the dining room while Grandpa wakes slowly", turn: "the car parks, Granny laughs, and both grandparents nod back" },
+      { objective: "wake and find the tiny car", obstacle: "the long ground-floor walk passes Grandpa asleep on the table", turn: "the player picks up the car and carries it into the living room", beats: ["wake on the mattress", "walk through the hall", "find Grandpa and the toy car"] },
+      { objective: "test the toy in open space", obstacle: "it is too small to drive", turn: "a visible toss becomes a smooth, mounted car entry as it grows" },
+      { objective: "drive around the house", obstacle: "Granny walks into the dining doorway from offscreen", turn: "the moving car surprises her into a safe comic jump and trip", beats: ["mount without a camera snap", "follow the house route", "pass the blind dining doorway"] },
+      { objective: "check on the family without leaving the car", obstacle: "the bump wakes Grandpa while Granny returns", turn: "both grandparents react physically as the child stays seated" },
     ],
   },
 });

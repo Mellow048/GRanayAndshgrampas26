@@ -15,15 +15,15 @@ Use this guide whenever you extend the engine or inspect low-level beat timing f
 
 | What you need | Where to find it | Notes |
 | --- | --- | --- |
-| **Waypoints, Cast, SFX/BGM Manifest & Presets** | `src/config.js` | `SET_MAP`, `SFX_MANIFEST`, `ASSET_MANIFEST`, `GRANDPA_KEY_POV_44S`, `FLOOR_IS_LAVA_4M`, `JUMP_RUN_WALK_EPISODE`, `EPISODE_PRESETS` |
+| **Waypoints, Cast, SFX/BGM Manifest & Presets** | `src/setMap.js`, `src/config.js` | `SET_MAP`, `SFX_MANIFEST`, `ASSET_MANIFEST`, `EPISODE_PRESETS` |
 | **Fast-Cut Escape Episode** | `src/episodes/greatEscape75.js` | `THE_GREAT_ESCAPE_68S` — reference implementation for hard cuts, whip-pans, and zero dead air |
 | **Pacing Audit (runs before every cloud render)** | `scripts/audit-pacing.mjs` | Fails on dead air / runaway runtime / dangling refs; warns on oversized looks and awaited beats |
 | **Background Music (Looping Comedy/Chase BGM)** | `SoundEffects/backroundMusics/` + `SoundEffects/*.mp3` | Registered in `SFX_MANIFEST` with `category: "bgm"` — auto-loops in browser & FFmpeg |
 | **22 Sound Effects (Impacts, Voices, UI, Cuts)** | `SoundEffects/*.mp3` | Registered in `SFX_MANIFEST` in `src/config.js` |
 | **3D House & Character Models + Mixamo Clips** | `Assets/` | `GrannyHouse.fbx`, `GrannyTest6.fbx`, `grandpach3.fbx`, `Assets/AnimationTemplates/*.fbx` |
-| **Timeline Engine & Beats** | `src/episodeRunner.js` | Compiles `skits[].beats` (`at` / `after`), `await: true` / `sync: "sequential"` barriers, auto stair routing, jump-arc hops, 1.3m personal space |
+| **Timeline Engine & Beats** | `src/episodeRunner.js` | Compiles `skits[].beats` with local `at` timestamps, ground-floor route checks, jump-arc hops, and body-aware staging |
 | **POV Camera & FPS Viewmodel** | `src/playerCamera.js` | Clamps pitch `[-45°, +35°]`, stair vertical clamping, jump-arc hops, depth-cleared `viewmodelScene`, gestures, fade |
-| **Props & Thought Bubbles** | `src/comedyProps.js` | 6 props + 8 icon bubbles (`Emoji Ball` double-sided + camera yaw-tracking) |
+| **Props & Optional Bubble Runtime** | `src/comedyProps.js` | 14 registered props (`Emoji Ball` is double-sided + camera yaw-tracking); this series uses body language, not speech/thought bubbles |
 | **Cloud Video Exporter** | `.github/workflows/export-video.yml` & `scripts/export-video.mjs` | Renders 30fps `.mp4`/`.webm` + mixed audio in GitHub Actions → `latest-export` release |
 
 ---
@@ -34,9 +34,9 @@ Kids' attention drops within **3 seconds** if nothing changes visually. Bake the
 
 ### Rule 1: No Beat Over 2–2.5 Seconds Without Movement ("Zero Dead Air")
 - **Never** leave the camera staring at a bobbing prop or stationary character for 3–5 seconds.
-- **Every `1.5–2.5s`**, change something on screen: a whip-pan (`player_look`), camera walk (`player_walk`), crouch/peek (`player_crouch` / `peek_lean`), prop flying across the room (`pop_out` with `to` + `travelDuration`), pickup (`player_hold`), or a character moving/reacting (`char_move` / `char_anim` + `char_bubble`).
+- **Every `1.5–2.5s`**, let a motivated action change the frame: a purposeful walk, a prop pickup/toss, or a character's physical reaction. Do not add random looks, crouches, waiting, or bubbles to fill a timing gap.
 - A `player_look` is a **whip-pan, not a stare**: keep source durations at or below `CONFIG.maxLookDuration` (`0.55s`). The engine hard-caps anything longer, and the audit warns on it.
-- **Cut, don't commute.** When the next gag is in another room, use `cut` (`to`, `facing`) instead of a 4–8s walk through empty geometry. Move actors with `char_cut` (`actor`, `to`, `facing`) for the same reason. Walks are for tension inside a shot, not for travel between shots.
+- **Move with purpose; cut only when the story changes scene.** Continuous scenes should use a validated `player_walk` / `char_move` route through named doorways. Use `cut` / `char_cut` only for an intentional edit or covered staging change, never to disguise a route through the house.
 - If a prop pops out of a box or chest, **immediately** send it flying across the room (`to` waypoint), bonk a character with it, or grab it into the player's hand within `1.5–2.0s`.
 
 ### Rule 2: Always Show Cause-and-Effect Visually (No Shadowboxing Thin Air)
@@ -44,7 +44,7 @@ Kids' attention drops within **3 seconds** if nothing changes visually. Bake the
 - **Before any angry swing/reaction:**
   - Either have the gag prop (`emoji_ball`, `cookie_jar`, `toy_blaster`) **bounce/fly right to Granny's position first** (`bonk` + `vine_boom`), **OR**
   - Have Granny **`run2` sprint right up to the target (`<= 1.4m` away)** *before* triggering `angry` + `punch` / `jump`.
-- If Granny hears a noise while you're hiding (`!`), have her **stop, turn to face the room (`char_face` + `look`)**, show `?` when she doesn't spot you, and *then* leave—never make her shout `"I see you!"` while walking away backwards.
+- If Granny hears a noise offscreen, have her **stop and turn toward the source**, then show the realization or confusion through a readable head gesture and body turn. For this production, never add speech, dialogue, or thought bubbles.
 
 ### Rule 3: End on Motion, Not a Static Pose
 - **Never** end an episode with a character repeating a stationary `terrified` or `idle` crouch while explosion/chase SFX play offscreen.
@@ -93,7 +93,7 @@ Sync SFX directly to visible actions (`1.2s–1.85s` rhythm; avoid overlapping v
 - **Back Hall ↔ Dining Room / Kitchen:**
   - `back_hall` → **`doorway_dining`** → `dining_center` → `kitchen_lane` → `kitchen`
 - **Ground Floor ↔ Upstairs — NOT WALKABLE in the supplied house mesh:**
-  - The decorative upper floor has no traversable stair geometry. `tests/nav.test.mjs` deliberately asserts that `route(downstairs, upstairs) === null`. Do not author cross-floor `player_walk` or `char_move` beats through `stairs_middle`; route validation and the 3D probe will fail. If a story needs an upstairs-to-downstairs transition, use a brief fade + `cut` and make the implied descent clear in the staging.
+  - The decorative upper floor has no traversable stair geometry. `tests/nav.test.mjs` deliberately asserts that `route(downstairs, upstairs) === null`. Do not author cross-floor `player_walk` or `char_move` beats through `stairs_middle`. Do not fake a descent with a hidden teleport: stage a bed/starting action downstairs, or wait until the house asset has real stairs and a validated nav bake.
 - **Upstairs North Doorway & East Wing (upper floor only):**
   - `upstairs_landing` → `up_hall_north_door` (`-1.4, 2.85, -0.6`) → `up_hall_north` (`-1.4, 2.85, -2.4`) → `up_bed_north` / `upstairs_east_north` (`1.5, 2.85, -1.8`)
 
@@ -106,11 +106,12 @@ Targets with `elevated: true` in `SET_MAP` automatically route to their ground `
 - `{ "at": 12.2, "type": "cut", "to": "kitchen_lane", "facing": "golden_key" }` teleports the POV player and snaps the view in the same frame. `to` is optional (omit it to rotate in place), `facing` is optional, and `sound` optionally plays a sting.
 - `{ "at": 12.3, "type": "char_cut", "actor": "granny", "to": "foyer", "facing": "player" }` teleports an actor, cancels its active move, and faces it at the player (or a waypoint).
 - Cuts are **zero-duration** and never block the timeline, so authored `at` timestamps stay exact. Use them to jump between rooms, reset a chase, or land a jumpscare.
-- Reactions (`char_anim`, `char_bubble`, `char_prop`) auto-face the camera so the expression reads on screen; pass `"facePlayer": false` when a character must deliberately look away.
+- Physical reactions (`char_anim`, `char_gesture`, `char_move`) should read from body language; pass `"facePlayer": false` when a character must deliberately keep looking away.
 
-### Timeline Synchronization (`await: true` & `sync: "sequential"`)
-- Add `"await": true` (or `"sync": "sequential"`) to any `char_move`, `player_walk`, `char_anim`, `player_look`, or `player_gesture` beat to **halt timeline advancement** until that character/camera movement or one-shot animation finishes before dispatching the next beat.
-- Use `"after": <seconds>` for delta timing relative to the **previous beat** (or immediately after the previous `await: true` beat finishes). Keep any single `await: true` walk segment under `~2.2s` (or fire reaction beats right before it) to satisfy Rule 1 (`<= 2.5s` pacing).
+### Timeline Timing (Modular Episode Contract)
+- Author only local numeric `at` timestamps starting at `0` inside each gag or scene. `buildEpisode()` offsets them into the episode timeline.
+- Do not use `after`, `await: true`, or `sync: "sequential"`; validation rejects these legacy sequencing patterns.
+- Walk durations are not a reason to slow a character unnaturally: use the configured `CONFIG.baseWalkSpeed` (currently `3.5m/s`) and let route length determine travel time. Add motivated action, not pauses, when a scene needs more runtime.
 
 ### Key Waypoints Reference (`src/config.js`)
 - **Living Room (Grandpa's Room):** `doorway_living` (`4.4, 0, -0.7`), `living_room_entry` (`4.7, 0, 0.2`), `living_room_view` (`5.4, 0, 0.6`), `living_room` (`5.4, 0, 2.0`), `living_room_ball_bounce` (`5.5, 0, 1.7`), `granny_living_burst` (`4.2, 0, -0.7`), `chest_spot` (`6.2, 0, 2.6`), `chest_padlock` (`5.95, 0, 2.35`), `grandpa_chest_side` (`4.3, 0, 2.5`), `grandpa_step_back` (`4.0, 0, 2.9`)
@@ -120,13 +121,13 @@ Targets with `elevated: true` in `SET_MAP` automatically route to their ground `
 
 ---
 
-## 5. Cast, Animations, Props & Thought Bubbles
+## 5. Cast, Animations, Props & Body-Language Reactions
 
-- **Characters (`cast[]`):** `granny` (`1.65m`), `grandpa` (`1.72m`). Always spawn characters facing into the open room (`facing: "living_room_view"`, etc.), and use `char_face` with `followPlayer: true, instant: true` before dialogue/reaction beats.
+- **Characters (`cast[]`):** `granny` (`1.65m`), `grandpa` (`1.72m`). Spawn characters facing into the open room (`facing: "living_room_view"`, etc.) and use `char_face` or head gestures to make reactions legible without dialogue.
 - **Animations (`anim`):**
   - **Looping locomotion (use in `char_move`):** `walk`, `run`, `run2` (fast sprint), `sneak`, `granny_walk` (Granny only). `EpisodeRunner` automatically enforces `LoopRepeat` and crossfades back to `endAnim` (`idle` by default) on arrival.
   - **Emotes & actions (use in `char_anim`):** `idle`, `laugh` (`loop: true`), `terrified` (`loop: true`), `panic` (`loop: true`, sped-up `Terrified.fbx` for instant hazard reactions), `sit` (`loop: true`), `jump` (`loop: false`), `punch` (`loop: false`), plus Granny-only `look`, `hit`, `look_bed`.
-- **Thought Bubbles (`icon`):** `key`, `question`, `exclamation`, `zzz`, `angry`, `laugh`, `food`, `heart`. Keep duration `1.4s–2.4s`. Viewport NDC clamping prevents top-edge cropping automatically.
+- **Optional bubble runtime:** the engine still supports thought-bubble icons for legacy episodes, but this production style forbids speech and thought bubbles. Use body poses, movement, facial animation, and head gestures instead.
 - **Comedy Props (`type`):** `golden_key`, `padlock`, `treasure_chest`, `emoji_ball`, `toy_blaster`, `cookie_jar`, `delivery_box` (`open` opens flaps), `red_button` (`press` slams cap), `rising_lava` (`rise_to` with `targetY` & `duration` animates rising molten lava).
   - Use `player_hold` (`{ "prop": "golden_key" }`) for the non-clipping bottom-right FPS viewmodel, `{ "prop": "golden_key", "use": true }` to poke/activate, and `{ "prop": null }` to clear.
   - Gestures (`player_gesture`): `nod_yes`, `shake_no`, `shake_panic`, `shake_earthquake` (sustained `duration` camera rumble), `peek_lean`. Pitch is clamped `[-45°, +35°]`, and elevated waypoints (`y > 0.2`, e.g. `key_spot`) automatically target the prop rather than the ceiling.
@@ -260,7 +261,7 @@ It will **not** invent story: anything it cannot repair deterministically stays 
 Before rendering a new episode JSON:
 0. **Run the gate:** `npm run validate:episode -- --file my-episode.json` — fix everything under `Remaining:`.
 1. **No dead air > 2.5s:** Scan `beats` timestamps — every `2.5s` window should have movement, camera change, prop flight/pickup, or character action.
-2. **Doorway-centered paths:** Every cross-room `player_walk` or `char_move` includes `doorway_living` / `doorway_dining` in `via`. Prefer `cut` / `char_cut` over long commutes.
+2. **Doorway-centered paths:** Cross-room `player_walk` / `char_move` routes use the verified `via` waypoints. Continuous scenes must not hide a commute or use a cut to fake an impossible route.
 3. **Close-range cause-and-effect:** Any `punch` / `hit` happens within `1.4m` of its target or right after a prop impact.
 4. **Motion ending:** Final `2s` before `fade` has active `run2` chase / lunge, never a frozen pose.
 5. **Run the pacing audit** (the workflow runs it automatically and blocks the render on failure):
@@ -270,8 +271,8 @@ Before rendering a new episode JSON:
    Compare against the reference numbers: `~68s` runtime, `0` awaited beats, `>= 8` hard cuts, look average `< 0.4s`, longest uncovered gap `<= 0.75s`.
 6. **Cloud render command (zero local CPU/GPU encoding):**
    ```bash
-   gh workflow run export-video.yml --ref main \
-     -f preset=the_great_escape_68s \
+   gh workflow run export-video.yml --ref "$(git branch --show-current)" \
+     -f preset=wake_to_ride_120s \
      -f aspect=auto \
      -f fps=30 \
      -f sfx_pacer=true \
@@ -281,7 +282,7 @@ Before rendering a new episode JSON:
 
    For a one-off script, pass the whole JSON in the **`episode_json`** input (the workflow uses it as an override, and `preset=custom_json` also works):
    ```bash
-   gh workflow run export-video.yml --ref main \
+   gh workflow run export-video.yml --ref "$(git branch --show-current)" \
      -f preset=custom_json \
      -f episode_json="$(cat path/to/my-episode.json)" \
      -f aspect=9:16 \

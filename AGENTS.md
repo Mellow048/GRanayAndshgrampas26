@@ -33,6 +33,7 @@ npm run catalogue:json   # machine-readable JSON for agents
 - **14 Props (`PROP_TYPES`):** `golden_key`, `padlock`, `red_button`, `emoji_ball`, `toy_blaster`, `treasure_chest`, `delivery_box`, `rising_lava`, `cookie`, `cookie_jar`, `car`, `soda_can`, `bed`, `shelf`
 - **25 Beats (`BEAT_TYPES`):** `char_anim`, `char_gesture`, `char_move`, `char_face`, `char_bubble`, `char_cut`, `char_visibility`, `char_prop`, `char_prop_action`, `player_walk`, `player_ride`, `player_look`, `player_gesture`, `player_crouch`, `player_pose`, `player_hold`, `prop_action`, `cut`, `fade`, `bgm`, `stop_bgm`, `sfx` (plus legacy aliases `anim`, `move`, `face`). `player_ride` follows an authored waypoint path; it is scripted motion, not physics.
 - **22 Animations:** 15 Mixamo FBX (`walk`, `run`, `run2`, `sneak`, `jump`, `laugh`, `punch`, `sit`, `terrified`, `panic`, `angry`, `talk`, `kick`, `mma_kick`, `trip`) + 7 procedural head gestures (`nod`, `nod_yes`, `nod_once`, `shake`, `shake_no`, `tilt`, `double_take`)
+- **Production style:** No dialogue, speech bubbles, or thought bubbles. Convey reactions with movement, poses, facial animation, and head gestures.
 
 ---
 

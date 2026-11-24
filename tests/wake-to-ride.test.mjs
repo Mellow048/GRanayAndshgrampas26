@@ -21,23 +21,33 @@ test("the car carries the story through setup, transformation, drive and payoff"
   const spine = validateStorySpine(WAKE_TO_RIDE_120S);
   assert.equal(spine.ok, true, JSON.stringify(spine.errors));
   assert.equal(spine.stats.goalPropScenes, 4);
-  assert.deepEqual(WAKE_TO_RIDE_120S.props.map(({ id, type }) => [id, type]), [["car", "car"]]);
+  assert.deepEqual(WAKE_TO_RIDE_120S.props.map(({ id, type }) => [id, type]), [["bed", "bed"], ["car", "car"]]);
 });
 
-test("the player wakes lying down, Grandpa starts lying on the table, and the car ride stays mounted", () => {
+test("the wake is grounded, walking is brisk, and the child stays mounted for the ride", () => {
   assert.equal(WAKE_TO_RIDE_120S.playerPosture, "lying");
+  assert.equal(WAKE_TO_RIDE_120S.playerSpawn, "bed_sleep");
   assert.equal(WAKE_TO_RIDE_120S.cast.find(({ id }) => id === "grandpa").pose, "lying");
   const beats = WAKE_TO_RIDE_120S.skits.flatMap((scene) => scene.beats);
-  assert.equal(beats.filter((beat) => beat.type === "player_crouch").length, 1, "only stand up once from bed");
+  assert.ok(beats.some((beat) => beat.type === "player_pose" && beat.pose === "stand"));
+  assert.equal(beats.filter((beat) => beat.type === "player_crouch").length, 0, "no fake crouch-to-stand cycle");
+  assert.ok(beats.filter((beat) => beat.type === "player_walk").every((beat) => beat.speed >= 3.5));
   assert.ok(beats.some((beat) => beat.type === "player_ride"), "camera follows the car from the driver seat");
   assert.ok(!beats.some((beat) => beat.type === "player_walk" && beat.at >= 44), "do not walk away from the driven car");
+  assert.ok(!beats.some((beat) => beat.type === "cut"), "no hidden upstairs-to-downstairs teleport");
+  assert.ok(!beats.some((beat) => typeof beat.to === "string" && /^(up_|upstairs|stairs_top)/.test(beat.to)));
 });
 
-test("the episode hides Granny until the blind-corner reveal and uses no speech bubbles", () => {
+test("Granny enters by walking from the doorway; the toss is visible and dialogue-free", () => {
   const granny = WAKE_TO_RIDE_120S.cast.find(({ id }) => id === "granny");
   assert.equal(granny.visible, false);
   const beats = WAKE_TO_RIDE_120S.skits.flatMap((scene) => scene.beats);
-  assert.ok(beats.some((beat) => beat.type === "char_visibility" && beat.actor === "granny" && beat.visible));
+  const reveal = beats.findIndex((beat) => beat.type === "char_visibility" && beat.actor === "granny" && beat.visible);
+  const entrance = beats.findIndex((beat) => beat.type === "char_move" && beat.actor === "granny" && beat.to === "doorway_dining");
+  assert.ok(reveal >= 0 && entrance > reveal, "Granny must be revealed before her authored walk into the doorway");
+  assert.ok(!beats.some((beat) => beat.type === "char_cut" && beat.actor === "granny"), "no abrupt Granny teleport");
+  assert.ok(beats.some((beat) => beat.type === "prop_action" && beat.action === "place" && beat.waypoint === "living_room_entry"));
+  assert.ok(beats.some((beat) => beat.type === "prop_action" && beat.action === "pop_out" && beat.waypoint === "living_room_entry" && beat.to === "living_room"));
   assert.ok(beats.some((beat) => beat.type === "prop_action" && beat.action === "grow" && beat.prop === "car"));
   assert.ok(beats.some((beat) => beat.type === "prop_action" && beat.action === "drive" && beat.path?.length > 8));
   assert.ok(beats.some((beat) => beat.type === "player_ride" && beat.prop === "car"));

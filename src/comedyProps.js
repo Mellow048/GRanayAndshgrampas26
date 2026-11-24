@@ -1012,10 +1012,13 @@ export class ComedyPropManager {
         state.bounce = false;
         state.popOut = false;
         state.spin = false;
-        if (params.at && this.waypoints[params.at]) {
-          const wp = this.waypoints[params.at];
-          basePos.set(wp.x, wp.y + (params.yOffset || 0), wp.z);
-          mesh.position.copy(this.seatProp(mesh, basePos, propId));
+        {
+          const wpRef = params.waypoint || params.position || params.at;
+          if (wpRef && this.waypoints[wpRef]) {
+            const wp = this.waypoints[wpRef];
+            basePos.set(wp.x, wp.y + (params.yOffset || 0), wp.z);
+            mesh.position.copy(this.seatProp(mesh, basePos, propId));
+          }
         }
         break;
       case "hide":
@@ -1132,11 +1135,14 @@ export class ComedyPropManager {
         state.bounce = true;
         state.spin = entry.type !== "emoji_ball";
         state.phase = 0;
-        if (params.at && this.waypoints[params.at]) {
-          const wp = this.waypoints[params.at];
-          basePos.set(wp.x, wp.y + (params.yOffset || 0), wp.z);
-          mesh.position.copy(this.seatProp(mesh, basePos, propId));
-          basePos.copy(mesh.position);
+        {
+          const wpRef = params.waypoint || params.position || params.at;
+          if (wpRef && this.waypoints[wpRef]) {
+            const wp = this.waypoints[wpRef];
+            basePos.set(wp.x, wp.y + (params.yOffset || 0), wp.z);
+            mesh.position.copy(this.seatProp(mesh, basePos, propId));
+            basePos.copy(mesh.position);
+          }
         }
         state.popStartPos = basePos.clone();
         if (params.to && this.waypoints[params.to]) {
