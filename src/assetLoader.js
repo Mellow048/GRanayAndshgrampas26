@@ -539,6 +539,44 @@ export function setupHouseFromRaw(rawHouse) {
   rawHouse.scale.setScalar(scale);
   rawHouse.position.y = -CONFIG.house.groundFloorRawY * scale;
   houseRoot.add(rawHouse);
+
+  // Real wooden staircase bridging Ground Floor (stairs_bottom: -1.9, 0.0, 4.0)
+  // to Second Floor (stairs_top: -1.9, 2.85, 1.25) so Floor 2 Spawn Bedroom is 100% reachable.
+  const stairGroup = new THREE.Group();
+  stairGroup.name = "HouseStaircase";
+  const treadMat = new THREE.MeshStandardMaterial({ color: 0x6b4b32, roughness: 0.85, metalness: 0.04 });
+  const railMat = new THREE.MeshStandardMaterial({ color: 0x523824, roughness: 0.88, metalness: 0.04 });
+  const stepCount = 14;
+  const xCenter = -1.9;
+  const zBottom = 4.0;
+  const zTop = 1.25;
+  const yTop = 2.85;
+  const stairWidth = 1.18;
+  const stepDepth = (zBottom - zTop) / stepCount;
+  const stepRise = yTop / stepCount;
+  for (let i = 0; i < stepCount; i += 1) {
+    const tread = new THREE.Mesh(
+      new THREE.BoxGeometry(stairWidth, stepRise, stepDepth + 0.04),
+      treadMat
+    );
+    tread.name = "HouseFloor";
+    tread.position.set(
+      xCenter,
+      (i + 0.5) * stepRise,
+      zBottom - (i + 0.5) * stepDepth
+    );
+    stairGroup.add(tread);
+  }
+  const railLen = Math.hypot(zBottom - zTop, yTop);
+  const railPitch = Math.atan2(yTop, zBottom - zTop);
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, railLen), railMat);
+    rail.name = "HouseStairRail";
+    rail.position.set(xCenter + side * (stairWidth * 0.5 + 0.02), yTop * 0.5 + 0.85, (zBottom + zTop) * 0.5);
+    rail.rotation.x = railPitch;
+    stairGroup.add(rail);
+  }
+  houseRoot.add(stairGroup);
   houseRoot.updateMatrixWorld(true);
 
   const floorMeshes = [];
@@ -972,7 +1010,8 @@ export function instantiateCharacter(id, template, animationClips) {
     for (const m of embeddedProps.cane) m.visible = showCane;
     
     if (embeddedProps.bat.length > 0) {
-      const showBat = mode !== "none";
+      // Kid-safe default: hide BatBloody unless an episode explicitly passes prop: "bat".
+      const showBat = mode === "bat";
       for (const m of embeddedProps.bat) m.visible = showBat;
     }
   }
@@ -1414,8 +1453,15 @@ export function instantiateCharacter(id, template, animationClips) {
       clipJumpLift = arc[idx];
     }
 
-    rigHolder.position.y = jumpOffsetY + clipJumpLift + speakBounceY;
+    // Subtle procedural breathing & weight-shift life when standing still so actors never look like frozen statues.
+    const isIdle = !currentAnimName || currentAnimName === "idle";
+    const idleTime = (root.userData._idlePhase = (root.userData._idlePhase || 0) + (dt || 0));
+    const idleBreathY = isIdle ? Math.sin(idleTime * 2.2) * 0.006 : 0;
+    const idleSwayZ = isIdle ? Math.sin(idleTime * 1.1) * 0.012 : 0;
+
+    rigHolder.position.y = jumpOffsetY + clipJumpLift + speakBounceY + idleBreathY;
     rigHolder.rotation.x = speakNod;
+    rigHolder.rotation.z = idleSwayZ;
 
     // Pop-in bounce + float + viewport top-edge clamp on 2D Comic Thought Bubble
     if (bubbleTimer > 0) {
@@ -1462,10 +1508,20 @@ export function instantiateCharacter(id, template, animationClips) {
     rigHolder.position.set(0, 0, 0);
     rigHolder.rotation.set(0, 0, 0);
     if (pose === "lying") {
-      // Procedural rest pose for table/bed staging when the supplied FBX has no
-      // horizontal sleep clip. Rotating only the rig preserves the waypoint root.
+      // Keep the waypoint root fixed while presenting a procedural horizontal pose.
       rigHolder.position.y = 0.08;
       rigHolder.rotation.z = -Math.PI / 2;
+    }
+  }
+
+  function seatOnSurface(surfaceY = 0) {
+    root.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(root);
+    if (!box.isEmpty() && Number.isFinite(box.min.y)) {
+      const dip = surfaceY - box.min.y;
+      if (dip > 0.01 && dip < 1.8) {
+        root.position.y += dip;
+      }
     }
   }
 
@@ -1519,7 +1575,6 @@ export function instantiateCharacter(id, template, animationClips) {
     playAnimation,
     playHeadGesture,
     stopHeadGesture,
-    setBodyPose,
     actOnHeldProp,
     get headGesture() {
       return headGesture ? headGesture.name : null;
@@ -1540,6 +1595,8 @@ export function instantiateCharacter(id, template, animationClips) {
     setSpeaking,
     setJumpOffset,
     getHeadWorldPosition,
+    setBodyPose,
+    seatOnSurface,
     resetPose,
     update,
     dispose,

@@ -19,10 +19,12 @@ test("a ground-floor route only ever steps on floor", () => {
   assert.deepEqual(validateRoute(path), [], "every sample is on real floor");
 });
 
-test("there is no route to the upper floor: the house has no staircase", () => {
+test("the built-in wooden staircase connects Floor 1 and the 2nd-floor Spawn Bedroom", () => {
   const downstairs = { x: -6.05, y: 0, z: 0.35 };
-  const upstairs = { x: -7.0, y: 2.85, z: -2.0 };
-  assert.equal(route(downstairs, upstairs), null);
+  const upstairs = { x: -6.5, y: 2.85, z: -2.4 }; // up_bed_side
+  const path = route(downstairs, upstairs);
+  assert.ok(path && path.length >= 4, "a continuous 2-floor route exists via the staircase");
+  assert.deepEqual(validateRoute(path), [], "every stair & floor sample stays on walkable geometry");
 });
 
 test("every walk in the reference show has real floor under it", () => {

@@ -21,21 +21,22 @@ test("the car carries the story through setup, transformation, drive and payoff"
   const spine = validateStorySpine(WAKE_TO_RIDE_120S);
   assert.equal(spine.ok, true, JSON.stringify(spine.errors));
   assert.equal(spine.stats.goalPropScenes, 4);
-  assert.deepEqual(WAKE_TO_RIDE_120S.props.map(({ id, type }) => [id, type]), [["bed", "bed"], ["car", "car"]]);
+  assert.deepEqual(WAKE_TO_RIDE_120S.props.map(({ id, type }) => [id, type]), [["car", "car"]]);
 });
 
-test("the wake is grounded, walking is brisk, and the child stays mounted for the ride", () => {
+test("the wake uses the real upstairs bed and walks continuously down the staircase", () => {
   assert.equal(WAKE_TO_RIDE_120S.playerPosture, "lying");
-  assert.equal(WAKE_TO_RIDE_120S.playerSpawn, "bed_sleep");
+  assert.equal(WAKE_TO_RIDE_120S.playerSpawn, "up_bed_side");
   assert.equal(WAKE_TO_RIDE_120S.cast.find(({ id }) => id === "grandpa").pose, "lying");
+  assert.ok(!WAKE_TO_RIDE_120S.props.some(({ type }) => type === "bed"), "use the built-in bed, not a fake spawned bed");
   const beats = WAKE_TO_RIDE_120S.skits.flatMap((scene) => scene.beats);
   assert.ok(beats.some((beat) => beat.type === "player_pose" && beat.pose === "stand"));
   assert.equal(beats.filter((beat) => beat.type === "player_crouch").length, 0, "no fake crouch-to-stand cycle");
   assert.ok(beats.filter((beat) => beat.type === "player_walk").every((beat) => beat.speed >= 3.5));
+  assert.ok(beats.some((beat) => beat.type === "player_walk" && beat.to === "hall_corner" && beat.via?.includes("stairs_middle")), "the player walks down the real staircase");
   assert.ok(beats.some((beat) => beat.type === "player_ride"), "camera follows the car from the driver seat");
   assert.ok(!beats.some((beat) => beat.type === "player_walk" && beat.at >= 44), "do not walk away from the driven car");
-  assert.ok(!beats.some((beat) => beat.type === "cut"), "no hidden upstairs-to-downstairs teleport");
-  assert.ok(!beats.some((beat) => typeof beat.to === "string" && /^(up_|upstairs|stairs_top)/.test(beat.to)));
+  assert.ok(!beats.some((beat) => beat.type === "cut"), "no hidden teleport");
 });
 
 test("Granny enters by walking from the doorway; the toss is visible and dialogue-free", () => {

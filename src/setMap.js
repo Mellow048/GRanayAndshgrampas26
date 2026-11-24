@@ -58,8 +58,8 @@ export const SET_MAP = {
   kitchen_table_top: { x: -7.2, y: 1.13, z: 1.4, elevated: true, approach: "kitchen", label: "Kitchen Counter Top" },
   // The fridge already in the house model: the tall unit on the kitchen's north
   // wall (footprint x -6.9..-5.1, z -0.6..-0.1). We never build a second one.
-  // --- Ground-floor waking route (single storey: this house has no staircase,
-  // so the second floor is decorative and nothing may walk up to it) ---
+  // --- Legacy ground-floor bed waypoints (kept for older gags/tests). New shows
+  // wake in the real 2nd-floor bedroom via up_bed_side / up_bed_mattress. ---
   bed_home: { x: -7.4, y: 0.0, z: -4.1, seat: false, label: "Bed (spawned prop)" },
   bed_sleep: { x: -7.4, y: 0.5, z: -3.8, seat: false, label: "Bed (mattress)" },
   bed_side: { x: -6.5, y: 0.0, z: -4.1, label: "Beside The Bed" },

@@ -119,8 +119,9 @@ Studio previews:
 
 - a route cannot cross a wall — there is no edge through it;
 - a route cannot float — the height of every point comes from the floor;
-- a route to somewhere that does not exist (the second floor, with no
-  staircase) returns `null`, and the gate reports `NO_WALKABLE_ROUTE`.
+- the two floors are connected by the built-in wooden staircase, so cross-floor
+  walks route through `stairs_bottom` → `stairs_top`; a route to somewhere with
+  no walkable link returns `null`, and the gate reports `NO_WALKABLE_ROUTE`.
 
 Write `to:` and let the router plan. **Do not hand-author `via:` chains** — that
 is how earlier cuts walked through walls.
@@ -138,15 +139,15 @@ Measured facts (do not re-invent them):
 | Thing | Where | Height |
 | --- | --- | --- |
 | Ground floor | whole footprint | **0.00** |
-| Second floor | whole footprint | **2.85** — decorative: **the model has no staircase**, so nothing may walk up |
-| Bed (the show's) | `bed_home` (-7.4, -4.1) | prop we spawn once; mattress **0.5** |
+| Second floor | whole footprint | **2.85** — connected to Floor 1 via the built-in wooden staircase (`stairs_bottom` ↔ `stairs_top`) |
+| Spawn Bedroom Bed | `up_bed_mattress` (-7.5, 3.56, -2.4) | real built-in 2nd-floor Granny 1 bed (stand beside it at `up_bed_side`); NEVER spawn a fake 1st-floor bed |
 | Fridge (kitchen) | x -6.9..-5.1, z -0.6..-0.1, front z -0.61 | shelf **1.1** (`kitchen_fridge_shelf`) |
 | Dining table | x -5.6..-4.2, z 2.0..3.6 | top **1.11** (`dining_table_top`) |
 
 Cell tags in the bake: `0` open floor, `1` stairs/ramp, `2` doorway (a passage
 two cells wide), `3` narrow strip along a wall.
 
-## The six rules that keep a 6-minute show clean
+## The seven rules that keep a 6-minute show clean
 
 1. **One room cluster per scene.** A scene may cross one doorway; if it crosses
    three rooms, split it.

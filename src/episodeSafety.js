@@ -1220,6 +1220,16 @@ export function validateEpisode(episode, options = {}) {
         })
       );
     }
+    if (prop?.type === "bed") {
+      const wp = setMap[prop.spawn || prop.waypoint];
+      if (!wp || (wp.y ?? 0) < 1.5) {
+        issues.push(
+          issue("FAKE_GROUND_FLOOR_BED", "error", 0, `Prop "${prop.id}" spawns a fake bed on the 1st floor — GrannyHouse.fbx already has the real 2nd-floor Spawn Bedroom!`, {
+            ...fixNote(false, 'Remove the fake bed prop and use the built-in 2nd-floor bedroom waypoints ("up_bed_side", "up_bed_mattress").'),
+          })
+        );
+      }
+    }
   }
 
   for (const beat of beats) {
@@ -1234,6 +1244,37 @@ export function validateEpisode(episode, options = {}) {
 
   /* ---------------- 7. Framing & Camera Discipline ---------------- */
   const propHidden = new Map((ep.props || []).map((p) => [p.id, p.visible === false]));
+  const castIdList = (ep.cast || []).map((c) => c.id).filter(Boolean);
+  const simPosAt = (who, t) => {
+    let pos = who === "__player__"
+      ? (ep.playerSpawn ? resolved(ep.playerSpawn) : null)
+      : (() => {
+          const c = (ep.cast || []).find((x) => x.id === who);
+          return c?.spawn ? resolved(c.spawn) : null;
+        })();
+    for (const b of beats) {
+      const bat = Number(b.at) || 0;
+      if (bat > t + 1e-6) break;
+      if (who === "__player__") {
+        if (b.type === "cut" && (b.to || b.target || b.spawn)) {
+          const wp = resolved(b.to || b.target || b.spawn);
+          if (wp) pos = wp;
+        } else if (b.type === "player_walk" && (b.to || b.target)) {
+          const wp = resolved(b.to || b.target);
+          if (wp) pos = wp;
+        }
+      } else {
+        if (b.type === "char_cut" && b.actor === who && b.to) {
+          const wp = resolved(b.to);
+          if (wp) pos = wp;
+        } else if ((b.type === "char_move" || b.type === "move") && b.actor === who && b.to) {
+          const wp = resolved(b.to);
+          if (wp) pos = wp;
+        }
+      }
+    }
+    return pos;
+  };
   let lastLookAt = -999;
   let lastCutAt = -999;
 
@@ -1280,6 +1321,34 @@ export function validateEpisode(episode, options = {}) {
       );
     }
 
+    // Catch staring at empty static waypoints (e.g. an empty bookshelf or armchair)
+    if (setMap[beat.target] && !propHidden.has(beat.target)) {
+      const wp = setMap[beat.target];
+      const actorNearby = castIdList.some((id) => {
+        const pos = simPosAt(id, at);
+        return pos && dist2D(pos, wp) <= 2.4;
+      });
+      const propNearby = (ep.props || []).some((p) => {
+        if (propHidden.get(p.id) === true) return false;
+        const pwp = setMap[p.spawn || p.waypoint];
+        return pwp && dist2D(pwp, wp) <= 2.4;
+      });
+      const walkingThereSoon = beats.some(
+        (b) =>
+          b.type === "player_walk" &&
+          (Number(b.at) || 0) >= at - 0.5 &&
+          (Number(b.at) || 0) <= at + 1.2 &&
+          (b.to === beat.target || (Array.isArray(b.via) && b.via.includes(beat.target)))
+      );
+      if (!actorNearby && !propNearby && !walkingThereSoon) {
+        issues.push(
+          issue("LOOK_AT_EMPTY_SPOT", "warn", at, `player_look targets "${beat.target}" when no actor or visible prop is near it.`, {
+            ...fixNote(false, "Aim player_look at an actor, a visible prop, or the destination of an upcoming walk."),
+          })
+        );
+      }
+    }
+
     if (beat.track === false) {
       const movingTarget = beats.some(
         (b) => (b.type === "char_move" || b.type === "move") && b.actor === beat.target && Math.abs(b.at - at) < 3
@@ -1290,6 +1359,119 @@ export function validateEpisode(episode, options = {}) {
             ...fixNote(false, "Use track: true so the lens follows them."),
           })
         );
+      }
+    }
+  }
+
+  /* ---------------- 7b. Table clipping, doorway bottlenecks & commute loops ---------------- */
+  const NARROW_TABLES = new Set(["kitchen_table_top", "dining_table_top", "dining_table_top_west", "kitchen_counter_top", "key_spot"]);
+  for (const actor of ep.cast || []) {
+    if (actor?.spawn && NARROW_TABLES.has(actor.spawn)) {
+      issues.push(
+        issue("ACTOR_ON_NARROW_TABLE", "warn", 0, `Actor "${actor.id}" spawns on narrow surface "${actor.spawn}" — prone/rotated poses will clip through the table.`, {
+          ...fixNote(false, "Spawn actors on a floor waypoint beside the table instead."),
+        })
+      );
+    }
+  }
+
+  const isNarrowDoorway = (name) => typeof name === "string" && (name.startsWith("doorway_") || name === "hall_corner" || name === "up_hall_north_door");
+  const doorwayPasses = [];
+  const walkDestCounts = new Map();
+
+  for (const beat of beats) {
+    const at = Number(beat.at) || 0;
+    if (beat.type === "cut") {
+      walkDestCounts.clear();
+      continue;
+    }
+    if (beat.type === "player_walk") {
+      const dur = Number(beat.duration) || 1.5;
+      const dest = beat.to || beat.target;
+      if (typeof dest === "string") {
+        const count = (walkDestCounts.get(dest) || 0) + 1;
+        walkDestCounts.set(dest, count);
+        if (count === 3) {
+          issues.push(
+            issue("REPETITIVE_ROOM_LOOP", "warn", at, `Player walks to "${dest}" 3+ times without a cut — reads as a repetitive commute loop.`, {
+              ...fixNote(false, "Use a cut or stage the next gag in the current room instead of repeating empty walks."),
+            })
+          );
+        }
+      }
+      if (dur > 4.2) {
+        const destWp = typeof dest === "string" ? setMap[dest] : null;
+        const nearAnyActor = destWp && castIdList.some((id) => {
+          const pos = simPosAt(id, at + dur * 0.5);
+          return pos && dist2D(pos, destWp) <= 3.5;
+        });
+        if (!nearAnyActor) {
+          issues.push(
+            issue("LONG_EMPTY_COMMUTE", "warn", at, `player_walk lasts ${dur.toFixed(1)}s through empty rooms with no actor nearby.`, {
+              ...fixNote(false, "Keep walks <= 3.5s or use a hard cut between distant rooms."),
+            })
+          );
+        }
+      }
+      for (const wpName of [...(beat.via || []), dest].filter(isNarrowDoorway)) {
+        doorwayPasses.push({ who: "__player__", doorway: wpName, at, end: at + dur });
+      }
+    } else if (beat.type === "char_move" || beat.type === "move") {
+      const dur = Number(beat.duration) || 1.5;
+      for (const wpName of [...(beat.via || []), beat.to].filter(isNarrowDoorway)) {
+        doorwayPasses.push({ who: beat.actor, doorway: wpName, at, end: at + dur });
+      }
+    }
+  }
+
+  for (let i = 0; i < doorwayPasses.length; i++) {
+    const a = doorwayPasses[i];
+    if (a.who !== "__player__") continue;
+    for (let j = 0; j < doorwayPasses.length; j++) {
+      const b = doorwayPasses[j];
+      if (b.who === "__player__" || b.doorway !== a.doorway) continue;
+      if (a.at < b.end + 0.3 && b.at < a.end + 0.3 && Math.abs(a.at - b.at) <= 1.5) {
+        issues.push(
+          issue("DOORWAY_BOTTLENECK", "warn", Math.max(a.at, b.at), `Player and "${b.who}" cross narrow doorway "${a.doorway}" at the same time — will collide or phase through each other.`, {
+            ...fixNote(false, "Stagger one of the moves by >= 1.6s or let the actor clear the doorway first."),
+          })
+        );
+        break;
+      }
+    }
+  }
+
+  /* ---------------- 7c. On-camera presence (no staring at empty walls while offscreen SFX play) ---------------- */
+  const totalSpan = beats.length ? Math.max(...beats.map((b) => (Number(b.at) || 0) + (Number(b.duration) || 0))) : 0;
+  if (totalSpan >= 4.0 && castIdList.length > 0) {
+    let emptyRunStart = null;
+    let reportedEmpty = false;
+    for (let t = 0.5; t <= totalSpan - 0.5; t += 0.5) {
+      const camPos = simPosAt("__player__", t);
+      if (!camPos) continue;
+      const anyActorClose = castIdList.some((id) => {
+        const ap = simPosAt(id, t);
+        return ap && dist2D(camPos, ap) <= 5.5;
+      });
+      const playerMovingNow = beats.some(
+        (b) => b.type === "player_walk" && t >= (Number(b.at) || 0) && t <= (Number(b.at) || 0) + (Number(b.duration) || 1.5)
+      );
+      const activePropNow = beats.some(
+        (b) => (b.type === "prop_action" || b.type === "player_hold" || b.type === "player_pose") && Math.abs(t - (Number(b.at) || 0)) <= 2.2
+      );
+      if (!anyActorClose && !playerMovingNow && !activePropNow) {
+        if (emptyRunStart === null) emptyRunStart = t;
+        if (!reportedEmpty && t - emptyRunStart >= 3.5) {
+          issues.push(
+            issue("EMPTY_FRAME_DEAD_AIR", "warn", emptyRunStart, `Camera sits ${(t - emptyRunStart).toFixed(1)}s+ with no actor within 5.5m — staring at an empty room while action happens offscreen.`, {
+              ...fixNote(false, "Keep an actor in the same room or cut to where the action is happening."),
+            })
+          );
+          reportedEmpty = true;
+        }
+      } else {
+        emptyRunStart = null;
+        reportedEmpty = false;
       }
     }
   }

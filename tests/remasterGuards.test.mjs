@@ -116,3 +116,116 @@ test("dead-air auto-repair never injects jarring peek_lean gestures", () => {
     "auto-repair must never inject peek_lean"
   );
 });
+
+
+test("v2.1: flags staring at an empty static waypoint with LOOK_AT_EMPTY_SPOT", () => {
+  const ep = {
+    title: "Empty Bookshelf Look",
+    playerSpawn: "living_room_view",
+    cast: [{ id: "grandpa", asset: "grandpa", spawn: "kitchen" }],
+    props: [],
+    skits: [
+      {
+        name: "S1",
+        beats: [
+          { at: 0.4, type: "player_look", target: "front_door_pkg", duration: 0.25 },
+          { at: 2.0, type: "fade", to: 1, duration: 0.5 },
+        ],
+      },
+    ],
+  };
+  const { issues } = validateEpisode(ep, { ...opts, autoFix: false });
+  assert.ok(issues.some((i) => i.code === "LOOK_AT_EMPTY_SPOT"));
+});
+
+test("v2.1: flags narrow doorway head-on collision with DOORWAY_BOTTLENECK", () => {
+  const ep = {
+    title: "Doorway Collision",
+    playerSpawn: "dining_center",
+    cast: [{ id: "granny", asset: "granny", spawn: "back_hall" }],
+    props: [],
+    skits: [
+      {
+        name: "S1",
+        beats: [
+          { at: 1.0, type: "player_walk", via: ["doorway_dining"], to: "back_hall_left", duration: 2.0 },
+          { at: 1.2, type: "char_move", actor: "granny", via: ["doorway_dining"], to: "dining_center", duration: 2.0 },
+          { at: 3.5, type: "fade", to: 1, duration: 0.5 },
+        ],
+      },
+    ],
+  };
+  const { issues } = validateEpisode(ep, { ...opts, autoFix: false });
+  assert.ok(issues.some((i) => i.code === "DOORWAY_BOTTLENECK"));
+});
+
+test("v2.1: flags 3x repetitive room commute loop with REPETITIVE_ROOM_LOOP", () => {
+  const ep = {
+    title: "Commute Loop",
+    playerSpawn: "dining_center",
+    cast: [{ id: "grandpa", asset: "grandpa", spawn: "living_room" }],
+    props: [],
+    skits: [
+      {
+        name: "S1",
+        beats: [
+          { at: 0.5, type: "player_walk", to: "kitchen", duration: 1.5 },
+          { at: 2.5, type: "player_walk", to: "dining_center", duration: 1.5 },
+          { at: 4.5, type: "player_walk", to: "kitchen", duration: 1.5 },
+          { at: 6.5, type: "player_walk", to: "dining_center", duration: 1.5 },
+          { at: 8.5, type: "player_walk", to: "kitchen", duration: 1.5 },
+          { at: 10.5, type: "fade", to: 1, duration: 0.5 },
+        ],
+      },
+    ],
+  };
+  const { issues } = validateEpisode(ep, { ...opts, autoFix: false });
+  assert.ok(issues.some((i) => i.code === "REPETITIVE_ROOM_LOOP"));
+});
+
+test("v2.1: flags staring at an empty room while offscreen SFX play with EMPTY_FRAME_DEAD_AIR", () => {
+  const ep = {
+    title: "Empty Bedroom Stare",
+    playerSpawn: "living_room_view",
+    cast: [{ id: "granny", asset: "granny", spawn: "kitchen" }],
+    props: [],
+    skits: [
+      {
+        name: "S1",
+        beats: [
+          { at: 1.0, type: "sfx", sound: "granny_laugh" },
+          { at: 3.0, type: "sfx", sound: "granny_laugh" },
+          { at: 5.5, type: "sfx", sound: "granny_laugh" },
+          { at: 7.0, type: "fade", to: 1, duration: 0.5 },
+        ],
+      },
+    ],
+  };
+  const { issues } = validateEpisode(ep, { ...opts, autoFix: false });
+  assert.ok(issues.some((i) => i.code === "EMPTY_FRAME_DEAD_AIR"));
+});
+
+test("v2.1: flags spawning an actor directly on a narrow kitchen table with ACTOR_ON_NARROW_TABLE", () => {
+  const ep = {
+    title: "Table Clip",
+    playerSpawn: "dining_center",
+    cast: [{ id: "grandpa", asset: "grandpa", spawn: "kitchen_table_top" }],
+    props: [],
+    skits: [{ name: "S1", beats: [{ at: 1.0, type: "fade", to: 1, duration: 0.5 }] }],
+  };
+  const { issues } = validateEpisode(ep, { ...opts, autoFix: false });
+  assert.ok(issues.some((i) => i.code === "ACTOR_ON_NARROW_TABLE"));
+});
+
+
+test("v2.2: rejects spawning a fake bed prop on the 1st floor with FAKE_GROUND_FLOOR_BED", () => {
+  const ep = {
+    title: "Fake 1st Floor Bed",
+    playerSpawn: "bed_side",
+    cast: [],
+    props: [{ id: "fake_bed", type: "bed", spawn: "bed_home" }],
+    skits: [{ name: "S1", beats: [{ at: 1.0, type: "fade", to: 1, duration: 0.5 }] }],
+  };
+  const { issues } = validateEpisode(ep, { ...opts, autoFix: false });
+  assert.ok(issues.some((i) => i.code === "FAKE_GROUND_FLOOR_BED" && i.severity === "error"));
+});

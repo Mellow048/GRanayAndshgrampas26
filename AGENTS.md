@@ -49,7 +49,7 @@ npm run catalogue:json   # machine-readable JSON for agents
 
 ## 4. Hard Grounding & Navigation Rules (No Floating Objects or Characters)
 
-1. **Ground floor only — `GrannyHouse.fbx` has NO staircase:** The baked floor mesh (`src/data/houseNav.js` + `src/nav/houseNav.js`) powers **both** the validator and `EpisodeRunner` at runtime. Never author routes to upstairs waypoints (`upstairs_*`, `stairs_*`) — `validate:episode` rejects them with `NO_WALKABLE_ROUTE`.
+1. **Real 2-floor house + built-in wooden staircase (`src/nav/houseNav.js`):** `loadHouse()` builds the wooden staircase connecting Floor 1 (`stairs_bottom`) to Floor 2 (`stairs_top` / `upstairs_landing`), and `houseNav.js` routes seamlessly across both floors. **NEVER spawn a fake `bed` prop on the 1st floor (`FAKE_GROUND_FLOOR_BED`)** — always wake up and sleep in the real 2nd-floor Granny 1 Spawn Bedroom (`up_bed_side` / `up_bed_mattress`).
 2. **Do NOT use `yOffset` to float props:** Place props on real surface waypoints (`kitchen_table_top`, `kitchen_counter_top`, `dining_table_top`, `living_room_sofa`, `living_room_shelf_top`, `chest_spot`) and omit `yOffset`.
 3. **Custom non-house surfaces:** If a prop rests on another spawned prop (like `soda_can` on `fridge_shelf`, or `bed` at `bed_home`), set `seat: false` on the prop definition so `ComedyPropManager` preserves its exact authored height.
 4. **Keep spawns separated:** `playerSpawn` must be `>= 1.15m` from every actor; actors must spawn `>= 1.05m` apart. Use verified ground-floor packs in `src/gags/locations.js` (`kitchen_to_hall`, `living_to_hall`, `foyer_to_dining`, `hall_to_foyer`).
@@ -96,3 +96,15 @@ python3 -m http.server 8000
 # Cloud render (<= 3 min):
 gh workflow run export-video.yml -f preset=mountain_dew_run -f fps=30 -f format=mp4
 ```
+
+---
+
+## 7. v2.1 Video-Hardened Quality Rules (Enforced by `validate:episode`)
+
+1. **Never look at an empty spot (`LOOK_AT_EMPTY_SPOT`):** Every `player_look` must aim at an actor, a visible prop, or the destination of an upcoming walk — never an empty bookshelf, wall, or armchair.
+2. **Never leave the camera in an empty room (`EMPTY_FRAME_DEAD_AIR`):** Offscreen SFX do not count as visual action. Never sit `> 3.5s` with no actor within `5.5m` of the camera.
+3. **Never repeat empty commutes (`LONG_EMPTY_COMMUTE` / `REPETITIVE_ROOM_LOOP`):** Keep walks `<= 3.5s` and never walk to the same room 3+ times without a cut or an in-room gag.
+4. **Never collide in narrow doorways (`DOORWAY_BOTTLENECK`):** Stagger player and actor doorway crossings by `>= 1.6s`.
+5. **Never spawn actors on narrow tables (`ACTOR_ON_NARROW_TABLE`):** Spawn actors on floor waypoints beside tables; elevated landings automatically seat via live bounding-box bottom (`seatOnSurface`).
+6. **Held FPS items (`player_hold`):** Reserved for handheld items (auto-normalized to `0.26m` max viewmodel size so custom props never fill half the screen).
+7. **Kid-safe defaults & clean audio:** Granny's `BatBloody` is hidden by default unless `prop: "bat"` is explicitly passed; random phantom `pop`/`ding`/`click` audio gap-spam is disabled; idle actors have subtle breathing/sway; `player_pose: "lie"` roll is clamped to `[-0.30, +0.30]` so the camera never clips into the sky void.

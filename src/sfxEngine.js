@@ -416,12 +416,12 @@ export class SfxEngine {
       if (this.stepAccumulator >= stepPeriod) {
         this.stepAccumulator -= stepPeriod;
         this.play("squidward_walk", {
-          volume: isRun ? 0.44 : isSneak ? 0.3 : 0.38,
+          volume: isRun ? 0.28 : isSneak ? 0.18 : 0.22,
           pitch: actorBasePitch * animMul,
           pitchJitter: 0.07,
           simTime,
-          cooldown: 0.2,
-          maxDuration: isRun ? 0.22 : 0.34,
+          cooldown: 0.34,
+          maxDuration: isRun ? 0.18 : 0.26,
         });
       }
       return;
@@ -429,23 +429,7 @@ export class SfxEngine {
 
     this.stepAccumulator = 0;
 
-    // Subtle comedic gap pacer only when authored audio has been quiet > 2.4s
-    const gap = simTime - this.lastAnySfxTime;
-    if (gap >= Math.max(2.4, this.nextGapThreshold)) {
-      const cues = ["pop", "ding", "click"];
-      const pick = cues[Math.floor(Math.random() * cues.length)];
-      if (
-        this.play(pick, {
-          volume: 0.32,
-          pitchJitter: 0.1,
-          simTime,
-          maxDuration: 0.42,
-        })
-      ) {
-        this.nextGapThreshold =
-          2.4 +
-          Math.random() * 1.1;
-      }
-    }
+    // Do NOT inject random phantom pop/ding/click cues during quiet beats —
+    // let authored SFX and BGM control the comedy timing cleanly.
   }
 }

@@ -38,6 +38,17 @@ export function carHouseLoop() {
     props: [{ id: "car", type: "car", spawn: "living_room", scale: 0.55, visible: true }],
     beats: [
       { at: 0.0, type: "bgm", sound: "monkeys_spinning_monkeys", volume: 0.2 },
+      { at: 0.1, type: "char_visibility", actor: "grandpa", visible: true },
+      {
+        at: 0.2,
+        type: "char_move",
+        actor: "grandpa",
+        via: ["upstairs_east_hall", "upstairs_hall_center", "upstairs_landing", "stairs_top", "stairs_middle", "stairs_bottom", "hall_corner", "dining_pass", "doorway_living"],
+        to: "living_room_entry",
+        duration: 10.0,
+        speed: 2.3,
+        anim: "walk",
+      },
       { at: 0.7, type: "prop_action", prop: "car", action: "drive", path: HOUSE_LOOP, duration: 63 },
       { at: 0.1, type: "player_ride", prop: "car", path: HOUSE_LOOP, duration: 63, mountDuration: 0.6, speed: 2.0, sideOffset: 0.3, forwardOffset: -0.05, eyeHeight: 1.12 },
 

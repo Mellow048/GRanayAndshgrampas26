@@ -89,15 +89,15 @@ test("the long-form show passes the staging gate and tags issues by scene", () =
   assert.equal(result.stats.errorsAfter, 0, "the reference show must not need hand-fixing");
 
   // Force a fault inside scene 3 and make sure the report names scene 3.
-  // The house has no staircase, so a walk to the second floor can only be
-  // "walking on air" — the floor router must refuse it and say where.
+  // Walking to a spot outside the house footprint has no floor under it.
   const broken = buildShow("mountain_dew_run");
   const fridgeStart = broken.sceneMap.find((m) => m.id === "fridge").start;
   broken.skits
     .find((s) => s.sceneId === "fridge")
-    .beats.push({ at: +(fridgeStart + 2).toFixed(3), type: "player_walk", to: "up_bed_side", duration: 2 });
+    .beats.push({ at: +(fridgeStart + 2).toFixed(3), type: "player_walk", to: "void_outside_house", duration: 2 });
 
-  const bad = validateAndRepair(broken, { setMap: SET_MAP, navGraph: NAV_GRAPH });
+  const testMap = { ...SET_MAP, void_outside_house: { x: 42, y: 0, z: 42, label: "Outside House Void" } };
+  const bad = validateAndRepair(broken, { setMap: testMap, navGraph: NAV_GRAPH });
   const wallCut = bad.issues.find((i) => i.code === "NO_WALKABLE_ROUTE");
   assert.ok(wallCut, "the walk with no floor under it is reported");
   assert.equal(wallCut.scene, "fridge");

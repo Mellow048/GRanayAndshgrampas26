@@ -85,6 +85,7 @@ export class PlayerCamera {
     this.viewmodelScene.add(this.heldItemMount);
     this.heldPropMesh = null;
     this.heldPropType = null;
+    this.heldBaseScale = 0.55;
     this.heldEquipPop = 1;
     this.heldUseTimer = 0;
     this.vmBobTime = 0;
@@ -207,7 +208,7 @@ export class PlayerCamera {
     }
   }
 
-  reset(spawnPos = null, lookAtPos = null, { posture = "standing" } = {}) {
+  reset(spawnPos = null, lookAtPos = null) {
     if (this.activeWalk?._resolve) this.activeWalk._resolve();
     if (this._lookResolve) {
       this._lookResolve();
@@ -239,12 +240,9 @@ export class PlayerCamera {
     this.panicTimer = 0;
     this.trackingRef = null;
 
-    const spawnEyeHeight = posture === "lying"
-      ? (CONFIG.playerLyingEyeHeight ?? 0.56)
-      : PLAYER_EYE_HEIGHT;
-    this.baseEyeHeight = spawnEyeHeight;
-    this.crouchStartHeight = spawnEyeHeight;
-    this.crouchTargetHeight = spawnEyeHeight;
+    this.baseEyeHeight = PLAYER_EYE_HEIGHT;
+    this.crouchStartHeight = PLAYER_EYE_HEIGHT;
+    this.crouchTargetHeight = PLAYER_EYE_HEIGHT;
     this.crouchElapsed = 1;
 
     this.fadeAlpha = 0;
@@ -576,7 +574,6 @@ export class PlayerCamera {
     maxVerticalSpeed = 1.55,
     faceTarget = null,
     resolver = null,
-    vehicleRide = false,
   }) {
     if (this.activeWalk?._resolve) {
       this.activeWalk._resolve();
@@ -602,7 +599,7 @@ export class PlayerCamera {
     if (!resolvedPoints || resolvedPoints.length < 2) return Promise.resolve();
 
     // ---- Staging gate: never walk through a body or a wall ----
-    if (!vehicleRide) {
+    {
       const caps = this._actorCapsules();
       const last = resolvedPoints[resolvedPoints.length - 1];
       if (caps.length) {
@@ -703,7 +700,6 @@ export class PlayerCamera {
       autoLook,
       manualLookOverride: false,
       faceTarget: resolvedFaceTarget,
-      vehicleRide: Boolean(vehicleRide),
       _resolve: resolveWalk,
     };
     this.isWalking = true;
@@ -727,10 +723,6 @@ export class PlayerCamera {
   } = {}) {
     if (!Array.isArray(points) || points.length < 2) return Promise.resolve();
 
-    // Remove duplicate waypoints before deriving the car's forward direction.
-    // Continuous scene joins commonly repeat the point where the previous route
-    // ended; treating that zero-length segment as a heading used to snap the
-    // camera to the car's center.
     const ridePoints = [points[0]];
     for (const point of points.slice(1)) {
       const prev = ridePoints.at(-1);
@@ -739,22 +731,11 @@ export class PlayerCamera {
     if (ridePoints.length < 2) return Promise.resolve();
 
     const seatPath = ridePoints.map((point, i) => {
-      let a = ridePoints[Math.max(0, i - 1)];
-      let b = ridePoints[Math.min(ridePoints.length - 1, i + 1)];
-      if (Math.hypot(b.x - a.x, b.z - a.z) < 1e-4) {
-        for (let j = i + 1; j < ridePoints.length; j += 1) {
-          if (Math.hypot(ridePoints[j].x - point.x, ridePoints[j].z - point.z) > 1e-4) {
-            b = ridePoints[j];
-            break;
-          }
-        }
-      }
-      let dx = b.x - a.x;
-      let dz = b.z - a.z;
-      const length = Math.hypot(dx, dz) || 1;
-      dx /= length;
-      dz /= length;
-      // Car local +X is forward; local +Z is the driver's side.
+      const a = ridePoints[Math.max(0, i - 1)];
+      const b = ridePoints[Math.min(ridePoints.length - 1, i + 1)];
+      const length = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+      const dx = (b.x - a.x) / length;
+      const dz = (b.z - a.z) / length;
       return new THREE.Vector3(
         point.x + dx * forwardOffset - dz * sideOffset,
         point.y ?? 0,
@@ -766,44 +747,33 @@ export class PlayerCamera {
     const mountEnd = seatPath[0];
     const mountDistance = mountStart.distanceTo(mountEnd);
     const heightChange = Math.abs(this.baseEyeHeight - eyeHeight);
-    if (mountDistance > 0.08 || heightChange > 0.08) {
-      const mountDur = Math.max(0.25, Number(mountDuration) || 0.65);
-      this.crouchStartHeight = this.baseEyeHeight;
-      this.crouchTargetHeight = eyeHeight;
-      this.crouchElapsed = 0;
-      this.crouchDuration = mountDur;
-      const approach = this.startWalk({
-        points: [mountStart, mountEnd],
-        duration: mountDur,
-        speed: Math.max(0.6, mountDistance / mountDur),
-        autoLook: true,
-        vehicleRide: true,
-      });
-      return approach.then(() => {
-        this.baseEyeHeight = eyeHeight;
-        this.crouchStartHeight = eyeHeight;
-        this.crouchTargetHeight = eyeHeight;
-        this.crouchElapsed = this.crouchDuration;
-        return this.startWalk({
-          points: seatPath,
-          duration,
-          speed,
-          autoLook: true,
-          vehicleRide: true,
-        });
-      });
-    }
-
-    this.baseEyeHeight = eyeHeight;
-    this.crouchStartHeight = eyeHeight;
-    this.crouchTargetHeight = eyeHeight;
-    this.crouchElapsed = this.crouchDuration;
-    return this.startWalk({
+    const ride = () => this.startWalk({
       points: seatPath,
       duration,
       speed,
       autoLook: true,
       vehicleRide: true,
+    });
+
+    if (mountDistance <= 0.08 && heightChange <= 0.08) return ride();
+
+    const mountDur = Math.max(0.25, Number(mountDuration) || 0.65);
+    this.crouchStartHeight = this.baseEyeHeight;
+    this.crouchTargetHeight = eyeHeight;
+    this.crouchElapsed = 0;
+    this.crouchDuration = mountDur;
+    return this.startWalk({
+      points: [mountStart, mountEnd],
+      duration: mountDur,
+      speed: Math.max(0.6, mountDistance / mountDur),
+      autoLook: true,
+      vehicleRide: true,
+    }).then(() => {
+      this.baseEyeHeight = eyeHeight;
+      this.crouchStartHeight = eyeHeight;
+      this.crouchTargetHeight = eyeHeight;
+      this.crouchElapsed = this.crouchDuration;
+      return ride();
     });
   }
 
@@ -813,14 +783,6 @@ export class PlayerCamera {
       this._lookResolve = null;
     }
     const { yaw, pitch } = this._computeYawPitchTo(targetPos);
-    // Do not twitch toward near-identical waypoints (a common authoring error
-    // when two targets differ by only a few centimetres).
-    if (
-      Math.abs(wrapAngleDiff(yaw, this.yaw)) < 0.045 &&
-      Math.abs(pitch - this.pitch) < 0.04
-    ) {
-      return Promise.resolve();
-    }
     this.lookStartYaw = this.yaw;
     this.lookStartPitch = this.pitch;
     this.lookTargetYaw = this.yaw + wrapAngleDiff(yaw, this.yaw);
@@ -830,8 +792,7 @@ export class PlayerCamera {
     // larger `maxDuration` (or Infinity for intentional slow scans).
     const cap =
       maxDuration ?? CONFIG.maxLookDuration ?? Number.POSITIVE_INFINITY;
-    const requestedDuration = Math.max(0.48, Number(duration) || 0.48);
-    this.lookDuration = Math.max(0.01, Math.min(requestedDuration, cap));
+    this.lookDuration = Math.max(0.01, Math.min(duration, cap));
     this.trackingRef = trackRef;
     return new Promise((resolve) => {
       this._lookResolve = resolve;
@@ -860,9 +821,11 @@ export class PlayerCamera {
     this.poseStartRoll = this.poseRoll;
     if (pose === "lie") {
       const wp = typeof surface === "string" ? resolver?.getWaypoint?.(surface) : surface;
-      const surfaceOffset = wp && typeof wp.y === "number" ? Math.max(0.28, wp.y - this.playerPos.y + 0.22) : 0.68;
-      this.crouchTargetHeight = clamp(surfaceOffset, 0.35, 0.95);
-      this.poseTargetRoll = roll !== null && roll !== undefined ? Number(roll) : -0.65;
+      const surfaceOffset = wp && typeof wp.y === "number" ? Math.max(0.52, wp.y - this.playerPos.y + 0.28) : 0.72;
+      this.crouchTargetHeight = clamp(surfaceOffset, 0.52, 0.95);
+      // Clamp roll to [-0.30, +0.30] so the frustum corners never slice through walls into the sky void.
+      const rawRoll = roll !== null && roll !== undefined ? Number(roll) : -0.24;
+      this.poseTargetRoll = clamp(rawRoll, -0.3, 0.3);
       if (pitch !== null && pitch !== undefined) {
         this.lookStartYaw = this.yaw;
         this.lookStartPitch = this.pitch;
@@ -949,8 +912,16 @@ export class PlayerCamera {
     if (!propType) return;
 
     const mesh = createPropMesh(propType);
-    // Scale cleanly for crisp FPS bottom-right framing
-    mesh.scale.setScalar(propType === "emoji_ball" ? 0.45 : propType === "car" ? 0.2 : 0.72);
+    // Auto-normalize held FPS prop size by its real bounding box so large/custom props
+    // (like cars or chests) never fill half the screen.
+    mesh.updateMatrixWorld(true);
+    const heldBox = new THREE.Box3().setFromObject(mesh);
+    const heldSize = new THREE.Vector3();
+    heldBox.getSize(heldSize);
+    const maxDim = Math.max(heldSize.x, heldSize.y, heldSize.z, 0.06);
+    const targetDim = propType === "emoji_ball" ? 0.2 : 0.26;
+    this.heldBaseScale = clamp(targetDim / maxDim, 0.12, 0.85);
+    mesh.scale.setScalar(this.heldBaseScale);
     if (propType === "golden_key") {
       mesh.rotation.set(0.3, -0.4, -0.35);
     } else if (propType === "toy_blaster") {
@@ -1063,7 +1034,7 @@ export class PlayerCamera {
         }
 
         // Slide around bodies instead of ghosting through them.
-        if (this.actorProvider && !this.activeWalk.vehicleRide) {
+        if (this.actorProvider) {
           const caps = this._actorCapsules();
           if (caps.length) {
             const slid = pushOutOfCapsules(
@@ -1308,7 +1279,7 @@ export class PlayerCamera {
       this.vmBobTime += dt;
       this.heldEquipPop = Math.min(1, this.heldEquipPop + dt * 6);
       const popScale = easeOutCubic(this.heldEquipPop);
-      const baseScale = this.heldPropType === "emoji_ball" ? 0.36 : this.heldPropType === "car" ? 0.2 : 0.72;
+      const baseScale = this.heldBaseScale || 0.55;
       this.heldPropMesh.scale.setScalar(baseScale * popScale);
 
       const baseX = this.aspectKey === "9:16" ? 0.18 : 0.28;
