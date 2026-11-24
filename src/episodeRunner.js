@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { isHeadGesture } from "./headGestures.js";
 import { CONFIG, SET_MAP, NAV_GRAPH } from "./config.js";
+import { route as planFloorRoute, snap as snapToFloor } from "./nav/houseNav.js";
 import { findTaggedObject, getObjectBounds } from "./assetLoader.js";
 import { validateAndRepair, formatStagingReport } from "./episodeSafety.js";
 import {
@@ -59,14 +60,12 @@ export class EpisodeRunner {
   constructor({
     characters,
     playerCamera,
-    cameraDirector = null,
     comedyProps,
     sfxEngine,
     house = null,
   }) {
     this.characters = characters;
     this.playerCamera = playerCamera;
-    this.cameraDirector = cameraDirector;
     this.comedyProps = comedyProps;
     this.sfxEngine = sfxEngine;
     this.house = house;
@@ -417,7 +416,25 @@ export class EpisodeRunner {
     let cursor = from;
     for (const stop of stops) {
       const dst = this.resolveWaypoint(stop);
-      const { points, segments } = this.buildPathWithSegments(cursor, dst);
+      // Ground-floor moves consult the baked house floor mesh (src/nav/houseNav.js)
+      // so characters and POV never float or cut walls at runtime.
+      const groundLeg = Math.abs(cursor.y ?? 0) < 0.35 && Math.abs(dst.y ?? 0) < 0.35 && !isElevatedSurfacePos(dst);
+      let points;
+      let segments;
+      if (groundLeg) {
+        const baked = planFloorRoute(cursor, dst);
+        if (baked && baked.length >= 2) {
+          points = baked.map((p) => {
+            const snapped = snapToFloor(p);
+            return new THREE.Vector3(p.x, snapped ? snapped.y : (p.y ?? 0), p.z);
+          });
+          segments = points.slice(1).map(() => ({ isJumpArc: false, arcHeight: 0 }));
+        } else {
+          ({ points, segments } = this.buildPathWithSegments(cursor, dst));
+        }
+      } else {
+        ({ points, segments } = this.buildPathWithSegments(cursor, dst));
+      }
       if (allPoints.length === 0) {
         allPoints.push(...points);
         allSegments.push(...segments);
@@ -1249,7 +1266,7 @@ export class EpisodeRunner {
       const dur = Number.isFinite(cap) ? Math.min(rawDur, cap) : rawDur;
       const lookPromise = this.playerCamera.lookAt(
         ev.target,
-        { duration: dur, track: Boolean(ev.track), maxDuration: cap },
+        { duration: dur, track: Boolean(ev.track), maxDuration: cap, fromBeat: true },
         this.resolver
       );
       if (!silentSeek) {
@@ -1295,6 +1312,19 @@ export class EpisodeRunner {
         crouched: Boolean(ev.crouched),
         duration: ev.duration ?? 0.35,
       });
+    }
+
+    if (type === "player_pose" && this.playerCamera) {
+      return this.playerCamera.setPose(
+        {
+          pose: ev.pose ?? "stand",
+          surface: ev.surface ?? null,
+          duration: ev.duration ?? 0.6,
+          roll: ev.roll ?? null,
+          pitch: ev.pitch ?? null,
+        },
+        this.resolver
+      );
     }
 
     if (type === "player_hold" && this.playerCamera) {

@@ -9,6 +9,7 @@ on:
         default: "comedy_variety_1m"
         options:
           - comedy_variety_1m
+          - mountain_dew_run
           - granny_cookie_heist_15s
           - cookie_heist_15s
           - rocket_ball_test
@@ -16,9 +17,6 @@ on:
           - cookie_caper_30s
           - the_great_escape_68s
           - grandpa_key_pov_44s
-          - zombie_fort_5m
-          - the_great_escape_5m
-          - floor_is_lava_4m
           - jump_run_walk_6s
           - cookie_marathon_150s
           - shenanigans_45s

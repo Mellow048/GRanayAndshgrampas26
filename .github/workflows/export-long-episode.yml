@@ -13,7 +13,6 @@ on:
           - rocket_ball_x3
           - wake_to_ride_120s
           - the_great_escape_68s
-          - zombie_fort_5m
           - custom_json
       episode_json:
         description: "Custom Episode JSON (overrides preset if provided)"

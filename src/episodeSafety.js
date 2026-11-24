@@ -26,6 +26,7 @@ import {
   isEmbedded,
 } from "./stagingSafety.js";
 import { route as planFloorRoute, validateRoute, snap as snapToFloor } from "./nav/houseNav.js";
+import { PROP_TYPE_SET, BEAT_TYPE_SET } from "./schema.js";
 
 /* ------------------------------------------------------------------ *
  * Tunables
@@ -1183,7 +1184,12 @@ export function validateEpisode(episode, options = {}) {
       if (skit) {
         skit.beats = skit.beats || [];
         const insertAt = Math.round((gap.from + gap.to) * 50) / 100;
-        skit.beats.push({ at: insertAt, type: "player_gesture", gesture: "peek_lean", duration: 1.0 });
+        const firstActor = (ep.cast || [])[0]?.id;
+        if (firstActor) {
+          skit.beats.push({ at: insertAt, type: "char_gesture", actor: firstActor, gesture: "nod_once", duration: 0.7 });
+        } else {
+          skit.beats.push({ at: insertAt, type: "player_gesture", gesture: "nod_yes", duration: 0.7 });
+        }
         applied = true;
       }
     }
@@ -1197,7 +1203,7 @@ export function validateEpisode(episode, options = {}) {
           ...fixNote(
             applied,
             applied
-              ? "Inserted a 1.0s peek_lean at the centre of the gap — replace it with a real gag."
+              ? "Inserted a subtle nod at the centre of the gap (never injects random peek_lean) — replace it with a real beat."
               : "Fill it with movement, a bubble, a look or an SFX (max 2.5s)."
           ),
         }
@@ -1205,26 +1211,82 @@ export function validateEpisode(episode, options = {}) {
     );
   }
 
-  /* ---------------- 7. Framing ---------------- */
-
-  for (const beat of beats) {
-    if (beat.type !== "player_look" || !beat.target) continue;
-    if (typeof beat.target !== "string" || !setMap[beat.target]) continue;
-    const dur = Number(beat.duration ?? 0.2);
-    if (dur < 0.16) {
+  /* ---------------- 6b. Schema & Runtime Capability Guard ---------------- */
+  for (const prop of ep.props || []) {
+    if (prop?.type && !PROP_TYPE_SET.has(prop.type)) {
       issues.push(
-        issue("SNAP_PAN", "warn", beat.at, `player_look to "${beat.target}" runs ${dur.toFixed(2)}s — a snap that reads as a cut.`, {
-          ...fixNote(false, "Use 0.18–0.3s for a readable whip-pan."),
+        issue("UNKNOWN_PROP_TYPE", "error", 0, `Prop "${prop.id}" uses unknown type "${prop.type}" — runtime has no mesh for it.`, {
+          ...fixNote(false, `Use a registered prop type from \`npm run catalogue\` (${[...PROP_TYPE_SET].join(", ")}).`),
         })
       );
     }
+  }
+
+  for (const beat of beats) {
+    if (beat?.type && !BEAT_TYPE_SET.has(beat.type)) {
+      issues.push(
+        issue("UNKNOWN_BEAT_TYPE", "error", beat.at ?? 0, `Beat uses unknown type "${beat.type}" — runtime will ignore it.`, {
+          ...fixNote(false, "Use a registered beat type from `npm run catalogue`."),
+        })
+      );
+    }
+  }
+
+  /* ---------------- 7. Framing & Camera Discipline ---------------- */
+  const propHidden = new Map((ep.props || []).map((p) => [p.id, p.visible === false]));
+  let lastLookAt = -999;
+  let lastCutAt = -999;
+
+  for (const beat of beats) {
+    if (beat.type === "cut") {
+      lastCutAt = Number(beat.at) || 0;
+      continue;
+    }
+    if (beat.type === "prop_action" && beat.prop) {
+      if (beat.action === "hide" || beat.action === "pickup") propHidden.set(beat.prop, true);
+      else if (beat.action === "show" || beat.action === "place" || beat.action === "pop_out" || beat.action === "reset") {
+        propHidden.set(beat.prop, false);
+      }
+      continue;
+    }
+    if (beat.type !== "player_look" || !beat.target) continue;
+    if (typeof beat.target !== "string") continue;
+
+    const at = Number(beat.at) || 0;
+    const dur = Number(beat.duration ?? 0.2);
+
+    if (dur < 0.16) {
+      issues.push(
+        issue("SNAP_PAN", "warn", at, `player_look to "${beat.target}" runs ${dur.toFixed(2)}s — a snap that reads as a cut.`, {
+          ...fixNote(false, "Use 0.18–0.35s for a readable look."),
+        })
+      );
+    }
+
+    if (at - lastLookAt < 0.45 && lastCutAt < lastLookAt) {
+      issues.push(
+        issue("RAPID_LOOK_FLICK", "warn", at, `player_look to "${beat.target}" fires ${(at - lastLookAt).toFixed(2)}s after the previous look — causes camera flicking.`, {
+          ...fixNote(false, "Space player_look beats at least 0.5s apart unless separated by a cut."),
+        })
+      );
+    }
+    lastLookAt = at;
+
+    if (propHidden.get(beat.target) === true) {
+      issues.push(
+        issue("LOOK_AT_HIDDEN_PROP", "warn", at, `player_look targets "${beat.target}" while it is hidden or picked up — camera stares at empty space.`, {
+          ...fixNote(false, "Look at an active actor or a visible prop instead."),
+        })
+      );
+    }
+
     if (beat.track === false) {
       const movingTarget = beats.some(
-        (b) => (b.type === "char_move" || b.type === "move") && b.actor === beat.target && Math.abs(b.at - beat.at) < 3
+        (b) => (b.type === "char_move" || b.type === "move") && b.actor === beat.target && Math.abs(b.at - at) < 3
       );
       if (movingTarget) {
         issues.push(
-          issue("OFF_CENTER_FRAMING", "warn", beat.at, `"${beat.target}" moves within 3s but the look is untracked — they will drift off-centre.`, {
+          issue("OFF_CENTER_FRAMING", "warn", at, `"${beat.target}" moves within 3s but the look is untracked — they will drift off-centre.`, {
             ...fixNote(false, "Use track: true so the lens follows them."),
           })
         );

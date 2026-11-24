@@ -203,7 +203,7 @@ The script is validated **before** a single frame is rendered. Two modules own t
 
 ```bash
 npm run validate:episode                       # every preset
-npm run validate:episode -- --preset floor_is_lava_4m
+npm run validate:episode -- --preset cookie_marathon_150s
 npm run validate:episode -- --file my-episode.json --out fixed.json
 npm run validate:episode -- --json             # for CI / tooling
 ```

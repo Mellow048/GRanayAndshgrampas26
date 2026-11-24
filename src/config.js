@@ -5,12 +5,11 @@
 
 import { GRANNY_COOKIE_HEIST_15S } from "./episodes/cookieHeist15s.js";
 import { THE_GREAT_ESCAPE_68S } from "./episodes/greatEscape75.js";
-import { ZOMBIE_FORT_5M } from "./episodes/zombieFort5m.js";
 import { COOKIE_CAPER_30S } from "./episodes/cookieCaper30.js";
 import { COMEDY_VARIETY_1M, COOKIE_HEIST_15S, COOKIE_MARATHON_150S, ROCKET_BALL_TEST, ROCKET_BALL_x3, SHENANIGANS_45S, WAKE_TO_RIDE_120S } from "./episodes.js";
 import { SHOWS, buildShow } from "./shows/index.js";
 
-export { COMEDY_VARIETY_1M, COOKIE_HEIST_15S, COOKIE_MARATHON_150S, ZOMBIE_FORT_5M, COOKIE_CAPER_30S, ROCKET_BALL_TEST, ROCKET_BALL_x3, SHENANIGANS_45S, WAKE_TO_RIDE_120S, SHOWS };
+export { COMEDY_VARIETY_1M, COOKIE_HEIST_15S, COOKIE_MARATHON_150S, COOKIE_CAPER_30S, ROCKET_BALL_TEST, ROCKET_BALL_x3, SHENANIGANS_45S, WAKE_TO_RIDE_120S, SHOWS };
 
 export const CONFIG = {
   threeVersion: "0.170.0",
@@ -2081,10 +2080,6 @@ export const EPISODE_PRESETS = {
   cookie_caper_30s: COOKIE_CAPER_30S,
   the_great_escape_68s: THE_GREAT_ESCAPE_68S,
   grandpa_key_pov_44s: GRANDPA_KEY_POV_44S,
-  zombie_fort_5m: ZOMBIE_FORT_5M,
-  floor_is_lava_4m: FLOOR_IS_LAVA_4M,
-  // Backwards-compatible alias for the fast-cut escape preset.
-  the_great_escape_5m: THE_GREAT_ESCAPE_68S,
   jump_run_walk_6s: JUMP_RUN_WALK_EPISODE,
   shenanigans_45s: SHENANIGANS_45S,
   wake_to_ride_120s: WAKE_TO_RIDE_120S,
@@ -2102,9 +2097,6 @@ export const EPISODE_PRESETS = {
 export const LEGACY_SPINE_DEBT = {
   comedy_variety_1m: "variety compilation assembled before the spine gate",
   the_great_escape_68s: "escape short assembled before the spine gate",
-  the_great_escape_5m: "alias of the_great_escape_68s; inherits the same debt",
-  zombie_fort_5m: "hand-written act format (no scenes to attach objectives to)",
-  floor_is_lava_4m: "hand-written act format (no scenes to attach objectives to)",
   grandpa_key_pov_44s: "hand-written act format (no scenes to attach objectives to)",
   granny_cookie_heist_15s: "hand-written act format (no scenes to attach objectives to)",
   jump_run_walk_6s: "hand-written act format (no scenes to attach objectives to)",

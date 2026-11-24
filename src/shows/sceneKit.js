@@ -3,8 +3,8 @@
  *
  * A SHOW is a list of scenes. A SCENE is a self-contained chunk of story with
  * LOCAL timings (`at` starts at 0) that can be previewed, validated and fixed on
- * its own. `buildShow()` then welds the scenes together with 0.4s black CUTs
- * that reset the player, the cast and the props, so nothing leaks between them.
+ * its own. `buildShow()` welds scenes continuously (`transitions: "continuous"`
+ * by default — no cuts, no resets) so long-form stories flow cleanly across scenes.
  *
  * Why this shape:
  *   - a 5-minute episode is 20-24 of these, not one 900-line JSON blob;

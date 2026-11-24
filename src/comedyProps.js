@@ -589,6 +589,7 @@ export function createPropMesh(propType) {
       break;
     }
 
+
     case "car": {
       // A whole cartoon car for the "riding a car" gag. Built from primitives
       // like every other prop; `bounce` reads as the suspension revving.
@@ -655,8 +656,75 @@ export function createPropMesh(propType) {
       group.add(body, hood, trunk, dash, windscreen, ...seats, headL, headR, tailL, tailR, bumpF, bumpR, ...wheels);
       break;
     }
+    case "soda_can": {
+      const canMat = new THREE.MeshStandardMaterial({
+        color: 0x39ff14,
+        roughness: 0.25,
+        metalness: 0.45,
+      });
+      const rimMat = new THREE.MeshStandardMaterial({
+        color: 0xd4d4d8,
+        roughness: 0.2,
+        metalness: 0.85,
+      });
+      const stripeMat = new THREE.MeshStandardMaterial({
+        color: 0xef4444,
+        roughness: 0.35,
+        metalness: 0.2,
+      });
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.16, 18), canMat);
+      body.position.y = 0.08;
+      const topRim = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.052, 0.014, 18), rimMat);
+      topRim.position.y = 0.165;
+      const botRim = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.046, 0.012, 18), rimMat);
+      botRim.position.y = 0.006;
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0535, 0.0535, 0.036, 18), stripeMat);
+      band.position.y = 0.085;
+      const tab = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.004, 0.032), rimMat);
+      tab.position.set(0, 0.174, 0.006);
+      group.add(body, topRim, botRim, band, tab);
+      break;
+    }
+
+    case "bed": {
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.72 });
+      const mattressMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.85 });
+      const blanketMat = new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.8 });
+      const pillowMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.24, 2.05), woodMat);
+      frame.position.y = 0.18;
+      const headboard = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.85, 0.1), woodMat);
+      headboard.position.set(0, 0.45, -0.98);
+      const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.08, 0.2, 1.95), mattressMat);
+      mattress.position.y = 0.4;
+      const blanket = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.06, 1.32), blanketMat);
+      blanket.position.set(0, 0.51, 0.3);
+      const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.14, 0.36), pillowMat);
+      pillow.position.set(0, 0.55, -0.7);
+      group.add(frame, headboard, mattress, blanket, pillow);
+      break;
+    }
+
+    case "shelf": {
+      const shelfMat = new THREE.MeshStandardMaterial({
+        color: 0xe2e8f0,
+        roughness: 0.25,
+        metalness: 0.15,
+        transparent: true,
+        opacity: 0.85,
+      });
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.03, 0.42), shelfMat);
+      slab.position.y = -0.015;
+      group.add(slab);
+      break;
+    }
+
+
     case "cookie_jar":
     default: {
+      if (propType !== "cookie_jar") {
+        console.warn(`[comedyProps] Unknown prop type "${propType}" — falling back to cookie_jar. Register it in src/schema.js and createPropMesh().`);
+      }
       // Bigger than a real jar (48cm) plus a few cookies inside, so the camera
       // can actually tell what the heist is about.
       const jarMat = new THREE.MeshStandardMaterial({
@@ -828,10 +896,12 @@ export class ComedyPropManager {
 
       mesh.position.copy(basePos);
       if (def.rotationY) mesh.rotation.y = def.rotationY;
+
       // Scale before computing bounds/surface contact; otherwise a tiny car is
       // seated using full-size bounds and visibly hovers above the counter.
       if (def.scale) mesh.scale.setScalar(def.scale);
-      if (this.world) {
+      if (this.world && def.seat !== false) {
+
         const seated = this.seatProp(mesh, basePos, def.id);
         mesh.position.copy(seated);
         basePos.copy(seated);
@@ -955,6 +1025,24 @@ export class ComedyPropManager {
         state.popOut = false;
         state.spin = false;
         break;
+      case "place": {
+        mesh.visible = true;
+        state.bounce = false;
+        state.popOut = false;
+        state.spin = false;
+        state.float = false;
+        const wpRef = params.waypoint || params.at;
+        if (wpRef && this.waypoints[wpRef]) {
+          const wp = this.waypoints[wpRef];
+          basePos.set(wp.x, wp.y + (params.yOffset || 0), wp.z);
+          if (this.world && params.seat !== false) {
+            const seated = this.seatProp(mesh, basePos, propId);
+            basePos.copy(seated);
+          }
+          mesh.position.copy(basePos);
+        }
+        break;
+      }
       case "open":
         mesh.visible = true;
         state.lidOpen = true;

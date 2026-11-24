@@ -19,7 +19,6 @@ export class StudioUI {
     runner,
     sfxEngine,
     playerCamera,
-    cameraDirector,
     characters,
     renderer,
     scene = null,
@@ -30,7 +29,6 @@ export class StudioUI {
     this.runner = runner;
     this.sfxEngine = sfxEngine;
     this.playerCamera = playerCamera;
-    this.cameraDirector = cameraDirector;
     this.characters = characters;
     this.renderer = renderer;
     this.scene = scene || playerCamera?.scene || null;

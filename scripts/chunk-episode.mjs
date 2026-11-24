@@ -3,12 +3,12 @@
  * Splits a long multi-skit/multi-gag episode into self-contained, gag-aligned chunk JSONs
  * for parallel GitHub Actions rendering + lossless FFmpeg concatenation.
  *
- * Handles both `buildEpisode` (`at`-timed gags) and `await`/`after`-chained Act scripts
- * (like `zombie_fort_5m`), keeping chunk boundaries frame-exact at skit/act transitions.
+ * Handles both `buildEpisode` (`at`-timed gags) and `await`/`after`-chained Act scripts,
+ * keeping chunk boundaries frame-exact at skit/act transitions.
  *
  * Usage:
  *   node scripts/chunk-episode.mjs --preset rocket_ball_x3 --max-chunk-sec 20 --out-dir /tmp/chunks
- *   node scripts/chunk-episode.mjs --preset zombie_fort_5m --max-chunk-sec 80 --out-dir /tmp/chunks
+ *   node scripts/chunk-episode.mjs --preset cookie_marathon_150s --max-chunk-sec 80 --out-dir /tmp/chunks
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -16,7 +16,7 @@ import { CONFIG, EPISODE_PRESETS, SET_MAP } from "../src/config.js";
 
 function parseArgs(argv) {
   const opts = {
-    preset: "zombie_fort_5m",
+    preset: "cookie_marathon_150s",
     episodeFile: "",
     maxChunkSec: 180,
     chunks: 0,

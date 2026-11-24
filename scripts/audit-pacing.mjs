@@ -308,7 +308,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   } else if (!flags.has("gags")) {
     const presetName =
       args.find((a) => !a.startsWith("--")) ||
-      (EPISODE_PRESETS.zombie_fort_5m ? "zombie_fort_5m" : Object.keys(EPISODE_PRESETS)[0]);
+      (EPISODE_PRESETS.comedy_variety_1m ? "comedy_variety_1m" : Object.keys(EPISODE_PRESETS)[0]);
     const episode = EPISODE_PRESETS[presetName];
     if (!episode) {
       console.error(`Unknown preset "${presetName}". Available: ${Object.keys(EPISODE_PRESETS).join(", ")}`);
