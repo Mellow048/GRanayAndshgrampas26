@@ -189,7 +189,27 @@ export function cookAndServe({ at, chef = "granny", guest = "grandpa", plateProp
   ];
 }
 
-export function dialogueExchange({ at, a, b, turns = 3, step = 1.6, icons = ["question", "exclamation", "laugh"] } = {}) {
+/**
+ * FunnyHorrorAnimation-style silent physical greeting:
+ * Characters turn to look at each other, one waves, the other nods. ZERO thought bubbles.
+ */
+export function greetAndNod({ at, a = "granny", b = "grandpa", duration = 2.0 } = {}) {
+  return [
+    { at, type: "char_face", actor: a, targetActor: b, duration: 0.22 },
+    { at: +(at + 0.08).toFixed(3), type: "char_face", actor: b, targetActor: a, duration: 0.22 },
+    { at: +(at + 0.2).toFixed(3), type: "char_arm", actor: a, gesture: "wave", duration: Math.min(1.4, duration * 0.65) },
+    { at: +(at + 0.75).toFixed(3), type: "char_gesture", actor: b, gesture: "nod_yes", duration: 0.9 },
+  ];
+}
+
+/**
+ * FunnyHorrorAnimation-style silent physical exchange:
+ * Characters look at each other and communicate via nods, head shakes, tilts, and arm points/waves.
+ * NEVER emits thought bubbles.
+ */
+export function dialogueExchange({ at, a, b, turns = 2, step = 1.6 } = {}) {
+  const gestures = ["nod_yes", "tilt", "shake_no", "nod"];
+  const arms = ["point", "wave"];
   const beats = [];
   for (let i = 0; i < turns; i += 1) {
     const t = +(at + i * step).toFixed(3);
@@ -197,9 +217,9 @@ export function dialogueExchange({ at, a, b, turns = 3, step = 1.6, icons = ["qu
     const listener = i % 2 === 0 ? b : a;
     beats.push(
       { at: t, type: "char_face", actor: speaker, targetActor: listener, duration: 0.2 },
-      { at: t, type: "char_anim", actor: speaker, anim: "talk", loop: true, duration: step * 0.85 },
-      { at: +(t + 0.1).toFixed(3), type: "char_gesture", actor: speaker, gesture: i % 2 === 0 ? "nod" : "shake_no", duration: 0.9 },
-      { at: +(t + 0.1).toFixed(3), type: "char_bubble", actor: speaker, icon: icons[i % icons.length], duration: 1.2, facePlayer: false }
+      { at: t, type: "char_face", actor: listener, targetActor: speaker, duration: 0.25 },
+      { at: +(t + 0.1).toFixed(3), type: "char_gesture", actor: speaker, gesture: gestures[i % gestures.length], duration: 0.9 },
+      { at: +(t + 0.15).toFixed(3), type: "char_arm", actor: speaker, gesture: arms[i % arms.length], duration: 1.1 }
     );
   }
   return beats;

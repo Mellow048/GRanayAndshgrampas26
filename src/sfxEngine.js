@@ -365,13 +365,10 @@ export class SfxEngine {
 
   notifyAction(animName, simTime) {
     if (!this.pacerEnabled) return;
-    if (simTime - this.lastAnySfxTime < 0.35) return;
+    // Only subtle jump whoosh — never stack unrequested laughs, glitches, or bonks over authored SFX!
+    if (simTime - this.lastAnySfxTime < 1.2) return;
     const map = {
-      jump: { key: "whoosh", volume: 0.5, pitch: 1.08, maxDuration: 0.55 },
-      punch: { key: "bonk", volume: 0.78, pitch: 1.0, maxDuration: 0.85 },
-      laugh: { key: "granny_laugh", volume: 0.72, pitch: 1.0, maxDuration: 1.35 },
-      terrified: { key: "glitch", volume: 0.55, pitch: 1.05, maxDuration: 0.8 },
-      panic: { key: "glitch", volume: 0.62, pitch: 1.12, maxDuration: 0.85 },
+      jump: { key: "whoosh", volume: 0.38, pitch: 1.08, maxDuration: 0.45 },
     };
     const spec = map[animName];
     if (spec) {

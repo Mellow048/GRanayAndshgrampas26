@@ -1143,6 +1143,9 @@ export class ComedyPropManager {
         } else if (params.to && this.waypoints[params.to]) {
           const dst = this.waypoints[params.to];
           endVec = new THREE.Vector3(dst.x, dst.y + (params.yOffset || 0), dst.z);
+          if (this.world && params.seat !== false) {
+            endVec.copy(this.seatProp(mesh, endVec, propId));
+          }
         }
         if (endVec) {
           state.glideActive = true;

@@ -32,7 +32,6 @@ export function breakfastSurprise({
 
       // 1. Granny actively cooks & stirs the sizzling frying pan at the kitchen counter
       { at: 0.3, type: "char_arm", actor: chef, gesture: "stir", duration: 2.6 },
-      { at: 0.4, type: "char_bubble", actor: chef, icon: "food", duration: 1.8, facePlayer: false },
       { at: 0.5, type: "sfx", sound: "pop", volume: 0.55 },
       { at: 1.8, type: "char_gesture", actor: chef, gesture: "nod_once", duration: 0.8 },
       { at: 2.2, type: "sfx", sound: "ding", volume: 0.65 },
@@ -52,7 +51,6 @@ export function breakfastSurprise({
       // 4. Grandpa visibly leans forward and sniffs the hot breakfast, then lights up!
       { at: 6.7, type: "char_face", actor: sleeper, targetActor: chef, duration: 0.2 },
       { at: 6.8, type: "char_arm", actor: sleeper, gesture: "sniff", duration: 1.8 },
-      { at: 7.0, type: "char_bubble", actor: sleeper, icon: "food", duration: 1.6 },
       { at: 7.2, type: "sfx", sound: "rizz", volume: 0.6 },
 
       // 5. Granny gently sets the plate down onto the dining table surface
@@ -62,11 +60,10 @@ export function breakfastSurprise({
       ...lookAt({ at: 10.2, target: sleeper, duration: 0.25, track: true }),
 
       // 6. Grandpa celebrates & nods happily while Granny waves
-      ...react({ at: 10.6, actor: sleeper, anim: "laugh", loop: true, icon: "heart", bubbleDur: 2.0, sfx: "tada" }),
+      ...react({ at: 10.6, actor: sleeper, anim: "laugh", loop: true, bubbleDur: 2.0, sfx: "tada" }),
       { at: 10.8, type: "char_gesture", actor: sleeper, gesture: "nod", duration: 1.2 },
       { at: 12.6, type: "char_arm", actor: chef, gesture: "wave", duration: 1.8 },
       { at: 12.8, type: "char_face", actor: chef, followPlayer: true, instant: true },
-      { at: 12.9, type: "char_bubble", actor: chef, icon: "laugh", duration: 1.8 },
       { at: 13.0, type: "sfx", sound: "granny_laugh", volume: 0.65 },
       ...lookAt({ at: 14.5, target: chef, duration: 0.26, track: true }),
       { at: 15.0, type: "char_gesture", actor: chef, gesture: "nod_once", duration: 1.1 },

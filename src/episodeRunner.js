@@ -1091,6 +1091,28 @@ export class EpisodeRunner {
     for (const char of visibleActors) {
       char.update(dt, playerCamPos, playerCam);
     }
+    // v3.2 Live actor-to-actor separation: prevent Granny & Grandpa from ever standing inside each other
+    const activeChars = Object.values(this.characters || {}).filter((c) => c?.root?.visible);
+    for (let i = 0; i < activeChars.length; i += 1) {
+      for (let j = i + 1; j < activeChars.length; j += 1) {
+        const a = activeChars[i].root.position;
+        const b = activeChars[j].root.position;
+        if (Math.abs(a.y - b.y) > 1.0) continue;
+        const dx = b.x - a.x;
+        const dz = b.z - a.z;
+        const dist = Math.hypot(dx, dz);
+        const minGap = 0.82;
+        if (dist < minGap) {
+          const nx = dist > 1e-4 ? dx / dist : 1;
+          const nz = dist > 1e-4 ? dz / dist : 0;
+          const push = (minGap - dist) * 0.5;
+          a.x -= nx * push;
+          a.z -= nz * push;
+          b.x += nx * push;
+          b.z += nz * push;
+        }
+      }
+    }
 
     // 4b. The cast steps out of the lens's personal space. Positions are
     //     re-derived from the movement tweens every frame, so this deflections

@@ -300,3 +300,72 @@ test("v3.1: validates declarative custom props and rejects empty/invalid custom 
   const badRes = validateEpisode(badCustom, { ...opts, autoFix: false });
   assert.ok(badRes.issues.some((i) => i.code === "INVALID_CUSTOM_PROP" && i.severity === "error"));
 });
+
+import { greetAndNod, dialogueExchange } from "../src/gags/helpers.js";
+
+test("v3.2: THOUGHT_BUBBLE_SPAM hard-rejects banned conversation icons (heart/laugh/food/happy) and bubble spam", () => {
+  const ep = {
+    id: "agent_custom_bubble_spam",
+    title: "Bubble Spam Test",
+    duration: 30,
+    playerSpawn: "kitchen_doorway",
+    characters: [
+      { id: "granny", spawn: "kitchen_stove" },
+      { id: "grandpa", spawn: "kitchen_table_side" },
+    ],
+    actions: [
+      { at: 1.0, type: "char_bubble", actor: "granny", icon: "heart", duration: 1.2 },
+      { at: 3.0, type: "char_bubble", actor: "grandpa", icon: "laugh", duration: 1.2 },
+      { at: 5.0, type: "char_bubble", actor: "granny", icon: "exclamation", duration: 1.2 },
+    ],
+  };
+  const res = validateEpisode(ep, { setMap: SET_MAP, navGraph: NAV_GRAPH, autoFix: false });
+  const codes = res.issues.filter((i) => i.severity === "error").map((i) => i.code);
+  assert.ok(codes.includes("THOUGHT_BUBBLE_SPAM"), `Expected THOUGHT_BUBBLE_SPAM error, got ${codes}`);
+});
+
+test("v3.2: UNMOTIVATED_EXPLOSION_SFX hard-rejects Minecraft explosion when nothing is exploding", () => {
+  const ep = {
+    id: "agent_custom_random_boom",
+    title: "Random Explosion Test",
+    duration: 20,
+    playerSpawn: "kitchen_doorway",
+    characters: [{ id: "grandpa", spawn: "kitchen_table_side" }],
+    actions: [
+      { at: 2.0, type: "char_anim", actor: "grandpa", anim: "jump" },
+      { at: 2.1, type: "sfx", sound: "explode_meme" },
+    ],
+  };
+  const res = validateEpisode(ep, { setMap: SET_MAP, navGraph: NAV_GRAPH, autoFix: false });
+  const codes = res.issues.filter((i) => i.severity === "error").map((i) => i.code);
+  assert.ok(codes.includes("UNMOTIVATED_EXPLOSION_SFX"), `Expected UNMOTIVATED_EXPLOSION_SFX error, got ${codes}`);
+});
+
+test("v3.2: TAUNT_SFX_SPAM and SFX_OVERLOAD_SPAM hard-reject taunt and random SFX spam", () => {
+  const ep = {
+    id: "agent_custom_sfx_spam",
+    title: "SFX Spam Test",
+    duration: 30,
+    playerSpawn: "kitchen_doorway",
+    characters: [{ id: "granny", spawn: "kitchen_stove" }],
+    actions: [
+      { at: 2.0, type: "sfx", sound: "granny_i_see_you" },
+      { at: 2.5, type: "sfx", sound: "bonk" },
+      { at: 3.0, type: "sfx", sound: "granny_laugh" },
+      { at: 8.0, type: "sfx", sound: "granny_i_see_you" },
+      { at: 12.0, type: "sfx", sound: "granny_i_see_you" },
+    ],
+  };
+  const res = validateEpisode(ep, { setMap: SET_MAP, navGraph: NAV_GRAPH, autoFix: false });
+  const codes = res.issues.filter((i) => i.severity === "error").map((i) => i.code);
+  assert.ok(codes.includes("TAUNT_SFX_SPAM"), `Expected TAUNT_SFX_SPAM error, got ${codes}`);
+  assert.ok(codes.includes("SFX_OVERLOAD_SPAM"), `Expected SFX_OVERLOAD_SPAM error, got ${codes}`);
+});
+
+test("v3.2: greetAndNod and dialogueExchange emit zero thought bubbles", () => {
+  const g = greetAndNod({ at: 1.0, a: "granny", b: "grandpa" });
+  const d = dialogueExchange({ at: 4.0, a: "granny", b: "grandpa", turns: 3 });
+  assert.equal([...g, ...d].filter((b) => b.type === "char_bubble").length, 0);
+  assert.ok(g.some((b) => b.type === "char_arm" && b.gesture === "wave"));
+  assert.ok(g.some((b) => b.type === "char_gesture" && b.gesture === "nod_yes"));
+});

@@ -111,7 +111,7 @@ test("a clean episode produces no errors and no repairs", () => {
           { at: 0.0, type: "player_look", target: "grandpa", duration: 0.22 },
           { at: 0.3, type: "char_face", actor: "grandpa", followPlayer: true, instant: true },
           { at: 0.5, type: "char_anim", actor: "grandpa", anim: "laugh", loop: true, duration: 1.4 },
-          { at: 1.0, type: "char_bubble", actor: "grandpa", icon: "laugh", duration: 1.2 },
+          { at: 1.0, type: "char_bubble", actor: "grandpa", icon: "question", duration: 1.2 },
           { at: 2.0, type: "player_gesture", gesture: "nod_yes", duration: 0.8 },
           { at: 2.6, type: "fade", to: 1, duration: 1.0 },
         ],

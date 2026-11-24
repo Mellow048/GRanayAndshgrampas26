@@ -1,5 +1,17 @@
 # EPISODE_PRODUCTION_GUIDE.md — Engine Reference & Pacing Rules
 
+
+## 0. HARD-ENFORCED FUNNYHORRORANIMATION RULES (READ FIRST — VIOLATIONS FAIL VALIDATION!)
+
+See `DIRECTOR_NOTES.md` for full details. Every rule below is **hard-enforced (exit code 1)** by `validate:episode`:
+
+1. **NO THOUGHT BUBBLES (`char_bubble`) FOR COMMUNICATION (`THOUGHT_BUBBLE_SPAM`):** Characters communicate **FunnyHorrorAnimation style** — by looking at each other (`char_face`), nodding/shaking (`char_gesture: "nod_yes" | "shake_no" | "tilt"`), and waving/pointing (`char_arm: "wave" | "point"`). Use `greetAndNod()` or `dialogueExchange()`. **BANNED icons:** `heart`, `laugh`, `food`, `happy`. Max **0–2** shock bubbles (`!` / `?`) in `<= 90s` (max 4 in longer shows), spaced `>= 15s` apart. Prefer **ZERO** bubbles.
+2. **NO MINECRAFT EXPLOSIONS WITHOUT AN EXPLOSION (`UNMOTIVATED_EXPLOSION_SFX`):** Never play `explode` or `explode_meme` on jumps, trips, bonks, or surprises. Rejected unless an explosive prop actually detonates on screen.
+3. **NO TAUNT OR SFX SPAM (`TAUNT_SFX_SPAM`, `SFX_OVERLOAD_SPAM`):** `granny_i_see_you` max **2x/episode** (`>= 30s` apart) and ONLY when spotting a hider. Never fire 3+ comedic SFX inside any `2.5s` window.
+4. **NO FLOATING PROPS OR BODY/COUNTER CLIPPING:** Always `attach` held props to hands and `glide` them to real surface waypoints (`kitchen_table_top`, `dining_table_top`). Route kitchen walks through `kitchen_center`.
+
+---
+
 > **STOP — Authoring a New Episode?**
 > Use the modular gag framework in **`src/gags/`** + **`src/episodeBuilder.js`** (`buildEpisode()`), NOT giant raw `after`/`await` timelines.
 > Start with **`src/gags/README.md`** (copy-paste 20-line template) and **`AGENTS.md`** (complete catalog of helpers, locations, props, animations, SFX, and verification commands).

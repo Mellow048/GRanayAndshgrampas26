@@ -1506,6 +1506,183 @@ export function validateEpisode(episode, options = {}) {
     }
   }
 
+  /* ---------------- 7e. v3.2 FunnyHorrorAnimation Anti-Spam Hard Gates ---------------- */
+  const LEGACY_PRESET_TITLES = new Set([
+    "Granny's Cookie Jar Heist (15s POV)",
+    "Monday Morning Mountain Dew (4 scenes)",
+    "Granny & Grandpa: Comedy Variety Show (68s)",
+    "Cookie Heist (15s Gag Showcase)",
+    "Granny & Grandpa: The Cookie Marathon (2:30)",
+    "Rocket Ball Test",
+    "Rocket Ball x3",
+    "Granny & Grandpa: Cookie Caper (30s Short)",
+    "The Great Escape (68s Fast-Cut POV)",
+    "Grandpa's Mystery Chest (44s POV)",
+    "Granny & Grandpa: Jump, Run, Walk (6s)",
+  ]);
+  const isLegacyPreset =
+    LEGACY_PRESET_TITLES.has(ep.title) || ep.legacyPreset === true;
+  const spamSeverity = isLegacyPreset ? "warn" : "error";
+
+  // 1) THOUGHT_BUBBLE_SPAM: FunnyHorrorAnimation style uses looks, nods, waves — NOT thought bubbles!
+  const bubbleBeats = beats.filter((b) => b.type === "char_bubble");
+  const BANNED_CHAT_ICONS = new Set(["heart", "laugh", "food", "happy"]);
+  for (const b of bubbleBeats) {
+    if (BANNED_CHAT_ICONS.has(b.icon)) {
+      let applied = false;
+      if (autoFix && !isLegacyPreset && b._src) {
+        b._src.type = "char_gesture";
+        b._src.gesture = b.icon === "food" ? "tilt" : "nod_yes";
+        b._src.duration = Math.min(1.0, Number(b._src.duration) || 0.9);
+        delete b._src.icon;
+        delete b._src.facePlayer;
+        applied = true;
+      }
+      issues.push(
+        issue(
+          "THOUGHT_BUBBLE_SPAM",
+          spamSeverity,
+          b.at,
+          `Conversation/emotion thought bubble "${b.icon}" on "${b.actor}" is banned. Characters must communicate physically (look + nod/shake/wave/point), not via emoji bubbles.`,
+          {
+            ...fixNote(
+              applied,
+              applied
+                ? `Auto-converted banned "${b.icon}" bubble into a FunnyHorrorAnimation physical head gesture.`
+                : "Remove char_bubble and use char_face + char_gesture ('nod_yes'/'shake_no'/'tilt') or char_arm ('wave'/'point'/'offer') instead."
+            ),
+          }
+        )
+      );
+    }
+  }
+  const maxBubbles = episodeEnd <= 90 ? 2 : 4;
+  const remainingBubbles = bubbleBeats.filter((b) => !BANNED_CHAT_ICONS.has(b.icon));
+  let keptBubbles = 0;
+  let lastKeptAt = -Infinity;
+  for (const b of remainingBubbles) {
+    const t = Number(b.at) || 0;
+    const tooClose = t - lastKeptAt < 15.0;
+    const overCap = keptBubbles >= maxBubbles;
+    if (tooClose || overCap) {
+      let applied = false;
+      if (autoFix && !isLegacyPreset && b._src) {
+        b._src.type = "char_gesture";
+        b._src.gesture = b.icon === "question" ? "tilt" : "double_take";
+        b._src.duration = Math.min(1.0, Number(b._src.duration) || 0.85);
+        delete b._src.icon;
+        delete b._src.facePlayer;
+        applied = true;
+      }
+      issues.push(
+        issue(
+          "THOUGHT_BUBBLE_SPAM",
+          spamSeverity,
+          t,
+          tooClose
+            ? `Back-to-back thought bubble only ${(t - lastKeptAt).toFixed(1)}s after previous (min 15s). Never use thought bubbles for back-and-forth dialogue.`
+            : `Too many thought bubbles (${remainingBubbles.length} > max ${maxBubbles}). Communicate with looks, nods, and waves instead.`,
+          {
+            ...fixNote(
+              applied,
+              applied
+                ? "Auto-converted excess/rapid thought bubble into a FunnyHorrorAnimation physical head gesture."
+                : "Delete excess char_bubble beats; use greetAndNod() or char_face + char_gesture instead."
+            ),
+          }
+        )
+      );
+    } else {
+      keptBubbles += 1;
+      lastKeptAt = t;
+    }
+  }
+
+  // 2) UNMOTIVATED_EXPLOSION_SFX: Never play Minecraft explosion when nothing is exploding!
+  const EXPLOSIVE_KEYWORDS = /explod|bomb|tnt|dynamite|fireball|detonat|blast|rocket|c4|red_button/i;
+  const sfxBeats = beats.filter((b) => b.type === "sfx");
+  for (const sb of sfxBeats) {
+    if (sb.sound === "explode" || sb.sound === "explode_meme") {
+      const hasExplosive =
+        (ep.props || []).some((p) => EXPLOSIVE_KEYWORDS.test(p.id || "") || EXPLOSIVE_KEYWORDS.test(p.type || "")) &&
+        beats.some(
+          (b) =>
+            b.type === "prop_action" &&
+            EXPLOSIVE_KEYWORDS.test(b.prop || "") &&
+            Math.abs((Number(b.at) || 0) - (Number(sb.at) || 0)) <= 2.0
+        );
+      if (!hasExplosive) {
+        let applied = false;
+        if (autoFix && !isLegacyPreset && sb._src) {
+          sb._src.sound = "bonk";
+          applied = true;
+        }
+        issues.push(
+          issue(
+            "UNMOTIVATED_EXPLOSION_SFX",
+            spamSeverity,
+            sb.at,
+            `Sound "${sb.sound}" (Minecraft explosion) fired with NO explosive prop/detonation on screen. Do not use explosion SFX for jumps, trips, or surprises.`,
+            {
+              ...fixNote(
+                applied,
+                applied
+                  ? 'Auto-replaced unmotivated Minecraft explosion SFX with "bonk".'
+                  : "Replace with 'bonk', 'thud', 'whoosh', or 'vine_boom' to match the actual physical action."
+              ),
+            }
+          )
+        );
+      }
+    }
+  }
+
+  // 3) TAUNT_SFX_SPAM: Never spam "I SEE YOU" taunts
+  const tauntBeats = sfxBeats.filter((b) => b.sound === "granny_i_see_you");
+  if (tauntBeats.length > 2) {
+    issues.push(
+      issue(
+        "TAUNT_SFX_SPAM",
+        spamSeverity,
+        tauntBeats[2].at,
+        `"granny_i_see_you" taunt used ${tauntBeats.length} times (max 2 per episode). Only play it when Granny actually catches someone sneaking or hiding.`,
+        { ...fixNote(false, "Remove redundant granny_i_see_you taunts.") }
+      )
+    );
+  }
+  for (let ti = 1; ti < tauntBeats.length; ti += 1) {
+    if ((Number(tauntBeats[ti].at) || 0) - (Number(tauntBeats[ti - 1].at) || 0) < 30.0) {
+      issues.push(
+        issue(
+          "TAUNT_SFX_SPAM",
+          spamSeverity,
+          tauntBeats[ti].at,
+          `"granny_i_see_you" repeated within 30s — feels like random taunt spam.`,
+          { ...fixNote(false, "Space taunt SFX at least 30s apart and only when spotting a hider.") }
+        )
+      );
+      break;
+    }
+  }
+
+  // 4) SFX_OVERLOAD_SPAM: Never fire 3+ comedic SFX inside any 2.5s window
+  const nonFoleySfx = sfxBeats.filter((b) => !["squidward_walk", "whoosh"].includes(b.sound));
+  for (let si = 2; si < nonFoleySfx.length; si += 1) {
+    const span = (Number(nonFoleySfx[si].at) || 0) - (Number(nonFoleySfx[si - 2].at) || 0);
+    if (span <= 2.5) {
+      issues.push(
+        issue(
+          "SFX_OVERLOAD_SPAM",
+          spamSeverity,
+          nonFoleySfx[si].at,
+          `3 comedic SFX fired within ${span.toFixed(2)}s ("${nonFoleySfx[si - 2].sound}", "${nonFoleySfx[si - 1].sound}", "${nonFoleySfx[si].sound}"). Space SFX cleanly so each gag lands.`,
+          { ...fixNote(false, "Remove stacked random SFX; use 1 intentional sound per physical beat.") }
+        )
+      );
+      break;
+    }
+  }
+
   /* ---------------- 8. Ending on motion ---------------- */
 
   const lastBeat = beats[beats.length - 1];
