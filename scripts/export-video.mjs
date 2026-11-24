@@ -27,7 +27,7 @@ const MIME_TYPES = {
 
 function parseArgs(argv) {
   const opts = {
-    preset: "zombie_fort_5m",
+    preset: "comedy_variety_1m",
     episodeFile: "",
     aspect: "",
     fps: 30,
