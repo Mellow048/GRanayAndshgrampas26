@@ -794,7 +794,7 @@ export class PlayerCamera {
 
     const mesh = createPropMesh(propType);
     // Scale cleanly for crisp FPS bottom-right framing
-    mesh.scale.setScalar(propType === "emoji_ball" ? 0.45 : 0.72);
+    mesh.scale.setScalar(propType === "emoji_ball" ? 0.45 : propType === "car" ? 0.2 : 0.72);
     if (propType === "golden_key") {
       mesh.rotation.set(0.3, -0.4, -0.35);
     } else if (propType === "toy_blaster") {
@@ -1151,7 +1151,7 @@ export class PlayerCamera {
       this.vmBobTime += dt;
       this.heldEquipPop = Math.min(1, this.heldEquipPop + dt * 6);
       const popScale = easeOutCubic(this.heldEquipPop);
-      const baseScale = this.heldPropType === "emoji_ball" ? 0.36 : 0.72;
+      const baseScale = this.heldPropType === "emoji_ball" ? 0.36 : this.heldPropType === "car" ? 0.2 : 0.72;
       this.heldPropMesh.scale.setScalar(baseScale * popScale);
 
       const baseX = this.aspectKey === "9:16" ? 0.18 : 0.28;

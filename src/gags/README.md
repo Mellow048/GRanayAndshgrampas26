@@ -58,7 +58,9 @@ export function myGag({
 3. **Keep `player_look` short (`0.18–0.30s`).** Never spin or circle the camera for seconds at a time.
 4. **Never use raw XYZ coordinates.** Only use `GAG_LOCATIONS` fields or `SET_MAP` waypoint names.
 5. **Cross-room moves MUST include `via`.** `loc.via` already carries the collision-free doorway spine.
-6. **Zero state leaks:** `buildEpisode()` inserts `0.4s` black-frame `CUT`s between gags that automatically clear held FPS props, reset actor props, hide unused props from previous gags, and reset shared props.
+6. For special entrances, a cast member may start with `visible: false`; reveal them with `char_visibility`. `char_cut` is for a deliberate teleport under cover, not a substitute for a walkable route.
+7. For vehicle gags, `prop_action: "drive"` moves the authored car along named SET_MAP waypoints. Pair it with a POV `player_walk` using the same route; this is scripted staging, not vehicle physics.
+8. **Zero state leaks:** `buildEpisode()` inserts `0.4s` black-frame `CUT`s between gags that automatically clear held FPS props, reset actor props, hide unused props from previous gags, and reset shared props.
 
 ---
 
@@ -71,7 +73,8 @@ export function myGag({
 | `chase({ at, victim, chaser, via, to, duration, stagger, anim, bgm })` | Staggered two-actor chase (`stagger: 0.35–0.45` avoids body clipping) |
 | `sneakUp({ at, actor, to, via, duration, icon, sfx })` | Sneak walk (`anim: "sneak"`) + optional thought bubble & SFX |
 | `walkTo({ at, to, via, duration, speed, lookTarget })` | First-person `player_walk` + quick `player_look` |
-| `propAction({ at, prop, action, waypoint, yOffset, sfx })` | Shorthand for `show`, `hide`, `open`, `close`, `bounce`, `pickup`, `stop` |
+| `propAction({ at, prop, action, waypoint, yOffset, sfx })` | Simple shorthand for `show`, `hide`, `open`, `close`, `bounce`, `pickup`, `stop` |
+| Direct `prop_action` beats | Also supports car-specific `grow` (`scale`, `duration`) and `drive` (`path` of SET_MAP waypoint names, `duration`) |
 | `holdProp({ at, prop, use, duration, sfx })` | Pick up / use FPS held item (auto-cleared on next `CUT`) |
 | `lookAt({ at, target, duration, track })` | Whip-pan camera look (`0.18–0.30s`) |
 | `panic({ at, duration, gesture, sfx })` | Camera gesture (`shake_panic`, `nod_yes`, `shake_no`, `shake_earthquake`) |

@@ -352,6 +352,7 @@ export function buildEpisode({
           spawn: c.spawn,
           facing: c.facing,
           anim: c.anim || "idle",
+          visible: c.visible !== false,
         });
       }
     }

@@ -589,6 +589,72 @@ export function createPropMesh(propType) {
       break;
     }
 
+    case "car": {
+      // A whole cartoon car for the "riding a car" gag. Built from primitives
+      // like every other prop; `bounce` reads as the suspension revving.
+      const paint = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.35, metalness: 0.4 });
+      const glass = new THREE.MeshStandardMaterial({ color: 0xbae6fd, roughness: 0.1, metalness: 0.6 });
+      const tyre = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.85 });
+      const chrome = new THREE.MeshStandardMaterial({ color: 0xd1d5db, roughness: 0.25, metalness: 0.8 });
+      const lampMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xfacc15, emissiveIntensity: 0.8 });
+      const tailMat = new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0x991b1b, emissiveIntensity: 0.6 });
+
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.42, 1.7), paint);
+      body.position.y = 0.42;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      const hood = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.18, 1.62), paint);
+      hood.position.set(0.92, 0.71, 0);
+      hood.castShadow = true;
+      const trunk = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.18, 1.62), paint);
+      trunk.position.set(-1.08, 0.68, 0);
+
+      // Open-top convertible, so the seated performers read clearly instead of
+      // being hidden inside an opaque primitive cabin.
+      const seatMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 });
+      const seats = [];
+      for (const z of [-0.58, 0.58]) {
+        const cushion = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.14, 0.48), seatMat);
+        cushion.position.set(-0.1, 0.72, z);
+        const back = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.55, 0.48), seatMat);
+        back.position.set(-0.42, 0.96, z);
+        back.rotation.z = -0.12;
+        seats.push(cushion, back);
+      }
+      const dash = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.2, 1.52), chrome);
+      dash.position.set(0.52, 0.82, 0);
+      const windscreen = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.38, 1.48), glass);
+      windscreen.position.set(0.72, 1.08, 0);
+      windscreen.material.transparent = true;
+      windscreen.material.opacity = 0.38;
+
+      const wheelGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.16, 18);
+      const wheels = [];
+      for (const [wx, wz] of [[0.95, 0.84], [0.95, -0.84], [-0.95, 0.84], [-0.95, -0.84]]) {
+        const w = new THREE.Mesh(wheelGeo, tyre);
+        w.name = "CarWheel";
+        w.rotation.x = Math.PI / 2;
+        w.position.set(wx, 0.26, wz);
+        w.castShadow = true;
+        wheels.push(w);
+      }
+
+      const headL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.14, 0.28), lampMat);
+      headL.position.set(1.42, 0.52, 0.54);
+      const headR = headL.clone();
+      headR.position.z = -0.54;
+      const tailL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 0.24), tailMat);
+      tailL.position.set(-1.42, 0.5, 0.54);
+      const tailR = tailL.clone();
+      tailR.position.z = -0.54;
+      const bumpF = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, 1.75), chrome);
+      bumpF.position.set(1.44, 0.28, 0);
+      const bumpR = bumpF.clone();
+      bumpR.position.x = -1.44;
+
+      group.add(body, hood, trunk, dash, windscreen, ...seats, headL, headR, tailL, tailR, bumpF, bumpR, ...wheels);
+      break;
+    }
     case "cookie_jar":
     default: {
       // Bigger than a real jar (48cm) plus a few cookies inside, so the camera
@@ -796,6 +862,10 @@ export class ComedyPropManager {
           riseTargetY: basePos.y,
           riseElapsed: 0,
           riseDuration: 1,
+          // Optional staged size-change / waypoint-drive state for the toy-car
+          // transformation gag. Both are simulation-time deterministic.
+          grow: null,
+          drive: null,
           phase: 0,
         },
       });
@@ -838,6 +908,8 @@ export class ComedyPropManager {
     state.riseStartY = basePos.y;
     state.riseTargetY = basePos.y;
     state.riseElapsed = 0;
+    state.grow = null;
+    state.drive = null;
     state.phase = 0;
 
     const glow = mesh.getObjectByName("ChestGlow");
@@ -913,6 +985,48 @@ export class ComedyPropManager {
         state.riseElapsed = 0;
         state.riseDuration = Math.max(0.1, params.duration || 3.0);
         break;
+      case "grow": {
+        const targetScale = Math.max(0.01, Number(params.scale) || 1);
+        state.grow = {
+          from: mesh.scale.x,
+          to: targetScale,
+          elapsed: 0,
+          duration: Math.max(0.1, Number(params.duration) || 1.2),
+        };
+        mesh.visible = true;
+        state.bounce = true;
+        break;
+      }
+      case "drive": {
+        const points = [mesh.position.clone()];
+        for (const ref of Array.isArray(params.path) ? params.path : []) {
+          const wp = typeof ref === "string" ? this.waypoints[ref] : ref;
+          if (wp && Number.isFinite(wp.x) && Number.isFinite(wp.z)) {
+            points.push(new THREE.Vector3(wp.x, wp.y ?? mesh.position.y, wp.z));
+          }
+        }
+        const lengths = [];
+        let totalLength = 0;
+        for (let i = 1; i < points.length; i += 1) {
+          const length = Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z);
+          lengths.push(length);
+          totalLength += length;
+        }
+        if (points.length > 1 && totalLength > 0) {
+          state.drive = {
+            points,
+            lengths,
+            totalLength,
+            elapsed: 0,
+            duration: Math.max(0.5, Number(params.duration) || 10),
+          };
+          state.bounce = false;
+          state.spin = false;
+          state.popOut = false;
+          mesh.visible = true;
+        }
+        break;
+      }
       case "close":
         state.lidOpen = false;
         {
@@ -968,6 +1082,44 @@ export class ComedyPropManager {
       if (!mesh.visible) continue;
 
       state.phase += dt;
+
+      if (state.grow) {
+        const g = state.grow;
+        g.elapsed = Math.min(g.duration, g.elapsed + dt);
+        const t = g.elapsed / g.duration;
+        const eased = 1 - (1 - t) ** 3;
+        mesh.scale.setScalar(g.from + (g.to - g.from) * eased);
+        if (t >= 1) state.grow = null;
+      }
+
+      if (state.drive) {
+        const d = state.drive;
+        const previousElapsed = d.elapsed;
+        d.elapsed = Math.min(d.duration, d.elapsed + dt);
+        let distance = d.totalLength * (d.elapsed / d.duration);
+        let segment = 0;
+        while (segment < d.lengths.length - 1 && distance > d.lengths[segment]) {
+          distance -= d.lengths[segment];
+          segment += 1;
+        }
+        const segmentLength = Math.max(1e-6, d.lengths[segment] || 0);
+        const u = Math.min(1, distance / segmentLength);
+        const a = d.points[segment];
+        const b = d.points[segment + 1];
+        if (a && b) {
+          mesh.position.set(
+            a.x + (b.x - a.x) * u,
+            a.y + (b.y - a.y) * u,
+            a.z + (b.z - a.z) * u
+          );
+          mesh.rotation.y = Math.atan2(-(b.z - a.z), b.x - a.x);
+          const travelled = d.totalLength * ((d.elapsed - previousElapsed) / d.duration);
+          for (const wheel of mesh.children.filter((child) => child.name === "CarWheel")) {
+            wheel.rotation.z -= travelled / 0.26;
+          }
+        }
+        if (d.elapsed >= d.duration) state.drive = null;
+      }
 
       if (entry.type === "emoji_ball") {
         // Yaw-track camera with playful cartoon bounce wobble so the emoji face stays visible

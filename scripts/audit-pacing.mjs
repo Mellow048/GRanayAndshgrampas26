@@ -35,9 +35,13 @@ const VISUAL = new Set([
   "move",
   "char_face",
   "face",
+  // Procedural body-language gestures are visible performance; omitting them
+  // here makes nod/shake/tilt-heavy scenes look like dead air to the auditor.
+  "char_gesture",
   "char_bubble",
   "char_prop",
   "char_cut",
+  "char_visibility",
   "prop_action",
   "fade",
 ]);

@@ -28,6 +28,7 @@ export const PROP_TYPES = [
   "rising_lava",
   "cookie",
   "cookie_jar",
+  "car",
 ];
 
 /** Beat types `EpisodeRunner._applyBeat()` understands. Also test-guarded. */
@@ -36,6 +37,7 @@ export const BEAT_TYPES = [
   "char_anim",
   "char_bubble",
   "char_cut",
+  "char_visibility",
   "char_face",
   "face",
   "char_gesture",
@@ -66,6 +68,7 @@ const BEAT_NOTES = {
   char_face: "turn an actor toward a waypoint or the player",
   char_bubble: "show a thought bubble over an actor",
   char_cut: "teleport an actor for a scene cut (no walking through walls)",
+  char_visibility: "hide or reveal a performer for an authored entrance",
   player_walk: "first-person walk to a waypoint",
   player_look: "first-person look at a waypoint or actor",
   player_gesture: "first-person camera gesture (nod_yes, shake_no, peek_lean, shake_panic)",
@@ -73,7 +76,7 @@ const BEAT_NOTES = {
   player_hold: "put a prop in the player's hands / use it",
   fade: "fade the frame to a colour",
   cut: "hard camera cut",
-  prop_action: "drive a placed scene prop: open | close | bounce | spin | bite | hide",
+  prop_action: "drive a placed scene prop: open | close | bounce | spin | bite | grow | drive | hide",
   bgm: "start a music bed",
   stop_bgm: "stop the music bed",
   sfx: "fire a one-shot sound effect",

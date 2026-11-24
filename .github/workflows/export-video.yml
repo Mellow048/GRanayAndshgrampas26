@@ -21,6 +21,8 @@ on:
           - floor_is_lava_4m
           - jump_run_walk_6s
           - cookie_marathon_150s
+          - shenanigans_45s
+          - wake_to_ride_120s
           - custom_json
       episode_json:
         description: "Custom Episode JSON (used when preset is custom_json, or overrides preset if provided)"

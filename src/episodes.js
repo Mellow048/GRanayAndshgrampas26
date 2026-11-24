@@ -10,6 +10,13 @@ import {
   kickabout,
   talkSofa,
   cookiePayback,
+  tagChase,
+  carRide,
+  footRace,
+  wakeAndFindCar,
+  carTransformation,
+  carHouseLoop,
+  rideWrap,
 } from "./gags/index.js";
 
 export const COMEDY_VARIETY_1M = buildEpisode({
@@ -141,6 +148,44 @@ export const COOKIE_MARATHON_150S = buildEpisode({
         obstacle: "Grandpa is standing between the doorway and the jar",
         turn: "the cookie is gone and the crumbs lead to him",
       },
+    ],
+  },
+});
+
+/**
+ * Three kid activities, played entirely through gesture and physical comedy.
+ * Only the car gag uses a prop. 3 x 15s gags plus two 0.4s cuts = 45.8s,
+ * below the framework's 60-second story-spine threshold.
+ */
+export const SHENANIGANS_45S = buildEpisode({
+  title: "Granny & Grandpa: Shenanigans (45s)",
+  gags: [
+    tagChase(),
+    carRide(),
+    footRace(),
+  ],
+});
+
+/**
+ * Two-minute framework smoke test: wake, find a toy car, throw/grow it,
+ * drive a waypoint loop through the actual house, and stage a safe Granny
+ * pratfall. The house has no navigable stair flight or exterior road, so the
+ * upstairs-to-kitchen descent is an explicit black-frame cut.
+ */
+export const WAKE_TO_RIDE_120S = buildEpisode({
+  title: "Wake Up, Grow a Car, and Drive Around the House (2-Minute Test)",
+  transitions: "continuous",
+  gags: [wakeAndFindCar(), carTransformation(), carHouseLoop(), rideWrap()],
+  story: {
+    premise: "The player wakes upstairs to find a tiny toy car waiting on the kitchen counter beside Grandpa, asleep at the table; Granny is nowhere in sight.",
+    goal: "carry the toy car to open space, see if it can become a real ride, and take it around the house.",
+    goalProp: "car",
+    resolution: "The toy grows into a little open-top car. On the first loop, hidden Granny meets it at a blind corner and gets a safe, exaggerated jump; the car parks and everyone nods that the ride was fun.",
+    scenes: [
+      { objective: "wake up and find out why a tiny car is on the counter", obstacle: "the trip to the kitchen is long and Grandpa is still asleep on the table", turn: "the player picks up the very small car while Grandpa nods in his sleep", beats: ["wake beside the bed", "make the implied descent", "discover Grandpa and pick up the car"] },
+      { objective: "carry the toy to an open patch and test it", obstacle: "it is only a palm-sized toy", turn: "the toss lands and the car grows into an open-top ride" },
+      { objective: "drive a full loop through the house", obstacle: "Granny appears from a blind doorway just as the car arrives", turn: "a gentle staged bump sends her into a comic jump and trip", beats: ["start the house loop", "round the blind dining doorway", "finish the loop after the gag"] },
+      { objective: "finish the loop and check on the family", obstacle: "Granny has to walk back from the dining room while Grandpa wakes slowly", turn: "the car parks, Granny laughs, and both grandparents nod back" },
     ],
   },
 });

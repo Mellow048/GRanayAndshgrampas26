@@ -815,7 +815,7 @@ export class EpisodeRunner {
     for (const castEntry of this.episode.cast || []) {
       const char = this.characters[castEntry.id];
       if (!char) continue;
-      char.root.visible = true;
+      char.root.visible = castEntry.visible !== false;
       const spawn = this.resolveWaypoint(castEntry.spawn || "back_hall");
       char.root.position.set(spawn.x, spawn.y ?? 0, spawn.z);
 
@@ -1330,6 +1330,12 @@ export class EpisodeRunner {
       return Promise.resolve();
     }
 
+    if (type === "char_visibility") {
+      const actor = this.characters[ev.actor];
+      if (actor) actor.root.visible = Boolean(ev.visible);
+      return Promise.resolve();
+    }
+
     if (type === "char_cut") {
       // Instant actor teleport for scene cuts (no walk through empty rooms).
       const actor = this.characters[ev.actor];
@@ -1497,6 +1503,7 @@ export class EpisodeRunner {
         at: ev.waypoint,
         to: ev.to,
         travelDuration: ev.travelDuration,
+        path: ev.path,
         targetY: ev.targetY,
         duration: ev.duration,
         yOffset: ev.yOffset ?? (ev.action === "reset" ? 0 : 0.25),

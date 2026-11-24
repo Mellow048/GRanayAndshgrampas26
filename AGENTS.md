@@ -60,6 +60,13 @@ removes one of its four sectors — real geometry disappearing, not a scale tric
 `action: "hide"` drops it. The cookie jar is translucent with three cookies
 inside, so the camera can read what the heist is about.
 
+The procedural `car` prop is an open-top convertible that can also stand in for a
+miniature via its initial scale. `prop_action: "grow"` animates it to a target
+scale; `prop_action: "drive"` follows a time-scaled list of named `SET_MAP`
+waypoints (pass that same route to a POV `player_walk` for a driver-eye shot).
+This is authored path motion, not physics. Hidden cast can start with
+`visible: false` and enter with a `char_visibility` beat.
+
 ---
 
 ## Golden Rule for Agents: Build Modular Gags, NEVER Monolithic Scripts
@@ -133,7 +140,7 @@ When asked to make a new episode (15 seconds, 5 minutes, or 40+ minutes):
 | `src/episodeBuilder.js` | `buildEpisode()` + `validateGag()` — stitches gags with leak-free `0.4s` black cuts |
 | `src/episodes.js` | Episodes composed via `buildEpisode()` (`COMEDY_VARIETY_1M`, `COOKIE_HEIST_15S`, `ROCKET_BALL_TEST`, `ROCKET_BALL_x3`) |
 | `src/config.js` | `CONFIG`, `ASSET_MANIFEST`, `SFX_MANIFEST`, `SET_MAP` waypoints, `EPISODE_PRESETS`, `DEFAULT_EPISODE` |
-| `src/episodeRunner.js` | Deterministic 60Hz runner; handles `cut`, `char_cut`, `prop_action: "reset"`, `via` routing, jump arcs, 1.3m personal space |
+| `src/episodeRunner.js` | Deterministic 60Hz runner; handles `cut`, `char_cut`, `char_visibility`, `prop_action: "reset"/`grow`/`drive`, `via` routing, jump arcs, 1.3m personal space |
 | `src/playerCamera.js` | First-person POV camera, head-bob, whip-pan `lookAt`, gestures, crouch (`0.42m`), depth-cleared held FPS viewmodel |
 | `src/comedyProps.js` | Procedural 3D props (with `resetProp` snapshots) + `ThoughtBubbleCache` |
 | `src/assetLoader.js` | `loadHouse()` / `setupHouseFromRaw()` with 0.4m walkable grid, Mixamo retargeting, Granny bind-matrix repair |
@@ -168,7 +175,7 @@ When asked to make a new episode (15 seconds, 5 minutes, or 40+ minutes):
 `idle`, `walk`, `granny_walk`, `run`, `run2`, `sneak`, `jump`, `laugh`, `punch`, `sit`, `terrified`, `panic`, `look`
 
 ### Built-In 3D Props (`src/comedyProps.js`)
-`cookie_jar`, `emoji_ball`, `treasure_chest`, `golden_key`, `padlock`, `delivery_box`, `toy_blaster`, `red_button`  
+`cookie_jar`, `emoji_ball`, `treasure_chest`, `golden_key`, `padlock`, `delivery_box`, `toy_blaster`, `red_button`, `rising_lava`, `cookie`, `car`
 *(Character hand props via `char_prop` / `char_cut`: `"cane"`, `"shotgun"`, `"none"`.)*
 
 ### Comic Thought Bubbles (`ThoughtBubbleCache`)

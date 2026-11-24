@@ -85,16 +85,16 @@ Sync SFX directly to visible actions (`1.2s–1.85s` rhythm; avoid overlapping v
 
 **NEVER** hardcode raw `(x, y, z)` coordinates in episode JSON—always use `SET_MAP` names, and **ALWAYS** list doorway waypoints in `via: [...]` when moving between rooms so the camera and characters pass cleanly through doorway centers without clipping wall corners!
 
-### Safe Room-to-Room `via` Chains & Vertical Stair Routing
+### Safe Room-to-Room `via` Chains & Floor Limits
 - **Back Hall ↔ Living Room (Grandpa's Room):**
   - `back_hall` → `back_room_east` → **`doorway_living`** → **`living_room_entry`** → `living_room_view`
 - **Foyer ↔ Dining Room / Kitchen:**
   - `front_door_view` → `stairs_bottom` → `dining_corner` → `dining_table_front` → `kitchen`
 - **Back Hall ↔ Dining Room / Kitchen:**
   - `back_hall` → **`doorway_dining`** → `dining_center` → `kitchen_lane` → `kitchen`
-- **Ground Floor ↔ Upstairs (Automatic Staircase Routing):**
-  - Any cross-floor `char_move` or `player_walk` automatically routes through `stairs_bottom` (`-1.9, 0.0, 4.0`) ↔ `stairs_middle` (`-1.9, 1.54, 2.5`) ↔ `stairs_top` (`-1.9, 2.85, 1.25`) ↔ `upstairs_landing` (`-1.9, 2.85, 0.95`) with vertical speed clamping (`<= 1.75 m/s` actors, `<= 1.55 m/s` player) so nobody flies diagonally through floors or ceilings.
-- **Upstairs North Doorway & East Wing:**
+- **Ground Floor ↔ Upstairs — NOT WALKABLE in the supplied house mesh:**
+  - The decorative upper floor has no traversable stair geometry. `tests/nav.test.mjs` deliberately asserts that `route(downstairs, upstairs) === null`. Do not author cross-floor `player_walk` or `char_move` beats through `stairs_middle`; route validation and the 3D probe will fail. If a story needs an upstairs-to-downstairs transition, use a brief fade + `cut` and make the implied descent clear in the staging.
+- **Upstairs North Doorway & East Wing (upper floor only):**
   - `upstairs_landing` → `up_hall_north_door` (`-1.4, 2.85, -0.6`) → `up_hall_north` (`-1.4, 2.85, -2.4`) → `up_bed_north` / `upstairs_east_north` (`1.5, 2.85, -1.8`)
 
 ### Elevated Furniture Waypoints (`elevated: true`) & Jump Arcs
