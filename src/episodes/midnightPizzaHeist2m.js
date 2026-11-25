@@ -166,7 +166,11 @@ export const MIDNIGHT_PIZZA_HEIST_2M = {
         { at: 5.4, type: "player_look", target: "grandpa", duration: 0.45, track: true },
         { at: 9.0, type: "sfx", sound: "footsteps_slow", volume: 0.45 },
 
+        // Once Grandpa rounds the stairwell corner out of sight, LOS releases auto-tracking -> Player scans naturally!
+        { at: 13.6, type: "player_look", yawOffset: 0.36, pitchOffset: -0.02, duration: 0.45 },
+
         // Grandpa reaches the kitchen, spots the steaming pizza on the counter, and steps closer
+        { at: 14.9, type: "player_look", target: "grandpa", duration: 0.45, track: true },
         { at: 15.0, type: "char_face", actor: "grandpa", target: "kitchen_counter_top", duration: 0.25 },
         { at: 15.2, type: "char_gesture", actor: "grandpa", gesture: "double_take", duration: 0.9 },
         { at: 15.4, type: "sfx", sound: "ding2", volume: 0.6 },
@@ -185,9 +189,9 @@ export const MIDNIGHT_PIZZA_HEIST_2M = {
         { at: 22.1, type: "char_arm", actor: "grandpa", gesture: "idk", duration: 2.2, facePlayer: true },
         { at: 22.2, type: "char_bubble", actor: "grandpa", icon: "where_granny", duration: 2.3 },
 
-        // Player looks around ("Not here!") and shakes NO, then Grandpa nods & claps mischievously!
+        // Player looks around ("Not here!") and shakes NO, then zooms cleanly back before Act 2 seam!
         { at: 24.4, type: "player_gesture", gesture: "shake_no", duration: 0.9 },
-        { at: 25.4, type: "player_zoom", fov: 58, duration: 0.35 },
+        { at: 25.4, type: "player_zoom", fov: null, duration: 0.55 },
         { at: 25.6, type: "char_gesture", actor: "grandpa", gesture: "nod_yes", duration: 1.0 },
         { at: 26.8, type: "char_arm", actor: "grandpa", gesture: "clap", duration: 1.8, facePlayer: true },
         { at: 27.0, type: "sfx", sound: "pop", volume: 0.5 },
@@ -209,8 +213,8 @@ export const MIDNIGHT_PIZZA_HEIST_2M = {
       playerFacing: "grandpa",
       beats: [
         // Grandpa grabs the steaming pizza off kitchen_counter_top and shushes the Player!
+        { at: 30.0, type: "char_face", actor: "grandpa", target: "kitchen_counter_top", duration: 0.2 },
         { at: 30.2, type: "player_look", target: "grandpa", duration: 0.35, track: true },
-        { at: 30.3, type: "char_face", actor: "grandpa", target: "kitchen_counter_top", duration: 0.2 },
         { at: 30.6, type: "char_arm", actor: "grandpa", gesture: "reach_both", duration: 1.4, facePlayer: false },
         { at: 31.4, type: "prop_action", prop: "golden_pizza", action: "attach", actor: "grandpa", offset: [0, 0.04, 0.24] },
         { at: 31.5, type: "char_arm", actor: "grandpa", gesture: "carry", duration: 2.2, facePlayer: false },
@@ -242,10 +246,12 @@ export const MIDNIGHT_PIZZA_HEIST_2M = {
         { at: 44.0, type: "char_move", actor: "grandpa", via: ["dining_table_btn", "dining_table_ne", "dining_center", "doorway_dining", "back_hall_left", "back_hall", "hallway", "back_room_east", "doorway_living", "living_room_entry"], to: "living_room", anim: "run", duration: 11.5, facePlayer: false },
         { at: 45.0, type: "sfx", sound: "footsteps_fast", volume: 0.5 },
 
-        // Player steps forward to dining_center, peeks left toward kitchen_fridge_front as Granny approaches!
-        { at: 47.2, type: "player_walk", to: "dining_center", duration: 1.6 },
-        { at: 49.0, type: "player_look", target: "granny", duration: 0.4, track: true },
-        { at: 49.4, type: "player_gesture", gesture: "peek_lean", duration: 1.0 },
+        // Player glances toward where Grandpa bolted after LOS breaks, walks to dining_center, then hears Granny from kitchen_lane
+        { at: 46.2, type: "player_look", yawOffset: 0.32, pitchOffset: -0.02, duration: 0.45 },
+        { at: 47.0, type: "player_walk", to: "dining_center", duration: 1.6 },
+        { at: 48.6, type: "player_look", yawOffset: -0.45, pitchOffset: -0.02, duration: 0.45 },
+        { at: 50.0, type: "player_look", target: "granny", duration: 0.4, track: true },
+        { at: 50.4, type: "player_gesture", gesture: "peek_lean", duration: 1.0 },
 
         // Grandpa places pizza on the living room sofa safely on the other side of the house!
         { at: 55.6, type: "prop_action", prop: "golden_pizza", action: "glide", fromActor: "grandpa", to: "living_room_sofa", duration: 1.2, arc: 0.12 },
@@ -269,7 +275,7 @@ export const MIDNIGHT_PIZZA_HEIST_2M = {
       playerFacing: "granny",
       beats: [
         // Keep pizza anchored in Act 3 state + Granny inspects her empty counter!
-        { at: 60.05, type: "prop_action", prop: "golden_pizza", action: "reset", waypoint: "living_room_sofa", visible: true },
+        { at: 60.0, type: "prop_action", prop: "golden_pizza", action: "reset", waypoint: "living_room_sofa", visible: true },
         { at: 60.2, type: "player_look", target: "granny", duration: 0.35, track: true },
         { at: 60.4, type: "char_gesture", actor: "granny", gesture: "double_take", duration: 1.0 },
         { at: 60.5, type: "sfx", sound: "vine_boom", volume: 0.72 },
@@ -282,9 +288,9 @@ export const MIDNIGHT_PIZZA_HEIST_2M = {
         { at: 66.2, type: "char_arm", actor: "granny", gesture: "idk", duration: 2.2, facePlayer: true },
         { at: 66.3, type: "char_bubble", actor: "granny", icon: "where_grandpa", duration: 2.3 },
 
-        // Player plays innocent ("shake_no"), then looks down the hall doorway & nods ("He went that way!")
+        // Player plays innocent ("shake_no"), returns zoom to default, looks down hall doorway & nods ("He went that way!")
         { at: 68.0, type: "player_gesture", gesture: "shake_no", duration: 0.9 },
-        { at: 69.0, type: "player_zoom", fov: 58, duration: 0.35 },
+        { at: 69.0, type: "player_zoom", fov: null, duration: 0.45 },
         { at: 69.1, type: "player_look", target: { x: -3.6, y: 1.25, z: -1.2 }, duration: 0.35, track: false },
         { at: 69.4, type: "player_gesture", gesture: "nod_yes", duration: 0.7 },
 
@@ -315,9 +321,9 @@ export const MIDNIGHT_PIZZA_HEIST_2M = {
         },
         { at: 75.0, type: "player_look", target: "granny", duration: 0.4, track: true },
 
-        // Clean hold in the hall at 88.8-90.0 before bursting into the living room
+        // Clean hold in the hall at 87.5-90.0 before bursting into the living room
+        { at: 87.5, type: "player_look", target: "granny", duration: 0.4, track: true },
         { at: 88.6, type: "char_face", actor: "granny", target: "doorway_living", duration: 0.25 },
-        { at: 88.8, type: "player_look", target: "granny", duration: 0.35, track: true },
       ],
     },
 
@@ -333,7 +339,7 @@ export const MIDNIGHT_PIZZA_HEIST_2M = {
       playerFacing: "granny",
       beats: [
         // Granny enters the Living Room; Player follows 2.0s behind cleanly into living_room_left
-        { at: 90.2, type: "char_move", actor: "granny", via: ["doorway_living", "living_room_entry"], to: "living_room_view", anim: "walk", duration: 4.0, facePlayer: false },
+        { at: 90.0, type: "char_move", actor: "granny", via: ["doorway_living", "living_room_entry"], to: "living_room_view", anim: "walk", duration: 4.0, facePlayer: false },
         { at: 90.4, type: "player_look", target: "granny", duration: 0.4, track: true },
         { at: 92.2, type: "player_walk", via: ["back_room_east", "doorway_living", "living_room_entry"], to: "living_room_left", duration: 4.4 },
 

@@ -7,6 +7,7 @@ import { SET_MAP, NAV_GRAPH } from "../src/config.js";
 import { greetAndNod, dialogueExchange, handItemTo } from "../src/gags/helpers.js";
 import { chunkEpisode } from "../scripts/chunk-episode.mjs";
 import { pointInFurniture, pushOutOfFurniture, findSegmentFurnitureHit } from "../src/furnitureColliders.js";
+import { hasTargetLineOfSight } from "../src/stagingSafety.js";
 
 test("midnight_pizza_heist_2m passes strict validation with zero warnings, zero furniture collisions, active player walking/gestures, strategic ??? portrait bubbles, and 4/4 story spine", () => {
   const res = validateAndRepair(MIDNIGHT_PIZZA_HEIST_2M, {
@@ -58,7 +59,37 @@ test("continuous chunking never injects black flash fades and preserves facing a
     const flashFades = beats.filter((b) => b.type === "fade" && b.duration < 0.1);
     assert.equal(flashFades.length, 0, `chunk ${i} must not inject flash fade`);
     assert.equal(chunks[i].episode.transitions, "continuous");
+    assert.equal(chunks[i].episode.playerFov, 68);
   }
+  assert.equal(chunks[1].startSec, 30);
+  assert.equal(chunks[2].startSec, 60);
+  assert.equal(chunks[3].startSec, 90);
+});
+
+test("hasTargetLineOfSight releases lock when an opaque wall blocks both sight rays", () => {
+  const clearWorld = { castRay: () => null };
+  assert.equal(
+    hasTargetLineOfSight(clearWorld, { x: -1.9, y: 2.2, z: 2.5 }, { x: -4.0, y: 1.5, z: 2.6 }),
+    true
+  );
+
+  // Low railing only grazes eye ray -> upper ray clears -> still visible
+  const railWorld = {
+    castRay: (origin) => (origin.y < 2.25 ? { distance: 1.0 } : null),
+  };
+  assert.equal(
+    hasTargetLineOfSight(railWorld, { x: -1.9, y: 2.2, z: 2.5 }, { x: -4.0, y: 1.5, z: 2.6 }),
+    true
+  );
+
+  // Solid stairwell wall blocks both rays -> LOS lost, triggering natural camera release
+  const wallWorld = {
+    castRay: () => ({ distance: 1.1 }),
+  };
+  assert.equal(
+    hasTargetLineOfSight(wallWorld, { x: -1.9, y: 2.2, z: 2.5 }, { x: -5.8, y: 1.5, z: 0.8 }),
+    false
+  );
 });
 
 test("physical communication helpers keep actors facing each other instead of snapping to camera", () => {

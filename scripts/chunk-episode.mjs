@@ -166,10 +166,12 @@ function cloneStateFromEpisode(episode) {
   for (const p of episode.props || []) {
     propState[p.id] = { ...p };
   }
+  const defaultFov = CONFIG.aspectModes?.[episode.aspect || "16:9"]?.fov ?? CONFIG.cameraFov ?? 68;
   return {
     playerSpawn: episode.playerSpawn || "back_hall",
     playerFacing: episode.playerFacing || "kitchen",
-    playerFov: CONFIG.cameraFov ?? 60,
+    playerFov: Number.isFinite(episode.playerFov) ? episode.playerFov : defaultFov,
+    defaultFov,
     actorState,
     propState,
     activeBgm: null,
@@ -188,7 +190,7 @@ function applyBeatToState(beat, state) {
   } else if (beat.type === "player_look") {
     if (beat.target) state.playerFacing = beat.target;
   } else if (beat.type === "player_zoom") {
-    if (Number.isFinite(beat.fov)) state.playerFov = beat.fov;
+    state.playerFov = Number.isFinite(beat.fov) ? beat.fov : state.defaultFov;
   } else if (beat.type === "char_cut" && beat.actor && state.actorState[beat.actor]) {
     const a = state.actorState[beat.actor];
     if (beat.to || beat.target) a.spawn = beat.to || beat.target;
@@ -308,9 +310,6 @@ export function chunkEpisode(episode, { maxChunkSec = 180, chunks = 0 } = {}) {
         at: +Math.max(0, b.at - startSec).toFixed(3),
       }));
       if (gi > 0 && sIdx === 0) {
-        if (chunkPlayerFov !== (CONFIG.cameraFov ?? 60)) {
-          rebasedBeats.unshift({ at: 0, type: "player_zoom", fov: chunkPlayerFov, duration: 0.01 });
-        }
         if (state.activeBgm && !rebasedBeats.some((b) => b.type === "bgm" && b.at <= 0.6)) {
           rebasedBeats.unshift({ at: 0, type: "bgm", sound: state.activeBgm.sound, volume: state.activeBgm.volume });
         }
@@ -349,6 +348,7 @@ export function chunkEpisode(episode, { maxChunkSec = 180, chunks = 0 } = {}) {
       transitions: episode.transitions,
       playerSpawn: chunkPlayerSpawn,
       playerFacing: chunkPlayerFacing,
+      playerFov: chunkPlayerFov,
       cast: chunkCast,
       props: chunkProps,
       skits: chunkSkits,

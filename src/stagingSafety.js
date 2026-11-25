@@ -222,6 +222,26 @@ export function sightlineClear(world, eye, subject, { radius = 0.1, actors = [],
   return true;
 }
 
+/**
+ * True when an opaque house wall/floor slab blocks the eye->target sightline
+ * for active `player_look` tracking (leaves a 0.35m margin near `targetPos`
+ * and retries +0.14m vertically so handrails/tabletops don't false-trigger).
+ */
+export function hasTargetLineOfSight(world, eye, targetPos) {
+  if (!world?.castRay || !eye || !targetPos) return true;
+  const dx = num(targetPos.x) - num(eye.x);
+  const dy = num(targetPos.y) - num(eye.y);
+  const dz = num(targetPos.z) - num(eye.z);
+  const dist = Math.hypot(dx, dy, dz);
+  if (dist < 0.45) return true;
+  const checkDist = dist - 0.35;
+  const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+  const hit = traceRay(world, eye, dir, checkDist);
+  if (!hit || hit.distance >= checkDist) return true;
+  const hitHi = traceRay(world, { x: num(eye.x), y: num(eye.y) + 0.14, z: num(eye.z) }, dir, checkDist);
+  return !hitHi || hitHi.distance >= checkDist;
+}
+
 /* ------------------------------------------------------------------ *
  * 3. Camera placement
  * ------------------------------------------------------------------ */
@@ -753,6 +773,7 @@ export const stagingSafety = {
   traceRay,
   segmentClear,
   sightlineClear,
+  hasTargetLineOfSight,
   findSafeCameraSpot,
   aabbFrom,
   pointInAabb,

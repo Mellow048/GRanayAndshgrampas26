@@ -10,6 +10,7 @@ import {
   pushOutOfCapsules,
   findSafeCameraSpot,
   ensureRoute,
+  hasTargetLineOfSight,
   direction2D,
   dist2D,
 } from "./stagingSafety.js";
@@ -122,6 +123,7 @@ export class PlayerCamera {
     this.lookElapsed = 1;
     this.lookDuration = 0.25;
     this.trackingRef = null;
+    this._losBlockedTime = 0;
     this.fovStart = aspectSpec.fov;
     this.fovTarget = aspectSpec.fov;
     this.fovElapsed = 1;
@@ -246,6 +248,7 @@ export class PlayerCamera {
     this.quakeTimer = 0;
     this.panicTimer = 0;
     this.trackingRef = null;
+    this._losBlockedTime = 0;
 
     this.baseEyeHeight = PLAYER_EYE_HEIGHT;
     this.crouchStartHeight = PLAYER_EYE_HEIGHT;
@@ -313,6 +316,7 @@ export class PlayerCamera {
     if (this.activeGesture?._resolve) this.activeGesture._resolve();
     this.activeGesture = null;
     this.trackingRef = null;
+    this._losBlockedTime = 0;
     this.panicTimer = 0;
 
     this.playerPos.set(position.x, position.y ?? 0, position.z);
@@ -737,18 +741,38 @@ export class PlayerCamera {
       maxDuration ?? CONFIG.maxLookDuration ?? Number.POSITIVE_INFINITY;
     this.lookDuration = Math.max(0.01, Math.min(duration, cap));
     this.trackingRef = trackRef;
+    this._losBlockedTime = 0;
     return new Promise((resolve) => {
       this._lookResolve = resolve;
     });
   }
 
+  _hasLineOfSight(targetPos) {
+    const world = this._stagingWorld();
+    if (!world?.castRay || !targetPos) return true;
+    const eye = this.getEyeWorldPosition(this._tmpEyePos);
+    return hasTargetLineOfSight(world, eye, targetPos);
+  }
+
   setFov({ fov = null, duration = 0.35 } = {}) {
     const defaultFov = CONFIG.aspectModes[this.aspectKey]?.fov ?? 68;
     const nextFov = fov == null ? defaultFov : clamp(Number(fov) || defaultFov, 28, 95);
+    const dur = Number(duration);
+    if (dur <= 0.01) {
+      this.fovStart = nextFov;
+      this.fovTarget = nextFov;
+      this.fovElapsed = 1;
+      this.fovDuration = 0.01;
+      if (Math.abs(this.camera.fov - nextFov) > 1e-4) {
+        this.camera.fov = nextFov;
+        this.camera.updateProjectionMatrix();
+      }
+      return Promise.resolve();
+    }
     this.fovStart = this.camera.fov;
     this.fovTarget = nextFov;
     this.fovElapsed = 0;
-    this.fovDuration = Math.max(0.05, Number(duration) || 0.35);
+    this.fovDuration = Math.max(0.05, dur || 0.35);
     return Promise.resolve();
   }
 
@@ -1104,19 +1128,43 @@ export class PlayerCamera {
       }
     }
 
-    // Look tracking / whip-pan (auto-releases if a tracked prop or actor becomes hidden)
+    // Look tracking / whip-pan (auto-releases if hidden OR if an opaque wall blocks LOS so the player acts naturally instead of wall-locking)
     if (this.trackingRef) {
       if (this._resolveTargetPosition(this.trackingRef, resolver, this._tmpTargetPos, { liveTrack: true })) {
-        const { yaw, pitch } = this._computeYawPitchTo(this._tmpTargetPos);
-        if (this.lookElapsed < this.lookDuration) {
-          this.lookTargetYaw = this.lookStartYaw + wrapAngleDiff(yaw, this.lookStartYaw);
-          this.lookTargetPitch = pitch;
+        if (!this._hasLineOfSight(this._tmpTargetPos)) {
+          this._losBlockedTime += Math.max(dt, 1 / 120);
+          if (this._losBlockedTime >= 0.12) {
+            this.trackingRef = null;
+            this._losBlockedTime = 0;
+            if (this.lookElapsed < this.lookDuration) {
+              this.lookTargetYaw = this.yaw;
+              this.lookTargetPitch = this.pitch;
+              this.lookElapsed = this.lookDuration;
+              if (this._lookResolve) {
+                const res = this._lookResolve;
+                this._lookResolve = null;
+                res();
+              }
+            }
+            if (this.activeWalk) {
+              this.activeWalk.manualLookOverride = false;
+              this.activeWalk.faceTarget = null;
+            }
+          }
         } else {
-          this.yaw += wrapAngleDiff(yaw, this.yaw) * Math.min(1, dt * 10);
-          this.pitch += (pitch - this.pitch) * Math.min(1, dt * 10);
+          this._losBlockedTime = 0;
+          const { yaw, pitch } = this._computeYawPitchTo(this._tmpTargetPos);
+          if (this.lookElapsed < this.lookDuration) {
+            this.lookTargetYaw = this.lookStartYaw + wrapAngleDiff(yaw, this.lookStartYaw);
+            this.lookTargetPitch = pitch;
+          } else {
+            this.yaw += wrapAngleDiff(yaw, this.yaw) * Math.min(1, dt * 10);
+            this.pitch += (pitch - this.pitch) * Math.min(1, dt * 10);
+          }
         }
       } else {
         this.trackingRef = null;
+        this._losBlockedTime = 0;
       }
     }
 

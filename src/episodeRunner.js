@@ -866,13 +866,24 @@ export class EpisodeRunner {
 
     if (this.playerCamera) {
       const pSpawn = this.resolveWaypoint(this.episode.playerSpawn || "back_hall");
-      const pLook = this.episode.playerFacing
-        ? this.resolveWaypoint(this.episode.playerFacing)
-        : null;
-      const lookVec = pLook
-        ? new THREE.Vector3(pLook.x, (pLook.y ?? 0) + 1.35, pLook.z)
-        : null;
+      let lookVec = null;
+      if (this.episode.playerFacing) {
+        const targetChar = this.characters[this.episode.playerFacing];
+        if (targetChar?.getHeadWorldPosition) {
+          lookVec = new THREE.Vector3();
+          targetChar.getHeadWorldPosition(lookVec);
+          lookVec.y -= 0.08;
+        } else {
+          const pLook = this.resolveWaypoint(this.episode.playerFacing);
+          if (pLook) {
+            lookVec = new THREE.Vector3(pLook.x, (pLook.y ?? 0) + 1.35, pLook.z);
+          }
+        }
+      }
       this.playerCamera.reset(pSpawn, lookVec);
+      if (Number.isFinite(this.episode.playerFov)) {
+        this.playerCamera.setFov({ fov: this.episode.playerFov, duration: 0 });
+      }
       this.playerCamera.setInspectionMode(false);
     }
 
