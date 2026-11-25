@@ -14,6 +14,7 @@
  *   validateRoute(pts)   -> [] when the polyline never leaves the floor
  */
 import { HOUSE_NAV } from "../data/houseNav.js";
+import { pointInFurniture, findSegmentFurnitureHit } from "../furnitureColliders.js";
 
 const CELL = HOUSE_NAV.cell;
 const NODES = HOUSE_NAV.nodes.map((n) => [...n]); // mutable copy so we can inject the staircase bridge
@@ -205,12 +206,25 @@ function findNodePath(startId, goalId) {
     if (closed.has(cur.id)) continue;
     closed.add(cur.id);
     const a = NODES[cur.id];
+    const hitStart = pointInFurniture({ x: start[2], y: start[3], z: start[4] }, 0.28);
+    const hitGoal = pointInFurniture({ x: goal[2], y: goal[3], z: goal[4] }, 0.28);
     for (const nb of neighbours[cur.id]) {
       if (closed.has(nb)) continue;
       const b = NODES[nb];
+      const hitNode = pointInFurniture({ x: b[2], y: b[3], z: b[4] }, 0.28);
+      const hitEdge = findSegmentFurnitureHit(
+        { x: a[2], y: a[3], z: a[4] },
+        { x: b[2], y: b[3], z: b[4] },
+        0.25
+      );
+      const hitPenalty =
+        (hitNode && hitNode !== hitStart && hitNode !== hitGoal) ||
+        (hitEdge && hitEdge !== hitStart && hitEdge !== hitGoal)
+          ? 50.0
+          : 0;
       const step = Math.hypot(b[2] - a[2], b[4] - a[4]);
       const rise = Math.abs(b[3] - a[3]);
-      const cost = step + rise * 1.2 + 0.01;
+      const cost = step + rise * 1.2 + 0.01 + hitPenalty;
       const tentative = (gScore.get(cur.id) ?? Infinity) + cost;
       if (tentative < (gScore.get(nb) ?? Infinity)) {
         gScore.set(nb, tentative);

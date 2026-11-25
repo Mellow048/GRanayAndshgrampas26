@@ -169,6 +169,7 @@ function cloneStateFromEpisode(episode) {
   return {
     playerSpawn: episode.playerSpawn || "back_hall",
     playerFacing: episode.playerFacing || "kitchen",
+    playerFov: CONFIG.cameraFov ?? 60,
     actorState,
     propState,
     activeBgm: null,
@@ -181,18 +182,49 @@ function applyBeatToState(beat, state) {
     if (beat.facing || beat.lookAt) state.playerFacing = beat.facing || beat.lookAt;
   } else if (beat.type === "player_walk") {
     if (beat.to || beat.target) state.playerSpawn = beat.to || beat.target;
+    if (beat.faceTarget && beat.faceTarget !== false) {
+      state.playerFacing = beat.faceTarget;
+    }
+  } else if (beat.type === "player_look") {
+    if (beat.target) state.playerFacing = beat.target;
+  } else if (beat.type === "player_zoom") {
+    if (Number.isFinite(beat.fov)) state.playerFov = beat.fov;
   } else if (beat.type === "char_cut" && beat.actor && state.actorState[beat.actor]) {
     const a = state.actorState[beat.actor];
     if (beat.to || beat.target) a.spawn = beat.to || beat.target;
     if (beat.facing || beat.faceTarget) a.facing = beat.facing || beat.faceTarget;
     if (beat.anim) a.anim = beat.anim;
   } else if ((beat.type === "char_move" || beat.type === "move") && beat.actor && state.actorState[beat.actor]) {
-    if (beat.to) state.actorState[beat.actor].spawn = beat.to;
+    const a = state.actorState[beat.actor];
+    const prev = posOfRef(a.spawn, null);
+    const dst = posOfRef(beat.to, null);
+    if (prev && dst) {
+      const dx = dst.x - prev.x;
+      const dz = dst.z - prev.z;
+      const len = Math.hypot(dx, dz);
+      if (len > 0.05) {
+        a.facing = { x: +(dst.x + (dx / len) * 2).toFixed(2), y: dst.y ?? 0, z: +(dst.z + (dz / len) * 2).toFixed(2) };
+      }
+    }
+    if (beat.to) a.spawn = beat.to;
+    a.anim = "idle";
+  } else if ((beat.type === "char_face" || beat.type === "face") && beat.actor && state.actorState[beat.actor]) {
+    const a = state.actorState[beat.actor];
+    const target = beat.target || beat.targetActor;
+    if (beat.followPlayer === true || target === "player") {
+      a.facing = state.playerSpawn;
+    } else if (target) {
+      a.facing = target;
+    }
   } else if (beat.type === "prop_action" && beat.prop && state.propState[beat.prop]) {
     const p = state.propState[beat.prop];
-    if (beat.action === "hide") p.visible = false;
+    if (beat.action === "hide" || beat.action === "pickup") p.visible = false;
     else if (beat.action === "show") p.visible = true;
-    else if (beat.action === "reset") {
+    else if (beat.action === "place" || beat.action === "glide") {
+      p.visible = true;
+      const dst = beat.to || beat.waypoint || beat.at;
+      if (dst && (typeof dst === "object" || SET_MAP[dst])) p.spawn = dst;
+    } else if (beat.action === "reset") {
       if (beat.waypoint) p.spawn = beat.waypoint;
       if (beat.yOffset !== undefined) p.yOffset = beat.yOffset;
       if (beat.rotationY !== undefined) p.rotationY = beat.rotationY;
@@ -266,6 +298,7 @@ export function chunkEpisode(episode, { maxChunkSec = 180, chunks = 0 } = {}) {
 
     const chunkPlayerSpawn = state.playerSpawn;
     const chunkPlayerFacing = state.playerFacing;
+    const chunkPlayerFov = state.playerFov;
     const chunkCast = Object.values(state.actorState).map((a) => ({ ...a }));
     const chunkProps = Object.values(state.propState).map((p) => ({ ...p }));
 
@@ -274,8 +307,13 @@ export function chunkEpisode(episode, { maxChunkSec = 180, chunks = 0 } = {}) {
         ...b,
         at: +Math.max(0, b.at - startSec).toFixed(3),
       }));
-      if (gi > 0 && sIdx === 0 && state.activeBgm && !rebasedBeats.some((b) => b.type === "bgm" && b.at <= 0.6)) {
-        rebasedBeats.unshift({ at: 0, type: "bgm", sound: state.activeBgm.sound, volume: state.activeBgm.volume });
+      if (gi > 0 && sIdx === 0) {
+        if (chunkPlayerFov !== (CONFIG.cameraFov ?? 60)) {
+          rebasedBeats.unshift({ at: 0, type: "player_zoom", fov: chunkPlayerFov, duration: 0.01 });
+        }
+        if (state.activeBgm && !rebasedBeats.some((b) => b.type === "bgm" && b.at <= 0.6)) {
+          rebasedBeats.unshift({ at: 0, type: "bgm", sound: state.activeBgm.sound, volume: state.activeBgm.volume });
+        }
       }
       return {
         name: g.name,
@@ -283,13 +321,13 @@ export function chunkEpisode(episode, { maxChunkSec = 180, chunks = 0 } = {}) {
       };
     });
 
-    // Keep chunk duration aligned with the next chunk start when there is trailing hold time
+    // Keep chunk duration aligned cleanly without flashing black between continuous acts
     const localEnd = +(endSec - startSec).toFixed(3);
     const maxBeatEnd = Math.max(
       0,
       ...chunkSkits.flatMap((s) => s.beats.map((b) => b.at + Math.max(b.duration ?? 0, b.travelDuration ?? 0)))
     );
-    if (gi + 1 < groups.length && localEnd - maxBeatEnd > 0.05) {
+    if (episode.transitions !== "continuous" && gi + 1 < groups.length && localEnd - maxBeatEnd > 0.05) {
       chunkSkits.at(-1).beats.push({
         at: +Math.max(0, localEnd - 0.02).toFixed(3),
         type: "fade",
@@ -307,6 +345,8 @@ export function chunkEpisode(episode, { maxChunkSec = 180, chunks = 0 } = {}) {
     const ep = {
       title: `${episode.title} [Chunk ${gi + 1}/${groups.length}]`,
       aspect: episode.aspect || "16:9",
+      duration: localEnd,
+      transitions: episode.transitions,
       playerSpawn: chunkPlayerSpawn,
       playerFacing: chunkPlayerFacing,
       cast: chunkCast,

@@ -6,6 +6,7 @@ import { createPropMesh, biteCookie, ThoughtBubbleCache } from "./comedyProps.js
 import { headAimAngles, headAimWeight, aimStep } from "./stagingSafety.js";
 import { isHeadGesture, headGestureSpec, sampleHeadGesture } from "./headGestures.js";
 import { isArmGesture, armGestureSpec, sampleArmGesture } from "./armGestures.js";
+import { pointInFurniture, findSegmentFurnitureHit } from "./furnitureColliders.js";
 
 const sharedBubbleCache = new ThoughtBubbleCache();
 
@@ -220,15 +221,25 @@ function buildIndoorNavigation(houseRoot, allHouseMeshes) {
     ray.set(tmpA.set(x, 4.2, z), down);
     ray.far = 5.2;
     const downHits = ray.intersectObjects(allHouseMeshes, false);
-    
-    // CRITICAL FIX: Allow both ground floor (0.0) and second floor (2.85)
+
+    // Allow both ground floor (0.0) and second floor (2.85)
     const floor = downHits.find((h) => Math.abs(h.point.y) < 0.1 || Math.abs(h.point.y - 2.85) < 0.15);
     if (!floor) return false;
-    
-    const blocker = downHits.find(
-      (h) => (h.point.y >= 0.16 && h.point.y <= 1.72) || (h.point.y >= 3.0 && h.point.y <= 4.5)
-    );
-    if (blocker) return false;
+
+    if (pointInFurniture({ x, y: floor.point.y, z }, 0.28)) return false;
+
+    const hasBlockerAt = (px, pz) => {
+      ray.set(tmpA.set(px, 4.2, pz), down);
+      ray.far = 5.2;
+      const hits = ray.intersectObjects(allHouseMeshes, false);
+      return hits.some((h) => (h.point.y >= 0.16 && h.point.y <= 1.72) || (h.point.y >= 3.0 && h.point.y <= 4.5));
+    };
+
+    if (hasBlockerAt(x, z)) return false;
+    // Require 24cm clearance around body center so characters don't scrape or clip furniture corners
+    for (const [ox, oz] of [[0.24, 0], [-0.24, 0], [0, 0.24], [0, -0.24]]) {
+      if (hasBlockerAt(x + ox, z + oz)) return false;
+    }
     return true;
   }
 
@@ -256,18 +267,23 @@ function buildIndoorNavigation(houseRoot, allHouseMeshes) {
     return ray.intersectObjects(allHouseMeshes, false).length === 0;
   }
 
-  function hasClearBodyCorridor(ax, az, bx, bz) {
-    // Check center ray at knee/chest heights + slight shoulder offsets
-    if (!hasClearSight(ax, az, bx, bz, 0.55)) return false;
-    if (!hasClearSight(ax, az, bx, bz, 1.25)) return false;
+  function hasClearBodyCorridor(ax, az, bx, bz, y = 0) {
+    // Reject routes that cut through solid table/counter/bed/sofa footprints
+    if (findSegmentFurnitureHit({ x: ax, y, z: az }, { x: bx, y, z: bz }, 0.24)) {
+      return false;
+    }
+    // Check center ray at shin, chair-seat, tabletop (~0.88m), chest, and shoulder heights
+    for (const h of [0.35, 0.6, 0.88, 1.15, 1.4]) {
+      if (!hasClearSight(ax, az, bx, bz, y + h)) return false;
+    }
     const dx = bx - ax;
     const dz = bz - az;
     const len = Math.hypot(dx, dz);
     if (len < 1e-4) return true;
-    const nx = (-dz / len) * 0.2;
-    const nz = (dx / len) * 0.2;
-    if (!hasClearSight(ax + nx, az + nz, bx + nx, bz + nz, 0.95)) return false;
-    if (!hasClearSight(ax - nx, az - nz, bx - nx, bz - nz, 0.95)) return false;
+    const nx = (-dz / len) * 0.24;
+    const nz = (dx / len) * 0.24;
+    if (!hasClearSight(ax + nx, az + nz, bx + nx, bz + nz, y + 0.92)) return false;
+    if (!hasClearSight(ax - nx, az - nz, bx - nx, bz - nz, y + 0.92)) return false;
     // Also verify midpoint has indoor floor + ceiling so we never cross open porch/cellar
     return isPointInsideWalkable((ax + bx) * 0.5, (az + bz) * 0.5);
   }
@@ -307,7 +323,7 @@ function buildIndoorNavigation(houseRoot, allHouseMeshes) {
       return [start, goal];
     }
 
-    if (hasClearBodyCorridor(start.x, start.z, goal.x, goal.z)) {
+    if (hasClearBodyCorridor(start.x, start.z, goal.x, goal.z, start.y)) {
       return [start, goal];
     }
 
@@ -389,7 +405,7 @@ function buildIndoorNavigation(houseRoot, allHouseMeshes) {
     while (anchor < combined.length - 1) {
       let farthest = anchor + 1;
       for (let j = combined.length - 1; j > anchor + 1; j -= 1) {
-        if (hasClearBodyCorridor(combined[anchor].x, combined[anchor].z, combined[j].x, combined[j].z)) {
+        if (hasClearBodyCorridor(combined[anchor].x, combined[anchor].z, combined[j].x, combined[j].z, combined[anchor].y)) {
           farthest = j;
           break;
         }

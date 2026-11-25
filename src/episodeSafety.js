@@ -25,6 +25,7 @@ import {
   resolvePropPlacement,
   isEmbedded,
 } from "./stagingSafety.js";
+import { findSegmentFurnitureHit } from "./furnitureColliders.js";
 import { route as planFloorRoute, validateRoute, snap as snapToFloor } from "./nav/houseNav.js";
 import { PROP_TYPE_SET, BEAT_TYPE_SET, CUSTOM_PART_SHAPES } from "./schema.js";
 
@@ -930,6 +931,36 @@ export function validateEpisode(episode, options = {}) {
           prev = wp;
         }
         legs.push([prev, endWp]);
+      }
+      const isLegacyMove =
+        ep.legacyPreset === true ||
+        new Set([
+          "Granny's Cookie Jar Heist (15s POV)",
+          "Monday Morning Mountain Dew (4 scenes)",
+          "Granny & Grandpa: Comedy Variety Show (68s)",
+          "Cookie Heist (15s Gag Showcase)",
+          "Granny & Grandpa: The Cookie Marathon (2:30)",
+          "Rocket Ball Test",
+          "Rocket Ball x3",
+          "Granny & Grandpa: Cookie Caper (30s Short)",
+          "The Great Escape (68s Fast-Cut POV)",
+          "Grandpa's Mystery Chest (44s POV)",
+          "Granny & Grandpa: Jump, Run, Walk (6s)",
+        ]).has(ep.title);
+      for (const [a, b] of legs) {
+        const hitBox = findSegmentFurnitureHit(a, b, 0.22);
+        if (hitBox) {
+          issues.push(
+            issue(
+              "FURNITURE_COLLISION",
+              ep.transitions === "continuous" && !isLegacyMove ? "error" : "warn",
+              beat.at,
+              `${isWalk ? "Player" : beat.actor} route cuts through "${hitBox.label}" — will clip/phase inside furniture.`,
+              { actor: beat.actor, ...fixNote(false, `Route via a floor waypoint clear of ${hitBox.label}.`) }
+            )
+          );
+          break;
+        }
       }
       for (const [id, state] of actorState) {
         if (id === beat.actor) continue;

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { isHeadGesture } from "./headGestures.js";
 import { isArmGesture } from "./armGestures.js";
+import { pushOutOfFurniture, detourAroundFurniture } from "./furnitureColliders.js";
 import { CONFIG, SET_MAP, NAV_GRAPH } from "./config.js";
 import { route as planFloorRoute, snap as snapToFloor } from "./nav/houseNav.js";
 import { findTaggedObject, getObjectBounds } from "./assetLoader.js";
@@ -454,6 +455,16 @@ export class EpisodeRunner {
         segments: [{ isJumpArc: false, arcHeight: 0 }],
       };
     }
+    const flatDetoured = allPoints.every((p) => !isElevatedSurfacePos(p) && Math.abs((p.y ?? 0) - (allPoints[0].y ?? 0)) <= 0.25)
+      ? detourAroundFurniture(allPoints, 0.36)
+      : null;
+    if (flatDetoured && flatDetoured.length !== allPoints.length) {
+      const vecPts = flatDetoured.map((p) => new THREE.Vector3(p.x, p.y ?? 0, p.z));
+      return {
+        points: vecPts,
+        segments: vecPts.slice(1).map(() => ({ isJumpArc: false, arcHeight: 0 })),
+      };
+    }
     return { points: allPoints, segments: allSegments };
   }
 
@@ -682,7 +693,7 @@ export class EpisodeRunner {
       }
     }
 
-    return maxEnd;
+    return Math.max(maxEnd, Number(episode.duration) || 0);
   }
 
   loadEpisode(episodeJson) {
@@ -1132,6 +1143,25 @@ export class EpisodeRunner {
           pos.x = spot.x;
           pos.z = spot.z;
         }
+      }
+    }
+
+    // 4c. Push ground-floor actors and POV lens cleanly out of solid tables, counters, sofas, and beds
+    for (const actor of visibleActors) {
+      const pos = actor.root.position;
+      if (isElevatedSurfacePos(pos)) continue;
+      const out = pushOutOfFurniture(pos, 0.34);
+      if (out.pushed) {
+        pos.x = out.x;
+        pos.z = out.z;
+      }
+    }
+    if (this.playerCamera && this.playerCamera.mode === "pov" && !isElevatedSurfacePos(this.playerCamera.playerPos)) {
+      const camFloor = this.playerCamera.playerPos;
+      const out = pushOutOfFurniture(camFloor, 0.3);
+      if (out.pushed) {
+        camFloor.x = out.x;
+        camFloor.z = out.z;
       }
     }
 

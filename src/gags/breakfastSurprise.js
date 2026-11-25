@@ -39,7 +39,7 @@ export function breakfastSurprise({
 
       // 2. Granny carries the steaming breakfast plate around the north end of the dining table
       { at: 3.1, type: "char_arm", actor: chef, gesture: "carry", duration: 2.4 },
-      { at: 3.1, type: "char_move", actor: chef, via: ["kitchen_lane", { x: -4.25, y: 0, z: 1.25 }], to: "dining_table_btn", anim: "walk", duration: 2.2 },
+      { at: 3.1, type: "char_move", actor: chef, via: ["kitchen_lane", "dining_table_ne"], to: "dining_table_btn", anim: "walk", duration: 2.2 },
       { at: 3.2, type: "prop_action", prop: "breakfast", action: "glide", from: "kitchen_counter_top", to: "dining_table_btn", duration: 2.1, arc: 0.14 },
       ...lookAt({ at: 3.6, target: sleeper, duration: 0.28, track: true }),
 
