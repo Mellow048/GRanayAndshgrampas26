@@ -203,10 +203,10 @@ export function sampleArmGesture(name, elapsed, duration, overrides = {}) {
     }
 
     case "wave":
-      // Raise right arm out & up (-Z) and wave forearm side-to-side cleanly
-      out.rUpper.x = -0.35 * amp;
-      out.rUpper.z = -1.75 * amp;
-      out.rFore.z = (0.45 + Math.sin(phase) * 0.38) * amp;
+      // Raise right arm clearly above shoulder (-Z rotates -Y through -X to +Y) and wave forearm overhead
+      out.rUpper.x = -0.22 * amp;
+      out.rUpper.z = -2.45 * amp;
+      out.rFore.z = (-0.25 + Math.sin(phase) * 0.38) * amp;
       break;
 
     case "point":

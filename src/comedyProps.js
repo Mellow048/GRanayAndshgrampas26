@@ -907,7 +907,23 @@ export class ComedyPropManager {
   seatProp(mesh, desiredOrigin, exceptId = null) {
     if (!this.world || !mesh) return desiredOrigin.clone();
 
-    const box = new THREE.Box3().setFromObject(mesh);
+    // Measure local solid bounds at origin (ignoring any current world position
+    // and excluding non-solid FX children like SteamPuff / ChestSparkles).
+    const prevPos = mesh.position.clone();
+    mesh.position.set(0, 0, 0);
+    mesh.updateMatrixWorld(true);
+
+    const box = new THREE.Box3();
+    mesh.traverse((child) => {
+      if (!child.isMesh || child.visible === false) return;
+      if (/^(SteamPuff_|ChestSparkles|ChestGlow)/.test(child.name || "")) return;
+      box.expandByObject(child);
+    });
+    if (box.isEmpty()) box.setFromObject(mesh);
+
+    mesh.position.copy(prevPos);
+    mesh.updateMatrixWorld(true);
+
     if (box.isEmpty()) return desiredOrigin.clone();
     const size = box.getSize(new THREE.Vector3());
     const centerOffsetY = (box.min.y + box.max.y) / 2;
@@ -921,6 +937,7 @@ export class ComedyPropManager {
       world: this.world,
       desired: { x: desiredOrigin.x, y: desiredOrigin.y + centerOffsetY, z: desiredOrigin.z },
       halfExtents: half,
+      maxDrop: Math.max(1.8, desiredOrigin.y + 0.5),
       others: this._occupiedBoxes(exceptId),
       // Never seat a prop inside a microwave / cupboard / wall.
       isSpotFree: (pos, h) => !isEmbedded(this.world, pos, h),
@@ -976,12 +993,12 @@ export class ComedyPropManager {
 
       mesh.position.copy(basePos);
       if (def.rotationY) mesh.rotation.y = def.rotationY;
+      if (def.scale) mesh.scale.setScalar(def.scale);
       if (this.world && def.seat !== false) {
         const seated = this.seatProp(mesh, basePos, def.id);
         mesh.position.copy(seated);
         basePos.copy(seated);
       }
-      if (def.scale) mesh.scale.setScalar(def.scale);
       mesh.visible = def.visible !== false;
 
       this.group.add(mesh);
@@ -1098,10 +1115,17 @@ export class ComedyPropManager {
         state.bounce = false;
         state.popOut = false;
         state.spin = false;
-        if (params.at && this.waypoints[params.at]) {
-          const wp = this.waypoints[params.at];
-          basePos.set(wp.x, wp.y + (params.yOffset || 0), wp.z);
-          mesh.position.copy(this.seatProp(mesh, basePos, propId));
+        {
+          const wp =
+            typeof params.at === "string"
+              ? this.waypoints[params.at]
+              : params.at && typeof params.at === "object"
+                ? params.at
+                : null;
+          if (wp) {
+            basePos.set(wp.x, (wp.y ?? 0) + (params.yOffset || 0), wp.z);
+            mesh.position.copy(this.seatProp(mesh, basePos, propId));
+          }
         }
         break;
       case "hide":
@@ -1141,19 +1165,23 @@ export class ComedyPropManager {
         if (params.fromPos && !wasAttachedToFrom) {
           basePos.set(params.fromPos.x, params.fromPos.y, params.fromPos.z);
           mesh.position.copy(basePos);
-        } else if (params.from && this.waypoints[params.from]) {
-          const fwp = this.waypoints[params.from];
-          basePos.set(fwp.x, fwp.y + (params.yOffset || 0), fwp.z);
-          mesh.position.copy(basePos);
+        } else if (params.from) {
+          const fwp = typeof params.from === "string" ? this.waypoints[params.from] : params.from;
+          if (fwp && Number.isFinite(fwp.x)) {
+            basePos.set(fwp.x, (fwp.y ?? 0) + (params.yOffset || 0), fwp.z);
+            mesh.position.copy(basePos);
+          }
         }
         let endVec = null;
         if (params.toPos) {
           endVec = new THREE.Vector3(params.toPos.x, params.toPos.y, params.toPos.z);
-        } else if (params.to && this.waypoints[params.to]) {
-          const dst = this.waypoints[params.to];
-          endVec = new THREE.Vector3(dst.x, dst.y + (params.yOffset || 0), dst.z);
-          if (this.world && params.seat !== false) {
-            endVec.copy(this.seatProp(mesh, endVec, propId));
+        } else if (params.to) {
+          const dst = typeof params.to === "string" ? this.waypoints[params.to] : params.to;
+          if (dst && Number.isFinite(dst.x)) {
+            endVec = new THREE.Vector3(dst.x, (dst.y ?? 0) + (params.yOffset || 0), dst.z);
+            if (this.world && params.seat !== false) {
+              endVec.copy(this.seatProp(mesh, endVec, propId));
+            }
           }
         }
         if (endVec) {
@@ -1174,9 +1202,9 @@ export class ComedyPropManager {
         state.spin = false;
         state.float = false;
         const wpRef = params.waypoint || params.at;
-        if (wpRef && this.waypoints[wpRef]) {
-          const wp = this.waypoints[wpRef];
-          basePos.set(wp.x, wp.y + (params.yOffset || 0), wp.z);
+        const wp = typeof wpRef === "string" ? this.waypoints[wpRef] : wpRef;
+        if (wp && Number.isFinite(wp.x)) {
+          basePos.set(wp.x, (wp.y ?? 0) + (params.yOffset || 0), wp.z);
           if (this.world && params.seat !== false) {
             const seated = this.seatProp(mesh, basePos, propId);
             basePos.copy(seated);

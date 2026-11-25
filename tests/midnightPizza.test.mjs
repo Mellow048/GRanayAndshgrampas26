@@ -6,7 +6,7 @@ import { validateStorySpine } from "../src/storySpine.js";
 import { SET_MAP, NAV_GRAPH } from "../src/config.js";
 import { greetAndNod, dialogueExchange, handItemTo } from "../src/gags/helpers.js";
 
-test("midnight_pizza_heist_2m passes strict validation with zero warnings, zero bubbles, and full 7/7 story spine", () => {
+test("midnight_pizza_heist_2m passes strict validation with zero warnings, zero bubbles, zero random laugh/sit, and full 3/3 story spine", () => {
   const res = validateAndRepair(MIDNIGHT_PIZZA_HEIST_2M, {
     setMap: SET_MAP,
     navGraph: NAV_GRAPH,
@@ -15,15 +15,19 @@ test("midnight_pizza_heist_2m passes strict validation with zero warnings, zero 
   assert.equal(res.stats.errorsBefore, 0, JSON.stringify(res.issues, null, 2));
   assert.equal(res.stats.warningsBefore, 0, JSON.stringify(res.issues, null, 2));
 
-  const bubbles = (MIDNIGHT_PIZZA_HEIST_2M.skits || [])
-    .flatMap((s) => s.beats || [])
-    .filter((b) => b.type === "char_bubble");
-  assert.equal(bubbles.length, 0, "FunnyHorrorAnimation episode must use zero thought bubbles");
+  const allBeats = (MIDNIGHT_PIZZA_HEIST_2M.skits || []).flatMap((s) => s.beats || []);
+  const bubbles = allBeats.filter((b) => b.type === "char_bubble");
+  assert.equal(bubbles.length, 0, "episode must use zero thought bubbles");
+
+  const weirdAnims = allBeats.filter(
+    (b) => b.type === "char_anim" && (b.anim === "laugh" || b.anim === "sit")
+  );
+  assert.equal(weirdAnims.length, 0, "episode must avoid unmotivated laugh/chairless sit animations");
 
   const spine = validateStorySpine(MIDNIGHT_PIZZA_HEIST_2M);
   assert.equal(spine.ok, true, JSON.stringify(spine.errors));
-  assert.equal(spine.stats.goalPropScenes, 7);
-  assert.equal(spine.stats.scenes, 7);
+  assert.equal(spine.stats.goalPropScenes, 3);
+  assert.equal(spine.stats.scenes, 3);
 });
 
 test("physical communication helpers keep actors facing each other instead of snapping to camera", () => {

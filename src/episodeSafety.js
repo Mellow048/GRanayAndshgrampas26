@@ -89,13 +89,44 @@ export const AVAILABLE_ANIMS = Object.freeze([
  * complaint.
  */
 export const CUE_ACTION_RULES = Object.freeze({
-  eat: { anims: ["sit", "look", "laugh"], props: ["cookie_jar", "treasure_chest"], label: "an eating beat" },
-  granny_laugh: { anims: ["laugh", "punch", "hit", "jump"], label: "a laugh" },
-  laugh: { anims: ["laugh", "look"], label: "a laugh" },
-  bonk: { anims: ["hit", "punch", "terrified", "panic", "jump"], label: "an impact reaction" },
-  explode_meme: { anims: ["terrified", "panic", "jump", "hit", "laugh", "run2"], label: "a panic reaction" },
+  eat: {
+    anims: ["look", "sit", "laugh"],
+    armGestures: ["sniff", "offer", "carry", "stir", "place_down", "reach_both"],
+    charGestures: ["nod", "nod_yes", "nod_once"],
+    props: ["cookie_jar", "treasure_chest"],
+    label: "an eating beat",
+  },
+  granny_laugh: {
+    anims: ["laugh", "punch", "hit", "jump"],
+    armGestures: ["wave", "clap", "point", "shrug"],
+    charGestures: ["nod", "nod_yes", "nod_once", "tilt", "double_take"],
+    label: "a laugh",
+  },
+  laugh: {
+    anims: ["laugh", "look"],
+    armGestures: ["wave", "clap", "shrug"],
+    charGestures: ["nod", "nod_yes", "nod_once", "tilt"],
+    label: "a laugh",
+  },
+  bonk: {
+    anims: ["hit", "punch", "terrified", "panic", "jump"],
+    armGestures: ["angry_hips", "point", "shrug"],
+    charGestures: ["shake", "shake_no", "double_take"],
+    label: "an impact reaction",
+  },
+  explode_meme: {
+    anims: ["terrified", "panic", "jump", "hit", "laugh", "run2"],
+    armGestures: ["shrug", "reach_both", "angry_hips"],
+    charGestures: ["double_take", "shake", "shake_no"],
+    label: "a panic reaction",
+  },
   vine_boom: { anyAnim: true, label: "a visible reaction" },
-  rizz: { anims: ["laugh", "look", "sit", "jump", "punch"], label: "a charm beat" },
+  rizz: {
+    anims: ["laugh", "look", "sit", "jump", "punch"],
+    armGestures: ["sniff", "offer", "wave", "clap", "point", "reach_both"],
+    charGestures: ["nod", "nod_yes", "nod_once", "tilt"],
+    label: "a charm beat",
+  },
 });
 
 /** Reactions that must be sold facing the lens. */
@@ -1067,6 +1098,8 @@ export function validateEpisode(episode, options = {}) {
     const matched = beats.some((b) => {
       if (b.at < windowStart || b.at > windowEnd) return false;
       if (b.type === "char_anim" && (rule.anyAnim || rule.anims?.includes(b.anim))) return true;
+      if (b.type === "char_arm" && (rule.anyAnim || rule.armGestures?.includes(b.gesture))) return true;
+      if (b.type === "char_gesture" && (rule.anyAnim || rule.charGestures?.includes(b.gesture))) return true;
       // A thought bubble is a visible reaction in its own right (this is a
       // kids' show: angry/exclamation bubbles *are* how people emote).
       if (b.type === "char_bubble") return true;
