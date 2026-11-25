@@ -258,6 +258,45 @@ function smooth(points) {
 }
 
 /**
+ * Geometric string-pulling over same-floor segments so characters walk straight,
+ * confident lines across rooms instead of following 0.2m A* grid staircases
+ * ("untrained driver steering left-right"). Every shortcut is verified against
+ * BOTH `segmentWalkable` (real floor) and `findSegmentFurnitureHit` (tables/sofas).
+ */
+export function stringPullRoute(points) {
+  if (!Array.isArray(points) || points.length <= 2) return points ? points.slice() : [];
+  const out = [points[0]];
+  let anchor = 0;
+  while (anchor < points.length - 1) {
+    let farthest = anchor + 1;
+    const a = points[anchor];
+    // Preserve staircase & multi-level vertical transitions faithfully
+    if (Math.abs(points[farthest].y - a.y) <= 0.08) {
+      for (let j = points.length - 1; j > anchor + 1; j -= 1) {
+        const b = points[j];
+        if (Math.abs(b.y - a.y) > 0.08) continue;
+        // Require every intermediate point to share this flat floor so we never shortcut across stairs
+        let flatBand = true;
+        for (let k = anchor + 1; k < j; k += 1) {
+          if (Math.abs(points[k].y - a.y) > 0.12) {
+            flatBand = false;
+            break;
+          }
+        }
+        if (!flatBand) continue;
+        if (segmentWalkable(a, b, 0.12) && !findSegmentFurnitureHit(a, b, 0.28)) {
+          farthest = j;
+          break;
+        }
+      }
+    }
+    out.push(points[farthest]);
+    anchor = farthest;
+  }
+  return out;
+}
+
+/**
  * Plan a walk. `from`/`to` are world positions; the result starts at the
  * snapped floor point nearest `from` and ends at the snapped point nearest `to`.
  * Returns null when the two spots are not connected by real floor (e.g. roof to
@@ -270,7 +309,7 @@ export function route(from, to) {
   const ids = findNodePath(a.id, b.id);
   if (!ids) return null;
   const pts = ids.map(nodePoint);
-  const simplified = smooth(pts);
+  const simplified = stringPullRoute(smooth(pts));
   // Keep the exact goal spot if it is on the same floor as the last node.
   const tail = simplified[simplified.length - 1];
   if (Math.hypot(tail.x - to.x, tail.z - to.z) > 0.12) {

@@ -1,11 +1,10 @@
-// "Where's Granny?! + Midnight Pizza Heist" (~2 minutes / 120s, 4 seamless 30s continuous acts).
-// Built 1:1 on FunnyHorrorAnimation storytelling principles:
-//   - Player continuously walks with the characters through the REAL multi-floor house
-//     (Upstairs Hall -> Wooden Staircase -> Kitchen -> Dining -> Back Hall -> Living Room)
-//   - Player is a living participant (shakes no, nods yes, peeks, zooms for close-ups, clears furniture)
-//   - Strategic high-impact thought bubbles (`where_granny` + `???`, `shh`, `where_grandpa` + `???`, `pizza`)
-//   - True character-space head nods/shakes + shoulder-lifted `idk` shrug + Mixamo Chicken Dance finale
-//   - Zero furniture phasing, zero teleport cuts, zero confusing room-crossings
+// "Where's Granny?! + Midnight Pizza Heist" (~74s continuous POV, 1:1 FunnyHorrorAnimation style).
+// Built from direct creator direction:
+//   - Fast, unmistakable body language (angry scold -> sad/guilty slump -> pizza offer -> shared sofa) — NO slow nodding "talking" loops
+//   - Smooth string-pulled steering & real sprint speeds (no 1.0 m/s slow-motion runs)
+//   - Player actively steps aside to clear doorways, breaks single-subject robot lock behind walls, and acknowledges both Granny & Grandpa politely
+//   - Always faces tables/counters/sofas before placing props down (never behind their back)
+//   - No out-of-tone dancing during a guilty confrontation
 
 const pizzaParts = [
   {
@@ -43,8 +42,8 @@ const pizzaParts = [
 
 export const MIDNIGHT_PIZZA_HEIST_2M = {
   id: "midnight_pizza_heist_2m",
-  title: "Granny's Midnight Pizza Heist (2m POV)",
-  duration: 120,
+  title: "Granny's Midnight Pizza Heist (POV)",
+  duration: 74,
   transitions: "continuous",
   maxLookDuration: 0.55,
   playerSpawn: "upstairs_west_room",
@@ -78,315 +77,316 @@ export const MIDNIGHT_PIZZA_HEIST_2M = {
   ],
   story: {
     goalProp: "golden_pizza",
-    premise: "Grandpa wakes up hungry upstairs, leads the Player down to the kitchen, and wonders where Granny is while eyeing her fresh pizza.",
-    goal: "Grandpa tries to sneak away with the golden pizza when Granny wakes up in the back bedroom.",
-    resolution: "Granny asks the Player where Grandpa went, follows us to the living room sofa, and shares the pizza in a victory dance.",
+    premise: "Grandpa wakes up hungry upstairs, leads his best bud the Player downstairs to the kitchen, and asks where Granny is while eyeing her fresh pizza.",
+    goal: "Grandpa snatches the pizza when Granny wakes up, hiding it on the living room sofa before Granny realizes it's gone.",
+    resolution: "Granny catches Grandpa red-handed and gets angry, Grandpa gets guilty/sad and offers us pizza, we nod yes, and everyone makes peace warmly.",
     scenes: [
       {
         name: "Act 1: Down the Stairs & Empty Kitchen",
-        objective: "Grandpa beckons the Player downstairs to inspect the kitchen and look for Granny.",
-        obstacle: "Granny is nowhere in the kitchen, only her hot steaming pizza sits on the counter.",
-        turn: "Grandpa asks the Player 'Where is Granny?' with a ??? portrait bubble and eyes the pizza.",
+        objective: "Grandpa leads the Player downstairs to check the kitchen and find Granny.",
+        obstacle: "Granny isn't in the kitchen — only her hot steaming pizza sits on the counter.",
+        turn: "Grandpa asks us 'Where's Granny?' (??? portrait bubble) and plots to snatch the pizza.",
         beats: [
-          "Grandpa leads the Player down the wooden staircase into the kitchen.",
-          "Grandpa asks us where Granny is (`where_granny` ??? bubble) and decides to snatch the pizza.",
+          "Continuous stair walk with natural LOS release around the stairwell wall.",
+          "Grandpa spots the pizza, asks where Granny is, and gets mischievous.",
         ],
       },
       {
-        name: "Act 2: Pizza Grab & Granny Wakes Up!",
-        objective: "Grandpa grabs the pizza and brings it out while the Player walks right alongside him.",
-        obstacle: "Granny wakes up in the far back bedroom and footsteps echo toward the kitchen.",
-        turn: "Grandpa panics and escapes to hide the pizza on the living room sofa while Granny enters the empty kitchen.",
+        name: "Act 2: Pizza Heist & Granny's Fast Sprint",
+        objective: "Grandpa grabs the pizza right off the counter while the Player keeps lookout.",
+        obstacle: "Granny wakes up in the back bedroom and sprints toward the kitchen.",
+        turn: "Player steps aside cleanly while Grandpa bolts down the hall to hide the pizza on the sofa.",
         beats: [
-          "Grandpa grabs the pizza off the counter and places it on the dining table.",
-          "Granny wakes up in the back room; Grandpa bolts to the living room while we watch Granny arrive.",
+          "Grandpa snatches the pizza straight off kitchen_counter_top and shushes us.",
+          "Granny wakes up and sprints rapidly into the kitchen as Grandpa escapes cleanly.",
         ],
       },
       {
-        name: "Act 3: Pizza Missing & Granny Asks Us!",
-        objective: "Granny realizes her pizza is gone and asks the Player where Grandpa went.",
-        obstacle: "The Player plays innocent before tipping Granny off down the main hallway.",
-        turn: "The Player and Granny walk together through the hall toward the living room.",
+        name: "Act 3: Missing Pizza & Fast Hallway Chase",
+        objective: "Granny discovers her pizza missing and asks the Player where Grandpa went.",
+        obstacle: "The Player playfully feigns ignorance before pointing Granny down the hall.",
+        turn: "Granny sprints straight toward the living room while we jog alongside her.",
         beats: [
-          "Granny walks straight up to us with an idk shrug and `where_grandpa` ??? portrait bubble.",
-          "We shake no, look/nod down the hall, and walk together toward the living room.",
+          "Granny asks the Player (idk shrug + where_grandpa ??? bubble); we shake no then nod down the hall.",
+          "Fast chase down back_hall into the living room with zero doorway blocking.",
         ],
       },
       {
-        name: "Act 4: Living Room Standoff & Peace Dance",
-        objective: "Granny and the Player corner Grandpa beside the living room sofa with the pizza.",
-        obstacle: "Grandpa hugs the pizza defensively and Granny demands it back.",
-        turn: "Grandpa offers to share, the Player nods yes, and Grandpa celebrates with the Chicken Dance.",
+        name: "Act 4: Caught Red-Handed & Best-Buds Share",
+        objective: "Granny and the Player catch Grandpa holding the stolen pizza by the sofa.",
+        obstacle: "Granny gets genuinely angry and scolds Grandpa cleanly until he feels awful.",
+        turn: "Grandpa gets sad, offers us the pizza to share, sets it neatly on the sofa, and we nod warmly back to Granny & Grandpa.",
         beats: [
-          "Granny catches Grandpa by the living room sofa and scolds him.",
-          "Grandpa offers a peace slice, we nod yes, and everyone celebrates together.",
+          "Fast emotional beat: angry Granny scolds -> guilty/sad Grandpa -> offers pizza to us -> we nod yes.",
+          "Grandpa faces the sofa to set the pizza down cleanly; Granny claps and we nod back to both friends.",
         ],
       },
     ],
   },
   skits: [
     // =========================================================================
-    // ACT 1 (0s - 30s): Upstairs Wake-Up -> Stairs Walk -> Kitchen Mystery
+    // ACT 1 (0s - 26.8s): Upstairs Wake-Up -> Stairs Walk -> Kitchen Mystery
     // =========================================================================
     {
       name: "Act 1: Down the Stairs & Empty Kitchen",
       room: "upstairs",
       startAt: 0,
-      duration: 30,
+      duration: 26.8,
       playerSpawn: "upstairs_west_room",
       playerFacing: "upstairs_hall_center",
       beats: [
         { at: 0.0, type: "bgm", sound: "fluffing_a_duck", volume: 0.2 },
         { at: 0.0, type: "player_look", target: "grandpa", duration: 0.35, track: true },
 
-        // Grandpa wakes up hungry upstairs and waves for the Player to follow him downstairs
-        { at: 0.4, type: "char_arm", actor: "grandpa", gesture: "sniff", duration: 1.5, facePlayer: true },
-        { at: 0.8, type: "sfx", sound: "yummy", volume: 0.68 },
-        { at: 2.0, type: "char_arm", actor: "grandpa", gesture: "wave", duration: 1.4, facePlayer: true },
-        { at: 2.2, type: "player_gesture", gesture: "nod_yes", duration: 0.7 },
+        // Fast, lively intro: Grandpa sniffs the air, waves us along, we nod yes!
+        { at: 0.4, type: "char_arm", actor: "grandpa", gesture: "sniff", duration: 1.2, facePlayer: true },
+        { at: 0.7, type: "sfx", sound: "yummy", volume: 0.68 },
+        { at: 1.7, type: "char_arm", actor: "grandpa", gesture: "wave", duration: 1.2, facePlayer: true },
+        { at: 1.9, type: "player_gesture", gesture: "nod_yes", duration: 0.65 },
 
-        // Continuous real-time 1st-person stair descent: Grandpa leads, Player walks smoothly behind!
+        // Continuous real-time stairs walk: when stairwell wall blocks Grandpa, LOS releases -> Player scans naturally
         {
-          at: 3.4,
+          at: 3.0,
           type: "char_move",
           actor: "grandpa",
           via: ["upstairs_landing", "stairs_top", "stairs_middle", "stairs_bottom", "dining_corner", "dining_table_side", "dining_table_front", "dining_table_ne"],
           to: "kitchen_lane",
           anim: "walk",
-          duration: 11.2,
+          duration: 9.8,
           facePlayer: false,
         },
         {
-          at: 5.2,
+          at: 4.6,
           type: "player_walk",
           via: ["upstairs_hall_center", "upstairs_landing", "stairs_top", "stairs_middle", "stairs_bottom", "dining_corner", "dining_table_side", "dining_table_front"],
           to: "dining_center",
-          duration: 11.0,
+          duration: 9.8,
         },
-        { at: 5.4, type: "player_look", target: "grandpa", duration: 0.45, track: true },
-        { at: 9.0, type: "sfx", sound: "footsteps_slow", volume: 0.45 },
+        { at: 4.8, type: "player_look", target: "grandpa", duration: 0.45, track: true },
+        { at: 8.4, type: "sfx", sound: "footsteps_slow", volume: 0.42 },
 
-        // Once Grandpa rounds the stairwell corner out of sight, LOS releases auto-tracking -> Player scans naturally!
-        { at: 13.6, type: "player_look", yawOffset: 0.36, pitchOffset: -0.02, duration: 0.45 },
+        // After rounding the stairwell wall out of LOS, Player naturally checks the room then spots Grandpa in the kitchen
+        { at: 12.6, type: "player_look", yawOffset: 0.36, pitchOffset: -0.02, duration: 0.45 },
+        { at: 13.8, type: "player_look", target: "grandpa", duration: 0.45, track: true },
 
-        // Grandpa reaches the kitchen, spots the steaming pizza on the counter, and steps closer
-        { at: 14.9, type: "player_look", target: "grandpa", duration: 0.45, track: true },
-        { at: 15.0, type: "char_face", actor: "grandpa", target: "kitchen_counter_top", duration: 0.25 },
-        { at: 15.2, type: "char_gesture", actor: "grandpa", gesture: "double_take", duration: 0.9 },
-        { at: 15.4, type: "sfx", sound: "ding2", volume: 0.6 },
-        { at: 16.5, type: "char_move", actor: "grandpa", to: "kitchen", anim: "walk", duration: 1.5, facePlayer: false },
+        // Grandpa spots the steaming pizza on kitchen_counter_top and steps closer
+        { at: 13.9, type: "char_face", actor: "grandpa", target: "kitchen_counter_top", duration: 0.25 },
+        { at: 14.1, type: "char_gesture", actor: "grandpa", gesture: "double_take", duration: 0.8 },
+        { at: 14.3, type: "sfx", sound: "ding2", volume: 0.6 },
+        { at: 15.0, type: "char_move", actor: "grandpa", to: "kitchen", anim: "walk", duration: 1.2, facePlayer: false },
+        { at: 15.2, type: "player_walk", to: "dining_table_ne", duration: 1.4 },
 
-        // Player steps right up cleanly to dining_table_ne (1.8m away, clear of dining table!) to see the counter up close!
-        { at: 16.8, type: "player_walk", to: "dining_table_ne", duration: 1.6 },
-        { at: 18.6, type: "char_face", actor: "grandpa", target: "kitchen_counter_top", duration: 0.25 },
-        { at: 18.8, type: "char_arm", actor: "grandpa", gesture: "sniff", duration: 1.8, facePlayer: false },
-        { at: 19.2, type: "sfx", sound: "eat", volume: 0.55 },
+        { at: 16.4, type: "char_face", actor: "grandpa", target: "kitchen_counter_top", duration: 0.2 },
+        { at: 16.6, type: "char_arm", actor: "grandpa", gesture: "sniff", duration: 1.4, facePlayer: false },
+        { at: 17.0, type: "sfx", sound: "eat", volume: 0.5 },
 
-        // Grandpa checks around, turns right TO US, zooms closer, and asks "??? Where's Granny?"
-        { at: 20.8, type: "char_gesture", actor: "grandpa", gesture: "tilt", duration: 1.0 },
-        { at: 21.8, type: "player_zoom", fov: 49, duration: 0.4 },
-        { at: 21.9, type: "char_face", actor: "grandpa", followPlayer: true, instant: false },
-        { at: 22.1, type: "char_arm", actor: "grandpa", gesture: "idk", duration: 2.2, facePlayer: true },
-        { at: 22.2, type: "char_bubble", actor: "grandpa", icon: "where_granny", duration: 2.3 },
+        // Grandpa checks around, turns right to US, zooms slightly, and asks "Where's Granny?"
+        { at: 18.2, type: "char_gesture", actor: "grandpa", gesture: "tilt", duration: 0.9 },
+        { at: 19.2, type: "player_zoom", fov: 49, duration: 0.35 },
+        { at: 19.3, type: "char_face", actor: "grandpa", followPlayer: true, instant: false },
+        { at: 19.5, type: "char_arm", actor: "grandpa", gesture: "idk", duration: 2.0, facePlayer: true },
+        { at: 19.6, type: "char_bubble", actor: "grandpa", icon: "where_granny", duration: 2.1 },
 
-        // Player looks around ("Not here!") and shakes NO, then zooms cleanly back before Act 2 seam!
-        { at: 24.4, type: "player_gesture", gesture: "shake_no", duration: 0.9 },
-        { at: 25.4, type: "player_zoom", fov: null, duration: 0.55 },
-        { at: 25.6, type: "char_gesture", actor: "grandpa", gesture: "nod_yes", duration: 1.0 },
-        { at: 26.8, type: "char_arm", actor: "grandpa", gesture: "clap", duration: 1.8, facePlayer: true },
-        { at: 27.0, type: "sfx", sound: "pop", volume: 0.5 },
-        // Clean hold into 30.0s chunk handoff
-        { at: 28.8, type: "char_face", actor: "grandpa", target: "dining_table_ne", duration: 0.2 },
-        { at: 28.8, type: "player_look", target: "grandpa", duration: 0.35, track: false },
+        // Player glances toward hall lookout & shakes NO ("Coast is clear!"), zooms out cleanly
+        { at: 21.8, type: "player_gesture", gesture: "shake_no", duration: 0.8 },
+        { at: 22.8, type: "player_zoom", fov: null, duration: 0.4 },
+        { at: 23.0, type: "char_gesture", actor: "grandpa", gesture: "nod_yes", duration: 0.8 },
+        { at: 24.0, type: "char_arm", actor: "grandpa", gesture: "clap", duration: 1.3, facePlayer: true },
+        { at: 24.2, type: "sfx", sound: "pop", volume: 0.5 },
+        { at: 25.4, type: "player_look", yawOffset: 0.38, pitchOffset: -0.02, duration: 0.45 },
       ],
     },
 
     // =========================================================================
-    // ACT 2 (30s - 60s): Grabbing Pizza -> Granny Wakes Up -> Living Room Hide
+    // ACT 2 (26.8s - 41s): Pizza Snatch -> Granny Wakes & Sprints Fast!
     // =========================================================================
     {
-      name: "Act 2: Pizza Grab & Granny Wakes Up!",
+      name: "Act 2: Pizza Heist & Granny's Fast Sprint",
       room: "kitchen",
-      startAt: 30,
-      duration: 30,
-      playerSpawn: "dining_table_ne",
-      playerFacing: "grandpa",
+      startAt: 26.8,
+      duration: 14.2,
       beats: [
-        // Grandpa grabs the steaming pizza off kitchen_counter_top and shushes the Player!
-        { at: 30.0, type: "char_face", actor: "grandpa", target: "kitchen_counter_top", duration: 0.2 },
-        { at: 30.2, type: "player_look", target: "grandpa", duration: 0.35, track: true },
-        { at: 30.6, type: "char_arm", actor: "grandpa", gesture: "reach_both", duration: 1.4, facePlayer: false },
-        { at: 31.4, type: "prop_action", prop: "golden_pizza", action: "attach", actor: "grandpa", offset: [0, 0.04, 0.24] },
-        { at: 31.5, type: "char_arm", actor: "grandpa", gesture: "carry", duration: 2.2, facePlayer: false },
-        { at: 31.7, type: "sfx", sound: "whoosh", volume: 0.5 },
-        { at: 32.3, type: "char_face", actor: "grandpa", followPlayer: true, instant: false },
-        { at: 32.4, type: "char_bubble", actor: "grandpa", icon: "shh", duration: 1.6 },
-        { at: 32.7, type: "player_gesture", gesture: "nod_yes", duration: 0.7 },
+        // Grandpa turns cleanly to the counter, picks up the pizza, and whispers "shh" to us
+        { at: 26.8, type: "player_look", target: "grandpa", duration: 0.4, track: true },
+        { at: 26.8, type: "char_face", actor: "grandpa", target: "kitchen_counter_top", duration: 0.2 },
+        { at: 27.1, type: "char_arm", actor: "grandpa", gesture: "reach_both", duration: 1.0, facePlayer: false, target: "kitchen_counter_top" },
+        { at: 27.8, type: "prop_action", prop: "golden_pizza", action: "attach", actor: "grandpa", offset: [0, 0.04, 0.24] },
+        { at: 27.9, type: "char_arm", actor: "grandpa", gesture: "carry", duration: 1.8, facePlayer: false },
+        { at: 28.1, type: "sfx", sound: "whoosh", volume: 0.5 },
+        { at: 28.6, type: "char_face", actor: "grandpa", followPlayer: true, instant: false },
+        { at: 28.8, type: "player_gesture", gesture: "nod_yes", duration: 0.65 },
 
-        // Player steps clear to dining_lane while Grandpa carries pizza cleanly around the dining table to dining_table_front
-        { at: 34.0, type: "player_walk", to: "dining_lane", duration: 1.4 },
-        { at: 34.8, type: "char_move", actor: "grandpa", via: ["kitchen_lane", "dining_table_ne", "dining_table_btn"], to: "dining_table_front", anim: "walk", duration: 3.0, facePlayer: false },
-        { at: 37.9, type: "char_arm", actor: "grandpa", gesture: "place_down", duration: 1.3, facePlayer: false },
-        { at: 38.0, type: "prop_action", prop: "golden_pizza", action: "glide", fromActor: "grandpa", to: "dining_table_top", duration: 1.2, arc: 0.14 },
-        { at: 39.2, type: "sfx", sound: "checkmark", volume: 0.55 },
+        // Player backs cleanly to dining_lane first so Grandpa can sneak past without colliding
+        { at: 28.9, type: "player_walk", to: "dining_lane", duration: 0.9 },
+        { at: 30.0, type: "char_move", actor: "grandpa", via: ["kitchen_lane"], to: "dining_table_ne", anim: "sneak", duration: 1.6, facePlayer: false },
 
-        // Far away in the Back Bedroom (bed_side), Granny wakes up and heads toward Kitchen (via dining_pass -> kitchen_lane, clear of fridge wall!)
-        { at: 41.2, type: "sfx", sound: "door_creak", volume: 0.68 },
-        { at: 41.3, type: "char_move", actor: "granny", via: ["bed_foot", "hall_mid", "hall_corner", "dining_pass", "kitchen_lane"], to: "kitchen", anim: "walk", duration: 12.2, facePlayer: false },
+        // SUDDENLY Granny wakes up in Back Bedroom (`door_creak` + `vine_boom`)!
+        { at: 31.8, type: "sfx", sound: "door_creak", volume: 0.72, cutBgm: true, cutBgmDuration: 0.8 },
+        { at: 32.0, type: "player_look", yawOffset: -0.45, pitchOffset: 0.0, duration: 0.35 },
+        { at: 32.2, type: "player_gesture", gesture: "double_take", duration: 0.65 },
+        { at: 32.3, type: "char_gesture", actor: "grandpa", gesture: "double_take", duration: 0.75 },
 
-        // Both Player & Grandpa hear Granny coming!
-        { at: 41.6, type: "player_look", target: { x: -4.7, y: 1.25, z: 0.5 }, duration: 0.35, track: false },
-        { at: 41.8, type: "player_gesture", gesture: "double_take", duration: 0.7 },
-        { at: 42.3, type: "player_look", target: "grandpa", duration: 0.35, track: true },
-        { at: 42.4, type: "char_gesture", actor: "grandpa", gesture: "double_take", duration: 0.9 },
-
-        // Grandpa snatches the pizza back and flees through doorway_dining -> back_hall -> living room (west hall wall hides him from Granny!)
-        { at: 43.2, type: "prop_action", prop: "golden_pizza", action: "attach", actor: "grandpa", offset: [0, 0.04, 0.24] },
-        { at: 43.3, type: "char_arm", actor: "grandpa", gesture: "carry", duration: 2.0, facePlayer: false },
-        { at: 44.0, type: "char_move", actor: "grandpa", via: ["dining_table_btn", "dining_table_ne", "dining_center", "doorway_dining", "back_hall_left", "back_hall", "hallway", "back_room_east", "doorway_living", "living_room_entry"], to: "living_room", anim: "run", duration: 11.5, facePlayer: false },
-        { at: 45.0, type: "sfx", sound: "footsteps_fast", volume: 0.5 },
-
-        // Player glances toward where Grandpa bolted after LOS breaks, walks to dining_center, then hears Granny from kitchen_lane
-        { at: 46.2, type: "player_look", yawOffset: 0.32, pitchOffset: -0.02, duration: 0.45 },
-        { at: 47.0, type: "player_walk", to: "dining_center", duration: 1.6 },
-        { at: 48.6, type: "player_look", yawOffset: -0.45, pitchOffset: -0.02, duration: 0.45 },
-        { at: 50.0, type: "player_look", target: "granny", duration: 0.4, track: true },
-        { at: 50.4, type: "player_gesture", gesture: "peek_lean", duration: 1.0 },
-
-        // Grandpa places pizza on the living room sofa safely on the other side of the house!
-        { at: 55.6, type: "prop_action", prop: "golden_pizza", action: "glide", fromActor: "grandpa", to: "living_room_sofa", duration: 1.2, arc: 0.12 },
-        { at: 56.8, type: "char_face", actor: "grandpa", target: "living_room_entry", duration: 0.2 },
-
-        // Keep exact clean rest state at 59.0-60.0 for seamless Act 3 entry
-        { at: 58.6, type: "char_face", actor: "granny", target: "kitchen_counter_top", duration: 0.25 },
-        { at: 58.8, type: "player_look", target: "granny", duration: 0.35, track: false },
-      ],
-    },
-
-    // =========================================================================
-    // ACT 3 (60s - 90s): Granny Spots Missing Pizza, Asks Us -> Leads Chase!
-    // =========================================================================
-    {
-      name: "Act 3: Pizza Missing & Granny Asks Us!",
-      room: "kitchen",
-      startAt: 60,
-      duration: 30,
-      playerSpawn: "dining_center",
-      playerFacing: "granny",
-      beats: [
-        // Keep pizza anchored in Act 3 state + Granny inspects her empty counter!
-        { at: 60.0, type: "prop_action", prop: "golden_pizza", action: "reset", waypoint: "living_room_sofa", visible: true },
-        { at: 60.2, type: "player_look", target: "granny", duration: 0.35, track: true },
-        { at: 60.4, type: "char_gesture", actor: "granny", gesture: "double_take", duration: 1.0 },
-        { at: 60.5, type: "sfx", sound: "vine_boom", volume: 0.72 },
-        { at: 61.6, type: "char_arm", actor: "granny", gesture: "angry_hips", duration: 1.8, facePlayer: false },
-
-        // Granny walks right up to THE PLAYER in dining_center (via kitchen_lane -> dining_table_ne, clear of table!)
-        { at: 63.6, type: "char_move", actor: "granny", via: ["kitchen_lane"], to: "dining_table_ne", anim: "walk", duration: 2.2, facePlayer: false },
-        { at: 66.0, type: "player_zoom", fov: 49, duration: 0.45 },
-        { at: 66.0, type: "char_face", actor: "granny", followPlayer: true, instant: false },
-        { at: 66.2, type: "char_arm", actor: "granny", gesture: "idk", duration: 2.2, facePlayer: true },
-        { at: 66.3, type: "char_bubble", actor: "granny", icon: "where_grandpa", duration: 2.3 },
-
-        // Player plays innocent ("shake_no"), returns zoom to default, looks down hall doorway & nods ("He went that way!")
-        { at: 68.0, type: "player_gesture", gesture: "shake_no", duration: 0.9 },
-        { at: 69.0, type: "player_zoom", fov: null, duration: 0.45 },
-        { at: 69.1, type: "player_look", target: { x: -3.6, y: 1.25, z: -1.2 }, duration: 0.35, track: false },
-        { at: 69.4, type: "player_gesture", gesture: "nod_yes", duration: 0.7 },
-
-        // Granny gets it! Nods sharply, points, and storms down the main hall with Player right behind her!
-        { at: 70.2, type: "player_look", target: "granny", duration: 0.35, track: true },
-        { at: 70.3, type: "char_gesture", actor: "granny", gesture: "nod_yes", duration: 0.9 },
-        { at: 70.4, type: "sfx", sound: "granny_i_see_you", volume: 0.75 },
-        { at: 71.2, type: "char_arm", actor: "granny", gesture: "point", duration: 1.0, facePlayer: false },
-
-        // Continuous hallway chase walk: Granny leads through back hall to back_room_east; Player follows 2.4s behind cleanly
+        // Grandpa bolts at real sprint speed (`4.0+ m/s`) out through back_hall -> living_room!
         {
-          at: 72.4,
+          at: 33.0,
           type: "char_move",
-          actor: "granny",
-          via: ["dining_center", "doorway_dining", "back_hall_left", "back_hall", "hallway"],
-          to: "back_room_east",
+          actor: "grandpa",
+          via: ["dining_center", "doorway_dining", "back_hall_left", "back_hall", "hallway", "back_room_east", "doorway_living", "living_room_entry"],
+          to: "living_room",
           anim: "run",
-          duration: 12.0,
+          duration: 3.4,
+          ghostPlayer: true,
           facePlayer: false,
         },
-        { at: 73.2, type: "sfx", sound: "footsteps_fast", volume: 0.5 },
-        {
-          at: 74.8,
-          type: "player_walk",
-          via: ["doorway_dining", "back_hall_left", "back_hall"],
-          to: "hallway",
-          duration: 11.5,
-        },
-        { at: 75.0, type: "player_look", target: "granny", duration: 0.4, track: true },
+        { at: 33.1, type: "player_look", target: "grandpa", duration: 0.35, track: true },
+        { at: 33.4, type: "sfx", sound: "footsteps_fast", volume: 0.55 },
 
-        // Clean hold in the hall at 87.5-90.0 before bursting into the living room
-        { at: 87.5, type: "player_look", target: "granny", duration: 0.4, track: true },
-        { at: 88.6, type: "char_face", actor: "granny", target: "doorway_living", duration: 0.25 },
+        // Player naturally tracks Grandpa briefly -> LOS drops behind dining wall -> Player steps clear to dining_table_front and watches Granny arrive
+        { at: 35.8, type: "player_walk", to: "dining_table_front", duration: 1.1 },
+        { at: 36.2, type: "player_look", yawOffset: -0.42, pitchOffset: -0.02, duration: 0.4 },
+
+        // Grandpa arrives in Living Room, turns to sofa, and places pizza neatly
+        { at: 36.6, type: "char_arm", actor: "grandpa", gesture: "place_down", duration: 0.9, facePlayer: false, target: "living_room_sofa" },
+        { at: 36.7, type: "prop_action", prop: "golden_pizza", action: "glide", fromActor: "grandpa", to: "living_room_sofa", duration: 0.9, arc: 0.12 },
+
+        // Granny SPRINTS fast (`3.7+ m/s`, 2.3s — ZERO slow-motion walk!) straight into the kitchen while Player watches clearly aside!
+        {
+          at: 35.6,
+          type: "char_move",
+          actor: "granny",
+          via: ["bed_foot", "hall_mid", "hall_corner", "dining_pass", "kitchen_lane"],
+          to: "kitchen",
+          anim: "run",
+          duration: 2.3,
+          ghostPlayer: true,
+          facePlayer: false,
+        },
+        { at: 37.2, type: "player_look", target: "granny", duration: 0.4, track: true },
+        { at: 37.8, type: "player_gesture", gesture: "peek_lean", duration: 0.8 },
+        { at: 38.2, type: "char_face", actor: "granny", target: "kitchen_counter_top", duration: 0.2 },
       ],
     },
 
     // =========================================================================
-    // ACT 4 (90s - 120s): Living Room Standoff, Player Ties It Up & Chicken Dance!
+    // ACT 3 (39s - 56s): Missing Pizza -> Granny Asks Us -> Fast Hallway Chase
     // =========================================================================
     {
-      name: "Act 4: Living Room Standoff & Peace Dance",
-      room: "living_room",
-      startAt: 90,
-      duration: 30,
-      playerSpawn: "hallway",
-      playerFacing: "granny",
+      name: "Act 3: Missing Pizza & Fast Hallway Chase",
+      room: "kitchen",
+      startAt: 39.0,
+      duration: 17.0,
       beats: [
-        // Granny enters the Living Room; Player follows 2.0s behind cleanly into living_room_left
-        { at: 90.0, type: "char_move", actor: "granny", via: ["doorway_living", "living_room_entry"], to: "living_room_view", anim: "walk", duration: 4.0, facePlayer: false },
-        { at: 90.4, type: "player_look", target: "granny", duration: 0.4, track: true },
-        { at: 92.2, type: "player_walk", via: ["back_room_east", "doorway_living", "living_room_entry"], to: "living_room_left", duration: 4.4 },
+        // Keep pizza steaming cleanly in the living room while Granny sees her empty kitchen counter (`vine_boom`)!
+        { at: 39.0, type: "prop_action", prop: "golden_pizza", action: "steam", enabled: true },
+        { at: 39.05, type: "char_gesture", actor: "granny", gesture: "double_take", duration: 0.8 },
+        { at: 39.2, type: "sfx", sound: "vine_boom", volume: 0.72 },
+        { at: 40.0, type: "char_arm", actor: "granny", gesture: "angry_hips", duration: 1.2, facePlayer: false },
 
-        // Grandpa pops up by the sofa holding the pizza (`AHA!`)
-        { at: 95.8, type: "player_look", target: "grandpa", duration: 0.4, track: true },
-        { at: 96.0, type: "char_face", actor: "grandpa", targetActor: "granny", duration: 0.25 },
-        { at: 96.2, type: "char_gesture", actor: "grandpa", gesture: "double_take", duration: 0.9 },
-        { at: 96.3, type: "sfx", sound: "grandpa_aha", volume: 0.85 },
-        { at: 97.2, type: "prop_action", prop: "golden_pizza", action: "attach", actor: "grandpa", offset: [0, 0.04, 0.24] },
-        { at: 97.3, type: "char_arm", actor: "grandpa", gesture: "carry", duration: 2.2, facePlayer: false },
+        // Player steps up cleanly to dining_center; Granny walks up (`where_grandpa` ??? bubble!)
+        { at: 41.2, type: "player_walk", to: "dining_center", duration: 1.0 },
+        { at: 41.5, type: "char_move", actor: "granny", via: ["kitchen_lane"], to: "dining_table_ne", anim: "walk", duration: 1.2, facePlayer: false },
+        { at: 42.9, type: "player_zoom", fov: 50, duration: 0.35 },
+        { at: 42.9, type: "char_face", actor: "granny", followPlayer: true, instant: false },
+        { at: 43.1, type: "char_arm", actor: "granny", gesture: "idk", duration: 1.8, facePlayer: true },
+        { at: 43.2, type: "char_bubble", actor: "granny", icon: "where_grandpa", duration: 1.9 },
 
-        // Granny hands on hips, shakes NO crisply, and points sternly
-        { at: 98.8, type: "player_look", target: "granny", duration: 0.35, track: true },
-        { at: 99.0, type: "char_face", actor: "granny", targetActor: "grandpa", duration: 0.2 },
-        { at: 99.2, type: "char_arm", actor: "granny", gesture: "angry_hips", duration: 2.0, facePlayer: false },
-        { at: 99.6, type: "char_gesture", actor: "granny", gesture: "shake_no", duration: 1.3 },
-        { at: 101.2, type: "char_arm", actor: "granny", gesture: "point", duration: 1.4, facePlayer: false },
-        { at: 101.4, type: "sfx", sound: "bonk", volume: 0.55 },
+        // Player plays innocent (`shake_no`), zooms back out, looks toward back_hall doorway & nods ("He went that way!")
+        { at: 45.2, type: "player_gesture", gesture: "shake_no", duration: 0.75 },
+        { at: 46.0, type: "player_zoom", fov: null, duration: 0.35 },
+        { at: 46.1, type: "player_look", target: { x: -3.6, y: 1.25, z: -1.2 }, duration: 0.35, track: false },
+        { at: 46.5, type: "player_gesture", gesture: "nod_yes", duration: 0.65 },
 
-        // Grandpa does a tucked-elbow idk shrug, then holds pizza out with a "share?" pizza bubble
-        { at: 102.6, type: "player_look", target: "grandpa", duration: 0.35, track: true },
-        { at: 102.8, type: "char_arm", actor: "grandpa", gesture: "idk", duration: 1.8, facePlayer: false },
-        { at: 104.8, type: "char_arm", actor: "grandpa", gesture: "offer", duration: 2.4, facePlayer: false },
-        { at: 105.0, type: "char_bubble", actor: "grandpa", icon: "pizza", duration: 1.8 },
+        // Granny nods FAST, points, and SPRINTS down the hall! Player steps aside cleanly then chases 1.9s behind (zero doorway bottleneck)!
+        { at: 47.2, type: "player_look", target: "granny", duration: 0.35, track: true },
+        { at: 47.3, type: "char_gesture", actor: "granny", gesture: "nod_yes", duration: 0.65 },
+        { at: 47.4, type: "sfx", sound: "granny_i_see_you", volume: 0.75 },
+        { at: 48.0, type: "char_arm", actor: "granny", gesture: "point", duration: 0.75, facePlayer: false },
+        { at: 48.2, type: "player_walk", to: "dining_lane", duration: 0.75 },
+        { at: 48.9, type: "bgm", sound: "run_amok", volume: 0.2 },
 
-        // Granny turns briefly to the Player; we nod YES (`nod_yes`), she agrees (`ding2`!)
-        { at: 106.8, type: "player_look", target: "granny", duration: 0.35, track: true },
-        { at: 107.0, type: "char_face", actor: "granny", followPlayer: true, instant: false },
-        { at: 107.2, type: "char_gesture", actor: "granny", gesture: "tilt", duration: 1.2 },
-        { at: 108.0, type: "player_gesture", gesture: "nod_yes", duration: 0.8 },
-        { at: 108.8, type: "char_gesture", actor: "granny", gesture: "nod_yes", duration: 1.2 },
-        { at: 109.0, type: "sfx", sound: "ding2", volume: 0.65 },
+        // Fast, clean Granny sprint (`4.2 m/s`, 3.4s total!) through the hallway to Living Room!
+        {
+          at: 49.0,
+          type: "char_move",
+          actor: "granny",
+          via: ["dining_center", "doorway_dining", "back_hall_left", "back_hall", "hallway", "back_room_east", "doorway_living"],
+          to: "living_room_view",
+          anim: "run",
+          duration: 3.4,
+          ghostPlayer: true,
+          facePlayer: false,
+        },
+        { at: 49.1, type: "sfx", sound: "footsteps_fast", volume: 0.5 },
 
-        // Grandpa sets the pizza on living_room_sofa -> LET'S GO + Chicken Dance finale!
-        { at: 110.2, type: "player_look", target: "grandpa", duration: 0.35, track: true },
-        { at: 110.3, type: "char_arm", actor: "grandpa", gesture: "place_down", duration: 1.3, facePlayer: false },
-        { at: 110.4, type: "prop_action", prop: "golden_pizza", action: "glide", fromActor: "grandpa", to: "living_room_sofa", duration: 1.1, arc: 0.12 },
-        { at: 111.7, type: "sfx", sound: "lets_go", volume: 0.8 },
-        { at: 111.9, type: "char_anim", actor: "grandpa", anim: "chicken_dance", loop: true, duration: 5.5, facePlayer: true },
-        { at: 112.0, type: "char_move", actor: "granny", to: "living_room_right", anim: "walk", duration: 1.0, facePlayer: false },
-        { at: 113.2, type: "char_face", actor: "granny", target: "living_room_left", duration: 0.25 },
-        { at: 113.4, type: "char_arm", actor: "granny", gesture: "wave", duration: 2.4, facePlayer: true },
-        { at: 114.2, type: "player_gesture", gesture: "nod_yes", duration: 0.9 },
-        { at: 116.0, type: "char_arm", actor: "granny", gesture: "clap", duration: 2.2, facePlayer: true },
-        { at: 116.2, type: "sfx", sound: "tada", volume: 0.6 },
-        { at: 117.4, type: "char_gesture", actor: "granny", gesture: "nod", duration: 1.4 },
-        { at: 118.8, type: "fade", to: 1, duration: 1.2 },
+        // Player chases 2.0s behind cleanly through doorway_dining -> living_room_left (`doorway_dining` stagger >= 1.8s!)
+        {
+          at: 51.0,
+          type: "player_walk",
+          via: ["dining_center", "doorway_dining", "back_hall_left", "back_hall", "hallway", "back_room_east", "doorway_living", "living_room_entry"],
+          to: "living_room_left",
+          speed: 3.5,
+          duration: 4.5,
+        },
+        { at: 51.2, type: "player_look", target: "granny", duration: 0.4, track: true },
+      ],
+    },
+
+    // =========================================================================
+    // ACT 4 (56s - 74s): Fast Clear Emotions (Angry -> Sad -> Offer -> Best Buds)
+    // =========================================================================
+    {
+      name: "Act 4: Caught Red-Handed & Best-Buds Peace",
+      room: "living_room",
+      startAt: 56.0,
+      duration: 18.0,
+      beats: [
+        // Player arrives cleanly in living_room_left -> Grandpa picks up stolen pizza (`AHA!`)
+        { at: 55.6, type: "player_look", target: "grandpa", duration: 0.4, track: true },
+        { at: 55.7, type: "char_face", actor: "grandpa", targetActor: "granny", duration: 0.2 },
+        { at: 55.8, type: "char_gesture", actor: "grandpa", gesture: "double_take", duration: 0.75 },
+        { at: 56.0, type: "sfx", sound: "grandpa_aha", volume: 0.85 },
+        { at: 56.6, type: "prop_action", prop: "golden_pizza", action: "attach", actor: "grandpa", offset: [0, 0.04, 0.24] },
+        { at: 56.7, type: "char_arm", actor: "grandpa", gesture: "carry", duration: 1.5, facePlayer: false },
+
+        // FAST EMOTION 1: Granny gets ANGRY immediately (NO confusing nodding loop!)
+        { at: 57.9, type: "player_look", target: "granny", duration: 0.35, track: true },
+        { at: 58.0, type: "char_face", actor: "granny", targetActor: "grandpa", duration: 0.2 },
+        { at: 58.1, type: "char_anim", actor: "granny", anim: "angry", duration: 1.6, facePlayer: false },
+        { at: 58.2, type: "char_arm", actor: "granny", gesture: "scold", duration: 1.5, facePlayer: false },
+        { at: 58.3, type: "sfx", sound: "bonk", volume: 0.6 },
+
+        // FAST EMOTION 2: Grandpa immediately turns SAD / GUILTY (slumped shoulders + bowed head + aww!)
+        { at: 60.0, type: "player_look", target: "grandpa", duration: 0.35, track: true },
+        { at: 60.2, type: "char_arm", actor: "grandpa", gesture: "sad", duration: 1.8, facePlayer: false },
+        { at: 60.2, type: "char_gesture", actor: "grandpa", gesture: "sad", duration: 1.8 },
+        { at: 60.3, type: "sfx", sound: "aww", volume: 0.7 },
+
+        // Grandpa turns to US, perks up, and OFFERS us pizza! We glance at Granny to include her, then nod YES!
+        { at: 62.3, type: "bgm", sound: "fluffing_a_duck", volume: 0.2 },
+        { at: 62.4, type: "char_face", actor: "grandpa", followPlayer: true, instant: false },
+        { at: 62.5, type: "char_arm", actor: "grandpa", gesture: "offer", duration: 2.3, facePlayer: true },
+        { at: 62.7, type: "sfx", sound: "pop", volume: 0.55 },
+        { at: 63.6, type: "player_look", target: "granny", duration: 0.35, track: true },
+        { at: 64.5, type: "player_look", target: "grandpa", duration: 0.35, track: true },
+        { at: 64.9, type: "player_gesture", gesture: "nod_yes", duration: 0.75 },
+
+        // Grandpa faces the sofa cleanly BEFORE setting the pizza down (zero behind-the-back throwing, NO weird dance!)
+        { at: 66.0, type: "char_face", actor: "grandpa", target: "living_room_sofa", duration: 0.2 },
+        { at: 66.2, type: "char_arm", actor: "grandpa", gesture: "place_down", duration: 1.1, facePlayer: false, target: "living_room_sofa" },
+        { at: 66.3, type: "prop_action", prop: "golden_pizza", action: "glide", fromActor: "grandpa", to: "living_room_sofa", duration: 1.0, arc: 0.1 },
+        { at: 67.3, type: "sfx", sound: "ding2", volume: 0.65 },
+
+        // Granny steps over, claps warmly at us — and we LOOK DIRECTLY AT GRANNY AND NOD BACK, then Grandpa waves warmly!
+        { at: 67.5, type: "char_move", actor: "granny", to: "living_room_right", anim: "walk", duration: 0.9, facePlayer: false },
+        { at: 68.5, type: "player_look", target: "granny", duration: 0.35, track: true },
+        { at: 68.6, type: "char_arm", actor: "granny", gesture: "clap", duration: 2.0, facePlayer: true },
+        { at: 68.8, type: "sfx", sound: "tada", volume: 0.62 },
+        { at: 69.2, type: "player_gesture", gesture: "nod_yes", duration: 0.8 },
+
+        { at: 70.6, type: "player_look", target: "grandpa", duration: 0.35, track: true },
+        { at: 70.7, type: "char_arm", actor: "grandpa", gesture: "wave", duration: 1.8, facePlayer: true },
+        { at: 71.1, type: "player_gesture", gesture: "nod_yes", duration: 0.8 },
+        { at: 72.7, type: "fade", to: 1, duration: 1.2 },
       ],
     },
   ],

@@ -1,52 +1,44 @@
 # DIRECTOR_NOTES.md — FunnyHorrorAnimation Rules (READ THIS BEFORE WRITING A SINGLE BEAT)
 
-> **STOP.** If you violate ANY rule below, `npm run validate:episode` and `npm run validate:strict` will **HARD-FAIL (exit code 1)**. Read every line.
+> **STOP.** Every rule below comes directly from creator review & viewer retention feedback. Follow them strictly before writing or rendering an episode.
 
 ---
 
-## 1. DO NOT USE THOUGHT BUBBLES (`char_bubble`) FOR COMMUNICATION
+## 1. EXPRESSIVE, FAST BODY EMOTIONS — NO "NODDING TO TALK" LOOPS
 
-In the **FunnyHorrorAnimation** YouTube style, characters **NEVER** have conversations using floating emoji thought bubbles (`heart`, `laugh`, `food`, `happy`, `?`, `!`). Thought bubble spam turns the video into an annoying guessing game and confuses viewers.
+- **NEVER** make Granny and Grandpa stand face-to-face nodding back and forth (`nod_yes` / `talk`) trying to hold an invisible conversation! Viewers cannot guess what characters are "talking" about — it feels slow, confusing, and kills retention.
+- **Communicate FAST (`0.8s–1.8s` per beat) using unmistakable visual emotions:**
+  - **Angry / Scolding:** `char_anim { anim: "angry" }` + `char_arm { gesture: "angry_hips" | "scold" }` + `bonk`
+  - **Sad / Guilty:** `char_arm { gesture: "sad" }` + `char_gesture { gesture: "sad" | "hang_head" }` + `aww`
+  - **Offering / Sharing:** `char_arm { gesture: "offer" }` facing the recipient (`char_face followPlayer: true` when offering to the Player)
+  - **Shock / Surprise:** `char_gesture { gesture: "double_take" }` + `vine_boom` / `ding2`
+  - **Searching / Genuine Question:** `char_arm { gesture: "idk" }` (tucked-elbow shoulder shrug) paired with strategic comic portrait `? ? ?` thought bubbles (`where_granny`, `where_grandpa`) ONLY when genuinely asking *"Where did Granny/Grandpa go?"*
 
-### How Characters Actually Communicate Here:
-1. **Look at each other:** `char_face` (`{ type: "char_face", actor: "granny", targetActor: "grandpa" }`)
-2. **Nod or shake head:** `char_gesture` (`nod_yes`, `nod`, `shake_no`, `tilt`, `double_take`)
-3. **Simple greeting or pointing:** `char_arm` (`wave`, `point`, `offer`, `stir`, `carry`, `place_down`, `sniff`)
-4. **Use the zero-bubble macros in `src/gags/helpers.js`:**
-   - `greetAndNod({ at, a: "granny", b: "grandpa" })` — turn to each other, wave, nod back.
-   - `dialogueExchange({ at, a: "granny", b: "grandpa", turns: 2 })` — face each other + nod/tilt/shake + wave/point.
-
-### Hard Validator Limits (`THOUGHT_BUBBLE_SPAM` — EXIT CODE 1):
-- **BANNED icons:** `heart`, `laugh`, `food`, `happy` are **HARD-BANNED** on `char_bubble`.
-- **Hard cap:** Maximum **0–2** thought bubbles total in episodes `<= 90s` (prefer **0**!), and max **4** total in 2–5 minute episodes.
-- **Minimum spacing:** Never place two `char_bubble` beats within **15 seconds** of each other.
-- Only use `!` or `?` in rare, extreme shock moments — NEVER to explain a plot beat that should be shown physically!
+### Strategic Thought Bubbles (`char_bubble` — Quality Over Spam):
+- **Allowed & Recommended sparingly:** `where_granny` and `where_grandpa` (`? ? ?` + character portrait), `pizza`, `shh`, `cookie`, `idea`, `panic` ONLY to clarify a question the Player would otherwise miss (`<= 4` total in `<= 90s`, `<= 6` in longer episodes, spaced `>= 8s` apart).
+- **BANNED chat icons (`THOUGHT_BUBBLE_SPAM` — EXIT CODE 1):** `heart`, `laugh`, `food`, `happy`. Never replace physical acting with thought-bubble chatter.
 
 ---
 
-## 2. DO NOT USE MINECRAFT EXPLOSIONS (`explode` / `explode_meme`) UNLESS SOMETHING ACTUALLY EXPLODES
+## 2. BE A LIVING "BEST BUDS" PLAYER — BREAK ROBOTIC 1-SUBJECT LOCK
 
-- **NEVER** play `explode` or `explode_meme` when a character jumps, trips, bonks, gets surprised, or drops a prop.
-- `UNMOTIVATED_EXPLOSION_SFX` is a **HARD ERROR**: `explode` / `explode_meme` is rejected unless an actual explosive prop (`tnt`, `bomb`, `fireball`, `red_button` trap) triggers within `2.0s`.
-- Use SFX that actually match the action:
-  - Jump / toss / fast turn → `whoosh`
-  - Bonk / trip / bump → `bonk` or `thud`
-  - Subtle reveal / funny realization → `vine_boom` (sparingly!)
-  - Pickup / item grab → `kaching` or `pop`
+You are NOT a tripod locked on one character with X-ray vision — it should feel like **you are playing Granny with your two goofy buddies (Granny & Grandpa) doing shenanigans together:**
+1. **Never wall-lock behind walls:** When Grandpa or Granny disappears around a corner or behind a wall, `PlayerCamera` automatically releases tracking (`hasTargetLineOfSight`). Scan the room/doorway naturally (`yawOffset`) before re-acquiring!
+2. **Don't stare monotonically at 1 character:** Break robotic fixation! Briefly glance at the other buddy, the doorway, or what just happened (`player_look` >= `0.75s` apart), even when not strictly needed — just don't spam flicks.
+3. **Never ignore your buddies (Player Etiquette):** When Grandpa offers you pizza (`offer`) or Granny claps happily at you (`clap`), **look directly at them and nod/shake back (`nod_yes` / `shake_no`)**. Leaving them hanging feels cold/robotic.
+4. **Make space so characters never run into your face:** Before Granny or Grandpa sprints through a doorway/hallway, actively step aside (`player_walk` to a clear side waypoint) so they pass smoothly. Pass `ghostPlayer: true` on fast chase `char_move` passes in narrow corridors if needed.
 
 ---
 
-## 3. DO NOT SPAM TAUNTS OR RANDOM SOUND EFFECTS
+## 3. MOVEMENT, STEERING, PROPS & TONE LOGIC
 
-- **`granny_i_see_you` (`TAUNT_SFX_SPAM` — HARD ERROR):** Maximum **2 times per entire episode**, at least **30 seconds apart**, and **ONLY** when Granny literally catches someone sneaking or hiding. Never play `"I SEE YOU"` at an empty room or when standing face-to-face.
-- **No SFX slot-machine spam (`SFX_OVERLOAD_SPAM` — HARD ERROR):** Never fire **3 or more comedic SFX within any 2.5-second window**. Let silence, music, and physical acting sell the comedy.
-- Do not stack `giggle` / `crowd_aww` / `boing` / `level_up` every second.
-
----
-
-## 4. SHOW PHYSICAL INTERACTIONS — NEVER FLOAT PROPS OR CLIP INTO COUNTERS
-
-- **Holding food/items:** ALWAYS attach held props to the character's hand using `{ type: "prop_action", prop: "pizza", action: "attach", actor: "granny", offset: [0, 0.05, 0.24] }` while they carry it, and `{ action: "glide", to: "kitchen_table_top", duration: 0.9 }` to set it down cleanly. Never float a pizza 1 meter in the air!
-- **Kitchen counter clipping:** Never walk straight across the L-shaped kitchen counter — route through open floor waypoints (`kitchen_center`, `kitchen_doorway`).
-- **Actor separation:** Never spawn or walk Granny and Grandpa onto the exact same waypoint. Keep them at least `1.05m` apart (the runtime also enforces a `0.82m` live repulsion bubble).
-- **Camera sightlines:** Never park the POV camera behind a doorframe or wall. Always run `npm run validate:strict` before rendering!
+1. **No Slow-Motion Runs (`SLOW_MOTION_RUN`):** Never override a `run` / `run2` move with an artificially long `duration` (e.g., `12s` to go `12m`). Keep sprints crisp (`>= 3.5 m/s`, ~`3.8–4.4 m/s`) so chases punch up retention!
+2. **Smooth Straight Steering:** Let `houseNav.stringPullRoute` and look-ahead steering guide walks smoothly — avoid chaining redundant tiny `via` points inside the same open room.
+3. **NEVER Place Props Behind Your Back & No Confusing Double-Pickups:**
+   - Always `char_face` the destination (`dining_table_top`, `living_room_sofa`, `kitchen_counter_top`) BEFORE `place_down` / `glide` (the runtime also enforces `faceDest: true`). Never stare at the Player while placing an item behind your back.
+   - Never make a character put an item down only to pick the same item back up 2 seconds later without a clear story interruption.
+4. **No Out-of-Tone Dancing During Serious Confrontations:**
+   - Save `chicken_dance` and `hip_hop_dance` for earned lighthearted gag/party payoffs — NEVER drop a dance right after someone gets busted stealing or scolded.
+5. **Zero Furniture Clipping (`FURNITURE_COLLISION` — EXIT CODE 1):** Always route floor walks via floor waypoints clear of `dining_table`, `kitchen_table`, `living_room_sofa`, and beds (`src/furnitureColliders.js`).
+6. **No Unmotivated Explosions (`UNMOTIVATED_EXPLOSION_SFX`) or SFX/Taunt Spam:** Keep `granny_i_see_you` `<= 2x` (`>= 30s` apart) and `< 3` comedic SFX per `2.5s` window.
+7. **Always Render Full Episodes in One Go (Direct `.mp4`, Zero Chunk Seams / Zips):** Use single-pass full export (`export-video.yml` or `export-long-episode.yml` with `max_chunk_sec: 999`) so characters never snap/teleport 1 inch at chunk boundaries, and share the direct `latest-export/*.mp4` release download URL (never force unpacking `.zip` artifacts).

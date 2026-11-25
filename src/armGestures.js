@@ -94,6 +94,18 @@ export const ARM_GESTURES = {
     amplitude: 1.0,
     hold: true,
   },
+  scold: {
+    label: "point and shake finger/arm briskly while leaning in to scold",
+    cycles: 3,
+    amplitude: 1.0,
+    hold: false,
+  },
+  sad: {
+    label: "slump shoulders downward, hang arms limp, and droop torso in a guilty/sad pose",
+    cycles: 1,
+    amplitude: 1.0,
+    hold: true,
+  },
   clap: {
     label: "bring both hands together repeatedly in front of chest",
     cycles: 4,
@@ -252,6 +264,27 @@ export function sampleArmGesture(name, elapsed, duration, overrides = {}) {
       out.rFore.z = 0.95 * amp;
       out.lFore.z = -0.95 * amp;
       out.spine.x = 0.08 * amp;
+      break;
+
+    case "scold":
+      out.rUpper.x = -1.16 * amp;
+      out.rUpper.y = (0.08 + Math.sin(phase) * 0.14) * amp;
+      out.rFore.x = (-0.28 + Math.sin(phase) * 0.22) * amp;
+      out.lUpper.z = 0.45 * amp;
+      out.lFore.z = -0.82 * amp;
+      out.spine.x = 0.12 * amp;
+      break;
+
+    case "sad":
+      out.rShoulder.z = 0.2 * amp;
+      out.lShoulder.z = -0.2 * amp;
+      out.rUpper.x = -0.18 * amp;
+      out.lUpper.x = -0.18 * amp;
+      out.rUpper.z = 0.1 * amp;
+      out.lUpper.z = -0.1 * amp;
+      out.rFore.x = -0.24 * amp;
+      out.lFore.x = -0.24 * amp;
+      out.spine.x = 0.26 * amp;
       break;
 
     case "clap": {

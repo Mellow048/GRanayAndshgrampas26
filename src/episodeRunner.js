@@ -951,6 +951,23 @@ export class EpisodeRunner {
     }
   }
 
+  _sampleMovePoint(move, weight) {
+    const w = Math.max(0, Math.min(move.totalWeight, weight));
+    let segIdx = 0;
+    while (segIdx < move.cumWeights.length - 2 && move.cumWeights[segIdx + 1] < w) {
+      segIdx += 1;
+    }
+    const segStart = move.points[segIdx];
+    const segEnd = move.points[segIdx + 1];
+    const segSpan = Math.max(1e-5, move.cumWeights[segIdx + 1] - move.cumWeights[segIdx]);
+    const localT = Math.max(0, Math.min(1, (w - move.cumWeights[segIdx]) / segSpan));
+    return {
+      x: segStart.x + (segEnd.x - segStart.x) * localT,
+      y: segStart.y + (segEnd.y - segStart.y) * localT,
+      z: segStart.z + (segEnd.z - segStart.z) * localT,
+    };
+  }
+
   _resolveReadyWaiters() {
     let resolvedAny = false;
     for (let i = this._simWaiters.length - 1; i >= 0; i--) {
@@ -1037,7 +1054,12 @@ export class EpisodeRunner {
       const dx = segEnd.x - segStart.x;
       const dz = segEnd.z - segStart.z;
       if (dx * dx + dz * dz > 1e-6 && !m.keepFacing) {
-        m.actor.faceTarget(segEnd, 14);
+        // Steer smoothly ~0.5s ahead along the polyline so characters round corners naturally instead of zig-zagging on short segments.
+        const lookWeight = Math.min(m.totalWeight, targetWeight + 0.5);
+        const ahead = this._sampleMovePoint(m, lookWeight);
+        const adx = ahead.x - m.actor.root.position.x;
+        const adz = ahead.z - m.actor.root.position.z;
+        m.actor.faceTarget(adx * adx + adz * adz > 1e-4 ? ahead : segEnd, 7.5);
       }
 
       const desiredAnim = segMeta.isJumpArc ? "jump" : m.anim;
@@ -1132,6 +1154,8 @@ export class EpisodeRunner {
       const lensFloor = this.playerCamera.playerPos.y;
       const bubble = PLAYER_BUBBLE;
       for (const actor of visibleActors) {
+        const activeMove = this.activeCharMoves.find((m) => m.actor === actor);
+        if (activeMove?.ghostPlayer) continue;
         const pos = actor.root.position;
         if (Math.abs(lensFloor - pos.y) > 0.9) continue;
         const dx = pos.x - lens.x;
@@ -1247,6 +1271,15 @@ export class EpisodeRunner {
    */
   _faceActorToCamera(actor, ev = {}) {
     if (!actor || ev.facePlayer === false || ev.keepFacing) return;
+    if (ev.target && ev.target !== "player") {
+      actor.lookAtPlayer?.(false);
+      actor.faceTarget(this.resolveWaypoint(ev.target), 14);
+      return;
+    }
+    const worldOrientedGestures = new Set(["place_down", "stir", "reach_both", "carry"]);
+    if (ev.type === "char_arm" && worldOrientedGestures.has(ev.gesture) && ev.facePlayer !== true) {
+      return;
+    }
     const camPos = this.playerCamera?.getEyeWorldPosition
       ? this.playerCamera.getEyeWorldPosition()
       : this.playerCamera?.camera?.position;
@@ -1590,6 +1623,7 @@ export class EpisodeRunner {
           anim,
           animSpeed,
           keepFacing: Boolean(ev.keepFacing),
+          ghostPlayer: Boolean(ev.ghostPlayer || ev.passPlayer),
           endAnim: ev.endAnim || "idle",
           startTime: this.simTime,
           duration: timing.effectiveDuration,
@@ -1678,9 +1712,10 @@ export class EpisodeRunner {
         spin: ev.spin,
         float: ev.float,
       };
-      if (ev.action === "glide") {
-        if (ev.fromActor && this.characters[ev.fromActor]) {
-          params.fromPos = this.characters[ev.fromActor].getHandWorldPosition?.() || null;
+      if (ev.action === "glide" || ev.action === "place" || ev.action === "put") {
+        const holder = (ev.fromActor && this.characters[ev.fromActor]) || (ev.actor && this.characters[ev.actor]) || null;
+        if (ev.action === "glide" && holder) {
+          params.fromPos = holder.getHandWorldPosition?.() || null;
         }
         if (typeof ev.to === "string" && this.characters[ev.to]) {
           const targetActor = this.characters[ev.to];
@@ -1692,6 +1727,18 @@ export class EpisodeRunner {
             y: headPos.y + noseOffset,
             z: headPos.z + Math.cos(yaw) * 0.34,
           };
+          if (holder && ev.faceDest !== false) {
+            holder.lookAtPlayer?.(false);
+            holder.faceTarget(params.toPos, 16);
+          }
+        } else if (holder && ev.faceDest !== false) {
+          const destRef = ev.to || ev.waypoint || ev.at;
+          const destPos = destRef ? this.resolveWaypoint(destRef) : null;
+          if (destPos) {
+            holder.lookAtPlayer?.(false);
+            holder.setHeadTrack?.(false);
+            holder.faceTarget(destPos, 16);
+          }
         }
       }
       this.comedyProps?.performAction(ev.prop, ev.action, params);

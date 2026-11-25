@@ -3,12 +3,13 @@
 
 ## 0. HARD-ENFORCED FUNNYHORRORANIMATION RULES (READ FIRST — VIOLATIONS FAIL VALIDATION!)
 
-See `DIRECTOR_NOTES.md` for full details. Every rule below is **hard-enforced (exit code 1)** by `validate:episode`:
+See `DIRECTOR_NOTES.md` for full details. Every rule below is **hard-enforced** by `validate:episode` / `validate:strict`:
 
-1. **NO THOUGHT BUBBLES (`char_bubble`) FOR COMMUNICATION (`THOUGHT_BUBBLE_SPAM`):** Characters communicate **FunnyHorrorAnimation style** — by looking at each other (`char_face`), nodding/shaking (`char_gesture: "nod_yes" | "shake_no" | "tilt"`), and waving/pointing (`char_arm: "wave" | "point"`). Use `greetAndNod()` or `dialogueExchange()`. **BANNED icons:** `heart`, `laugh`, `food`, `happy`. Max **0–2** shock bubbles (`!` / `?`) in `<= 90s` (max 4 in longer shows), spaced `>= 15s` apart. Prefer **ZERO** bubbles.
-2. **NO MINECRAFT EXPLOSIONS WITHOUT AN EXPLOSION (`UNMOTIVATED_EXPLOSION_SFX`):** Never play `explode` or `explode_meme` on jumps, trips, bonks, or surprises. Rejected unless an explosive prop actually detonates on screen.
-3. **NO TAUNT OR SFX SPAM (`TAUNT_SFX_SPAM`, `SFX_OVERLOAD_SPAM`):** `granny_i_see_you` max **2x/episode** (`>= 30s` apart) and ONLY when spotting a hider. Never fire 3+ comedic SFX inside any `2.5s` window.
-4. **NO FLOATING PROPS OR BODY/COUNTER CLIPPING:** Always `attach` held props to hands and `glide` them to real surface waypoints (`kitchen_table_top`, `dining_table_top`). Route kitchen walks through `kitchen_center`.
+1. **FAST EXPRESSIVE EMOTIONS — NO "NODDING TO TALK" OR THOUGHT-BUBBLE CHAT (`THOUGHT_BUBBLE_SPAM`):** Show clear, fast emotions (`0.8s–1.8s` per beat): `angry` + `angry_hips`/`scold`, `sad` (arm+head slump), `idk` shrug + sparse `? ? ?` portrait bubbles (`where_granny`, `where_grandpa`) ONLY when genuinely looking for someone, and `offer`. **NEVER** do back-and-forth nodding loops pretending to talk. **BANNED chat icons:** `heart`, `laugh`, `food`, `happy` (`<= 4` bubbles `<= 90s`, `<= 6` `> 90s`, `>= 8s` gap).
+2. **NO WALL-LOCKING & LIVE "BEST BUDS" PLAYER POV:** Break robotic single-subject staring (`playerCamera` automatically drops tracking when walls block LOS). Glance between Granny, Grandpa, and surroundings naturally, **always step aside (`player_walk`) before an actor sprints past you**, and **always look & nod/shake back** when Granny/Grandpa offers something or claps at you.
+3. **CRISP RUN SPEEDS (`SLOW_MOTION_RUN`), FACE BEFORE PLACING PROPS, & TONE FIT:** Never play `anim: "run"` slower than `2.6 m/s` (keep chases `~3.8–4.4 m/s`). Always `char_face` a surface BEFORE `place_down`/`glide` (never place props behind your back), never place+re-pickup immediately without reason, and never trigger `chicken_dance`/`hip_hop_dance` in a serious caught-stealing confrontation.
+4. **NO MINECRAFT EXPLOSIONS WITHOUT AN EXPLOSION (`UNMOTIVATED_EXPLOSION_SFX`) or SFX/TAUNT SPAM:** `granny_i_see_you` max `2x/episode` (`>= 30s` apart). Never fire 3+ comedic SFX inside any `2.5s` window.
+5. **NO FURNITURE CLIPPING OR CHUNK TELEPORTS (`FURNITURE_COLLISION`):** Use floor-clear waypoints (`src/furnitureColliders.js`) and render continuous episodes in ONE full pass (`export-video.yml` -> direct `latest-export/*.mp4` release link, no `.zip` unpacking).
 
 ---
 
@@ -103,9 +104,11 @@ python3 -m http.server 8000
 # Single Gag:  http://localhost:8000/?gag=cookieHeist&location=kitchen_to_hall
 # Single Show: http://localhost:8000/?show=mountain_dew_run
 # One Scene:   http://localhost:8000/?show=mountain_dew_run&scene=fridge
+```
 
-# Cloud render (<= 3 min):
-gh workflow run export-video.yml -f preset=mountain_dew_run -f fps=30 -f format=mp4
+- **Cloud render (single continuous `.mp4`, direct Release download — NO chunks / NO zip):**
+```bash
+gh workflow run export-video.yml -f preset=midnight_pizza_heist_2m -f fps=30 -f format=mp4
 ```
 
 ---
@@ -127,7 +130,7 @@ gh workflow run export-video.yml -f preset=mountain_dew_run -f fps=30 -f format=
 Never leave actors standing motionless with a thought bubble or teleport props out of thin air (`BUBBLE_WITHOUT_ACTING` & `LAZY_PROP_POP`):
 
 - **Procedural arm & upper-body acting (`char_arm`):** Layer on top of any clip (no FBX needed):
-  - `stir` (cooking/stirring), `offer` / `reach_out` (holding food/item right up to someone's face), `carry` (holding a tray/plate with both arms), `place_down` (setting down on a table), `wave`, `point`, `sniff` (leaning in to smell hot food).
+  - `stir`, `offer` / `reach_out`, `carry`, `place_down`, `wave`, `point`, `sniff`, `shrug` / `idk`, `angry_hips`, `scold` (fast angry shake/point), `sad` (drooped guilty slump), `clap`, `reach_both`.
 - **Smooth physical prop motion (`prop_action: "glide"`):** Glides a prop along a curved arc from a counter or actor's hand (`fromActor`) directly to a table waypoint OR right under another actor's nose (`to: "grandpa", targetHeight: "nose"`).
 - **Everyday storytelling props (with animated rising steam):** `frying_pan`, `breakfast_plate`, `coffee_mug`, `serving_tray`, `pillow`.
 - **Gold-standard reference:** Read `src/gags/breakfastSurprise.js` (`preset=breakfast_surprise_20s`) before writing any cooking, serving, or object-interaction scene.

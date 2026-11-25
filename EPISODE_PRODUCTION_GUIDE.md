@@ -3,12 +3,12 @@
 
 ## 0. HARD-ENFORCED FUNNYHORRORANIMATION RULES (READ FIRST — VIOLATIONS FAIL VALIDATION!)
 
-See `DIRECTOR_NOTES.md` for full details. Every rule below is **hard-enforced (exit code 1)** by `validate:episode`:
+See `DIRECTOR_NOTES.md` for full details. Every rule below is enforced by `validate:episode` / `validate:strict`:
 
-1. **NO THOUGHT BUBBLES (`char_bubble`) FOR COMMUNICATION (`THOUGHT_BUBBLE_SPAM`):** Characters communicate **FunnyHorrorAnimation style** — by looking at each other (`char_face`), nodding/shaking (`char_gesture: "nod_yes" | "shake_no" | "tilt"`), and waving/pointing (`char_arm: "wave" | "point"`). Use `greetAndNod()` or `dialogueExchange()`. **BANNED icons:** `heart`, `laugh`, `food`, `happy`. Max **0–2** shock bubbles (`!` / `?`) in `<= 90s` (max 4 in longer shows), spaced `>= 15s` apart. Prefer **ZERO** bubbles.
-2. **NO MINECRAFT EXPLOSIONS WITHOUT AN EXPLOSION (`UNMOTIVATED_EXPLOSION_SFX`):** Never play `explode` or `explode_meme` on jumps, trips, bonks, or surprises. Rejected unless an explosive prop actually detonates on screen.
-3. **NO TAUNT OR SFX SPAM (`TAUNT_SFX_SPAM`, `SFX_OVERLOAD_SPAM`):** `granny_i_see_you` max **2x/episode** (`>= 30s` apart) and ONLY when spotting a hider. Never fire 3+ comedic SFX inside any `2.5s` window.
-4. **NO FLOATING PROPS OR BODY/COUNTER CLIPPING:** Always `attach` held props to hands and `glide` them to real surface waypoints (`kitchen_table_top`, `dining_table_top`). Route kitchen walks through `kitchen_center`.
+1. **FAST EXPRESSIVE EMOTIONS — NO "NODDING TO TALK" OR THOUGHT-BUBBLE CHAT (`THOUGHT_BUBBLE_SPAM`):** Express reactions fast (`0.8s–1.8s`) using `angry` + `angry_hips`/`scold`, `sad` (arm+head slump), `idk` shrug + sparse `? ? ?` portrait bubbles (`where_granny`, `where_grandpa`) ONLY when searching for someone, and `offer`. **NEVER** loop nods to simulate dialogue. **BANNED icons:** `heart`, `laugh`, `food`, `happy` (`<= 4` bubbles `<= 90s`, `<= 6` `> 90s`, `>= 8s` gap).
+2. **LIVE "BEST BUDS" CAMERA & PLAYER ETIQUETTE:** Release wall-locked tracking (`hasTargetLineOfSight`), glance between both Granny and Grandpa naturally without robotic fixation, step aside (`player_walk`) before a running character reaches a narrow doorway, and always look + nod/shake back when characters offer food or clap at you.
+3. **CRISP SPRINT SPEEDS (`SLOW_MOTION_RUN`), FACE BEFORE PLACING PROPS, & TONE DISCIPLINE:** Never run slower than `2.6 m/s`, always `char_face` the table/sofa before `place_down`/`glide`, never dance (`chicken_dance`/`hip_hop_dance`) during serious caught-stealing scenes, and always render full episodes in a single unbroken export (`export-video.yml`, direct `.mp4` Release URL).
+4. **NO MINECRAFT EXPLOSIONS (`UNMOTIVATED_EXPLOSION_SFX`), TAUNT SPAM, OR FURNITURE CLIPPING (`FURNITURE_COLLISION`):** `granny_i_see_you` max `2x/episode` (`>= 30s` apart); route clear of tables/counters/sofas (`src/furnitureColliders.js`).
 
 ---
 

@@ -114,10 +114,16 @@ export const CUE_ACTION_RULES = Object.freeze({
     label: "a laugh",
   },
   bonk: {
-    anims: ["hit", "punch", "terrified", "panic", "jump"],
-    armGestures: ["angry_hips", "point", "shrug"],
+    anims: ["hit", "punch", "terrified", "panic", "jump", "angry"],
+    armGestures: ["angry_hips", "point", "scold", "shrug"],
     charGestures: ["shake", "shake_no", "double_take"],
-    label: "an impact reaction",
+    label: "an impact or scold reaction",
+  },
+  aww: {
+    anims: ["look", "sit", "idle"],
+    armGestures: ["sad", "shrug", "idk", "offer"],
+    charGestures: ["sad", "hang_head", "tilt", "nod"],
+    label: "a sad/guilty or sympathetic beat",
   },
   explode_meme: {
     anims: ["terrified", "panic", "jump", "hit", "laugh", "run2"],
@@ -960,6 +966,35 @@ export function validateEpisode(episode, options = {}) {
             )
           );
           break;
+        }
+      }
+      if (isMove && (beat.anim === "run" || beat.anim === "run2") && !beat.allowSlowRun) {
+        const routeDist = legs.reduce((sum, [a, b]) => sum + Math.hypot(b.x - a.x, b.z - a.z), 0);
+        const dur = Number(beat.duration);
+        if (routeDist > 2.0 && dur > 1.5 && routeDist / dur < 2.6) {
+          const fastDur = Math.max(0.9, +(routeDist / 3.8).toFixed(2));
+          let applied = false;
+          if (autoFix && !isLegacyMove) {
+            patchBeat(beat, { duration: fastDur });
+            applied = true;
+          }
+          issues.push(
+            issue(
+              "SLOW_MOTION_RUN",
+              "warn",
+              beat.at,
+              `${beat.actor} uses anim "${beat.anim}" at only ${(routeDist / dur).toFixed(2)} m/s (${routeDist.toFixed(1)}m over ${dur.toFixed(1)}s) — slow-motion runs kill pacing.`,
+              {
+                actor: beat.actor,
+                ...fixNote(
+                  applied,
+                  applied
+                    ? `Shortened run duration to ${fastDur}s (~3.8 m/s).`
+                    : `Shorten duration to ~${fastDur}s (or omit duration) so running moves at >= 3.5 m/s.`
+                ),
+              }
+            )
+          );
         }
       }
       for (const [id, state] of actorState) {

@@ -61,6 +61,20 @@ export const HEAD_GESTURES = {
     fadeIn: 0.08,
     label: "whip round and back: the classic double take",
   },
+  sad: {
+    axis: "pitch",
+    amplitude: 0.36,
+    cycles: 1,
+    hold: true,
+    label: "hang head down in guilt or sadness",
+  },
+  hang_head: {
+    axis: "pitch",
+    amplitude: 0.36,
+    cycles: 1,
+    hold: true,
+    label: "alias of sad — bow head down",
+  },
 };
 
 /** Names usable anywhere an `anim` is accepted. */
