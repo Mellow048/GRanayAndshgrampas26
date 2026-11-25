@@ -234,15 +234,16 @@ export function sampleArmGesture(name, elapsed, duration, overrides = {}) {
 
     case "shrug":
     case "idk":
-      // Hike BOTH clavicles up toward ears (+Y), spread upper arms slightly out, and turn forearms/palms up!
-      out.rShoulder.z = -0.34 * amp;
-      out.lShoulder.z = 0.34 * amp;
-      out.rUpper.z = -0.4 * amp;
-      out.lUpper.z = 0.4 * amp;
-      out.rFore.x = -1.05 * amp;
-      out.rFore.y = -0.38 * amp;
-      out.lFore.x = -1.05 * amp;
-      out.lFore.y = 0.38 * amp;
+      // Hike clavicles UP (+Y), keep upper arms tucked near ribs (counter z slightly),
+      // bend elbows forward/up ~75° (rFore.x) and splay forearms/palms outward (rFore.y) like ¯\_(ツ)_/¯
+      out.rShoulder.z = -0.32 * amp;
+      out.lShoulder.z = 0.32 * amp;
+      out.rUpper.z = 0.14 * amp;
+      out.lUpper.z = -0.14 * amp;
+      out.rFore.x = -1.3 * amp;
+      out.lFore.x = -1.3 * amp;
+      out.rFore.y = -0.52 * amp;
+      out.lFore.y = 0.52 * amp;
       break;
 
     case "angry_hips":

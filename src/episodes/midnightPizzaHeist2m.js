@@ -257,28 +257,29 @@ export const MIDNIGHT_PIZZA_HEIST_2M = {
         { at: 64.6, type: "char_gesture", actor: "granny", gesture: "double_take", duration: 0.9 },
         { at: 64.7, type: "sfx", sound: "vine_boom", volume: 0.75 },
 
-        // KEY INTERACTIVE BEAT: Granny turns straight TO US (Player), zooms slightly in, shows portrait "??? Where's Grandpa?" bubble + idk shoulders!
-        { at: 65.5, type: "player_zoom", fov: 48, duration: 0.45 },
-        { at: 65.5, type: "char_face", actor: "granny", followPlayer: true, instant: false },
-        { at: 65.6, type: "char_arm", actor: "granny", gesture: "idk", duration: 2.0, facePlayer: true },
-        { at: 65.7, type: "char_bubble", actor: "granny", icon: "where_grandpa", duration: 2.2 },
+        // KEY INTERACTIVE BEAT: Granny steps clear of the table into dining_center TO US, shows portrait "??? Where's Grandpa?" bubble + idk shoulders!
+        { at: 65.1, type: "char_move", actor: "granny", via: ["dining_table_front"], to: "dining_center", anim: "walk", duration: 1.1, facePlayer: false },
+        { at: 65.4, type: "player_zoom", fov: 50, duration: 0.45 },
+        { at: 66.2, type: "char_face", actor: "granny", followPlayer: true, instant: false },
+        { at: 66.3, type: "char_arm", actor: "granny", gesture: "idk", duration: 2.0, facePlayer: true },
+        { at: 66.4, type: "char_bubble", actor: "granny", icon: "where_grandpa", duration: 2.2 },
 
         // Player acts physically: first shakes head ("I didn't take it!"), then turns to the dining doorway and nods ("He went that way!")!
-        { at: 67.2, type: "player_gesture", gesture: "shake_no", duration: 0.9 },
-        { at: 68.1, type: "player_zoom", fov: 58, duration: 0.35 },
-        { at: 68.2, type: "player_look", target: { x: -3.6, y: 1.25, z: -1.2 }, duration: 0.35, track: false },
-        { at: 68.5, type: "player_gesture", gesture: "nod_yes", duration: 0.7 },
+        { at: 67.5, type: "player_gesture", gesture: "shake_no", duration: 0.9 },
+        { at: 68.4, type: "player_zoom", fov: 58, duration: 0.35 },
+        { at: 68.5, type: "player_look", target: { x: -3.6, y: 1.25, z: -1.2 }, duration: 0.35, track: false },
+        { at: 68.8, type: "player_gesture", gesture: "nod_yes", duration: 0.7 },
 
         // Granny gets the tip! She nods sharply, points toward doorway_dining ("I see!"), and sprints down the hall!
-        { at: 69.0, type: "char_gesture", actor: "granny", gesture: "nod_yes", duration: 0.9 },
-        { at: 69.1, type: "sfx", sound: "granny_i_see_you", volume: 0.78 },
-        { at: 69.6, type: "char_arm", actor: "granny", gesture: "point", duration: 1.0, facePlayer: false },
-        { at: 70.0, type: "player_look", target: "granny", duration: 0.35, track: true },
+        { at: 69.3, type: "char_gesture", actor: "granny", gesture: "nod_yes", duration: 0.9 },
+        { at: 69.4, type: "sfx", sound: "granny_i_see_you", volume: 0.78 },
+        { at: 69.9, type: "char_arm", actor: "granny", gesture: "point", duration: 1.0, facePlayer: false },
+        { at: 70.2, type: "player_look", target: "granny", duration: 0.35, track: true },
 
         // Staggered chase so doorway_dining stays clean: Granny runs out first, Camera chases right behind!
-        { at: 70.4, type: "char_move", actor: "granny", via: ["dining_table_front", "dining_center", "doorway_dining", "back_hall_left", "back_hall"], to: "hallway", anim: "run", duration: 8.2, facePlayer: false },
-        { at: 72.2, type: "player_walk", via: ["dining_center", "doorway_dining", "back_hall_left"], to: "back_hall", duration: 6.6 },
-        { at: 72.4, type: "player_look", target: "granny", duration: 0.4, track: true },
+        { at: 70.6, type: "char_move", actor: "granny", via: ["doorway_dining", "back_hall_left", "back_hall"], to: "hallway", anim: "run", duration: 8.0, facePlayer: false },
+        { at: 72.4, type: "player_walk", via: ["dining_center", "doorway_dining", "back_hall_left"], to: "back_hall", duration: 6.4 },
+        { at: 72.6, type: "player_look", target: "granny", duration: 0.4, track: true },
 
         // Grandpa sets the pizza on the living room sofa thinking he's safe
         { at: 78.2, type: "prop_action", prop: "golden_pizza", action: "glide", fromActor: "grandpa", to: "living_room_sofa", duration: 1.1, arc: 0.12 },
@@ -347,13 +348,14 @@ export const MIDNIGHT_PIZZA_HEIST_2M = {
         { at: 106.9, type: "prop_action", prop: "golden_pizza", action: "glide", fromActor: "grandpa", to: "living_room_sofa", duration: 1.3, arc: 0.12 },
         { at: 108.4, type: "sfx", sound: "tada", volume: 0.65 },
 
-        // Victory celebration: "LET'S GO!" + Grandpa breaks into Chicken Dance while Granny waves & Player nods!
+        // Victory celebration: "LET'S GO!" + Grandpa breaks into Chicken Dance while Granny steps into frame, waves & Player nods!
         { at: 109.4, type: "char_face", actor: "grandpa", target: "living_room_left", duration: 0.25 },
         { at: 109.6, type: "sfx", sound: "lets_go", volume: 0.8 },
         { at: 109.8, type: "char_anim", actor: "grandpa", anim: "chicken_dance", loop: true, duration: 5.5, facePlayer: true },
-        { at: 111.0, type: "char_face", actor: "granny", target: "living_room_left", duration: 0.25 },
-        { at: 111.2, type: "char_arm", actor: "granny", gesture: "wave", duration: 2.6, facePlayer: true },
-        { at: 112.0, type: "player_gesture", gesture: "nod_yes", duration: 0.9 },
+        { at: 110.2, type: "char_move", actor: "granny", to: "living_room_right", anim: "walk", duration: 1.0, facePlayer: false },
+        { at: 111.3, type: "char_face", actor: "granny", target: "living_room_left", duration: 0.25 },
+        { at: 111.5, type: "char_arm", actor: "granny", gesture: "wave", duration: 2.5, facePlayer: true },
+        { at: 112.2, type: "player_gesture", gesture: "nod_yes", duration: 0.9 },
         { at: 114.2, type: "char_gesture", actor: "granny", gesture: "nod_yes", duration: 1.4 },
         { at: 115.6, type: "char_arm", actor: "grandpa", gesture: "wave", duration: 2.6, facePlayer: true },
         { at: 115.8, type: "char_arm", actor: "granny", gesture: "clap", duration: 2.4, facePlayer: true },
