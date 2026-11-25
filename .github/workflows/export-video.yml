@@ -17,9 +17,9 @@ on:
           - the_great_escape_68s
           - grandpa_key_pov_44s
           - mountain_dew_run
+          - midnight_pizza_heist_2m
           - cookie_marathon_150s
           - jump_run_walk_6s
-          - cookie_marathon_150s
           - custom_json
       episode_json:
         description: "Custom Episode JSON (used when preset is custom_json, or overrides preset if provided)"

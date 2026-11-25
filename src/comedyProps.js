@@ -1038,6 +1038,9 @@ export class ComedyPropManager {
     if (wpRef && this.waypoints[wpRef]) {
       const wp = this.waypoints[wpRef];
       basePos.set(wp.x, wp.y + (params.yOffset ?? 0), wp.z);
+      if (this.world && params.seat !== false) {
+        basePos.copy(this.seatProp(mesh, basePos, propId));
+      }
     } else {
       basePos.copy(initial.basePos);
       if (params.yOffset !== undefined) {
@@ -1055,6 +1058,10 @@ export class ComedyPropManager {
     state.bounce = false;
     state.popOut = false;
     state.popEndPos = null;
+    state.attachedActor = null;
+    state.glideActive = false;
+    state.glideStartPos = null;
+    state.glideEndPos = null;
     state.lidOpen = false;
     state.pressed = false;
     state.riseActive = false;

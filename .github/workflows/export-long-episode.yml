@@ -9,10 +9,10 @@ on:
         default: "comedy_variety_1m"
         options:
           - comedy_variety_1m
+          - midnight_pizza_heist_2m
           - cookie_marathon_150s
           - rocket_ball_x3
           - the_great_escape_68s
-          - cookie_marathon_150s
           - custom_json
       episode_json:
         description: "Custom Episode JSON (overrides preset if provided)"

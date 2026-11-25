@@ -1536,6 +1536,7 @@ export class EpisodeRunner {
       const actor = this.characters[ev.actor];
       if (!actor) return;
       const speed = ev.instant ? 999 : 14;
+      const faceTarget = ev.target || ev.targetActor;
       if (typeof ev.followPlayer === "boolean") {
         actor.lookAtPlayer(ev.followPlayer);
         if (ev.followPlayer && ev.instant && this.playerCamera) {
@@ -1545,14 +1546,17 @@ export class EpisodeRunner {
           actor.lookAt(eyePos);
         }
       }
-      if (ev.target === "player" && this.playerCamera) {
+      if (faceTarget === "player" && this.playerCamera) {
         const eyePos = this.playerCamera.getEyeWorldPosition
           ? this.playerCamera.getEyeWorldPosition()
           : this.playerCamera.camera.position;
         actor.faceTarget(eyePos, speed);
         if (ev.persist !== false) actor.lookAtPlayer(true);
-      } else if (ev.target) {
-        actor.faceTarget(this.resolveWaypoint(ev.target), speed);
+      } else if (faceTarget) {
+        if (typeof ev.followPlayer !== "boolean") {
+          actor.lookAtPlayer(false);
+        }
+        actor.faceTarget(this.resolveWaypoint(faceTarget), speed);
       }
       return this._waitSim(ev.duration ?? 0, runToken);
     }

@@ -166,10 +166,10 @@ export function handItemTo({
 } = {}) {
   const beats = [
     { at, type: "char_face", actor: giver, targetActor: receiver, duration: 0.2 },
-    { at: +(at + 0.1).toFixed(3), type: "char_arm", actor: giver, gesture: "offer", duration },
+    { at: +(at + 0.1).toFixed(3), type: "char_arm", actor: giver, gesture: "offer", duration, facePlayer: false },
     { at: +(at + 0.1).toFixed(3), type: "prop_action", prop, action: "glide", fromActor: giver, to: receiver, targetHeight, duration: Math.min(1.1, duration * 0.5), arc: 0.08 },
     { at: +(at + 0.9).toFixed(3), type: "char_face", actor: receiver, targetActor: giver, duration: 0.2 },
-    { at: +(at + 1.0).toFixed(3), type: "char_arm", actor: receiver, gesture: targetHeight === "nose" ? "sniff" : "offer", duration: 1.4 },
+    { at: +(at + 1.0).toFixed(3), type: "char_arm", actor: receiver, gesture: targetHeight === "nose" ? "sniff" : "offer", duration: 1.4, facePlayer: false },
   ];
   if (sfx) beats.push({ at: +(at + 0.2).toFixed(3), type: "sfx", sound: sfx, volume: 0.48 });
   return beats;
@@ -197,7 +197,7 @@ export function greetAndNod({ at, a = "granny", b = "grandpa", duration = 2.0 } 
   return [
     { at, type: "char_face", actor: a, targetActor: b, duration: 0.22 },
     { at: +(at + 0.08).toFixed(3), type: "char_face", actor: b, targetActor: a, duration: 0.22 },
-    { at: +(at + 0.2).toFixed(3), type: "char_arm", actor: a, gesture: "wave", duration: Math.min(1.4, duration * 0.65) },
+    { at: +(at + 0.2).toFixed(3), type: "char_arm", actor: a, gesture: "wave", duration: Math.min(1.4, duration * 0.65), facePlayer: false },
     { at: +(at + 0.75).toFixed(3), type: "char_gesture", actor: b, gesture: "nod_yes", duration: 0.9 },
   ];
 }
@@ -219,7 +219,7 @@ export function dialogueExchange({ at, a, b, turns = 2, step = 1.6 } = {}) {
       { at: t, type: "char_face", actor: speaker, targetActor: listener, duration: 0.2 },
       { at: t, type: "char_face", actor: listener, targetActor: speaker, duration: 0.25 },
       { at: +(t + 0.1).toFixed(3), type: "char_gesture", actor: speaker, gesture: gestures[i % gestures.length], duration: 0.9 },
-      { at: +(t + 0.15).toFixed(3), type: "char_arm", actor: speaker, gesture: arms[i % arms.length], duration: 1.1 }
+      { at: +(t + 0.15).toFixed(3), type: "char_arm", actor: speaker, gesture: arms[i % arms.length], duration: 1.1, facePlayer: false }
     );
   }
   return beats;
