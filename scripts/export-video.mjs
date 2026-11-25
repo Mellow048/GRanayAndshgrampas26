@@ -236,7 +236,8 @@ async function openStudioSession({
 
   await page.waitForFunction(
     () => Boolean(window.__GRANNY_STUDIO__?.ready || window.__GRANNY_STUDIO_ERROR__),
-    { timeout: 120000 }
+    null,
+    { timeout: 180000 }
   );
 
   const startupErr = await page.evaluate(() => window.__GRANNY_STUDIO_ERROR__ || null);
