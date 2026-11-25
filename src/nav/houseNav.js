@@ -263,7 +263,7 @@ function smooth(points) {
  * ("untrained driver steering left-right"). Every shortcut is verified against
  * BOTH `segmentWalkable` (real floor) and `findSegmentFurnitureHit` (tables/sofas).
  */
-export function stringPullRoute(points) {
+export function stringPullRoute(points, canConnect = null) {
   if (!Array.isArray(points) || points.length <= 2) return points ? points.slice() : [];
   const out = [points[0]];
   let anchor = 0;
@@ -284,7 +284,11 @@ export function stringPullRoute(points) {
           }
         }
         if (!flatBand) continue;
-        if (segmentWalkable(a, b, 0.12) && !findSegmentFurnitureHit(a, b, 0.28)) {
+        if (
+          segmentWalkable(a, b, 0.12) &&
+          !findSegmentFurnitureHit(a, b, 0.28) &&
+          (!canConnect || canConnect(a, b))
+        ) {
           farthest = j;
           break;
         }

@@ -183,9 +183,127 @@ export function cookAndServe({ at, chef = "granny", guest = "grandpa", plateProp
     { at: +(at + 2.3).toFixed(3), type: "char_arm", actor: chef, gesture: "carry", duration: 2.2 },
     { at: +(at + 2.3).toFixed(3), type: "char_move", actor: chef, to: serveWp, anim: "walk", duration: 2.0 },
     ...handItemTo({ at: +(at + 4.5).toFixed(3), giver: chef, receiver: guest, prop: plateProp, targetHeight: "nose", duration: 2.4 }),
-    { at: +(at + 7.1).toFixed(3), type: "char_arm", actor: chef, gesture: "place_down", duration: 1.3 },
-    { at: +(at + 7.2).toFixed(3), type: "prop_action", prop: plateProp, action: "glide", to: tableWp, duration: 1.0, arc: 0.1 },
+    { at: +(at + 7.0).toFixed(3), type: "char_face", actor: chef, target: tableWp, duration: 0.2 },
+    { at: +(at + 7.1).toFixed(3), type: "char_arm", actor: chef, gesture: "place_down", duration: 1.3, facePlayer: false, target: tableWp },
+    { at: +(at + 7.2).toFixed(3), type: "prop_action", prop: plateProp, action: "glide", fromActor: chef, to: tableWp, duration: 1.0, arc: 0.1 },
     { at: +(at + 8.1).toFixed(3), type: "sfx", sound: "checkmark", volume: 0.55 },
+  ];
+}
+
+/**
+ * Fast, unmistakable FunnyHorrorAnimation emotion burst (0.8s-1.8s).
+ * Avoids ambiguous slow "nodding to talk" loops.
+ * Emotions: "angry" | "sad" | "shock" | "idk" | "happy" | "offer"
+ */
+export function reactFast({
+  at,
+  actor,
+  emotion = "angry",
+  duration = 1.6,
+  target = null,
+  targetActor = null,
+  facePlayer = true,
+  bubble = null,
+  sfx = null,
+  volume = 0.72,
+} = {}) {
+  const beats = [];
+  if (targetActor) {
+    beats.push({ at, type: "char_face", actor, targetActor, duration: 0.2 });
+  } else if (target) {
+    beats.push({ at, type: "char_face", actor, target, duration: 0.2 });
+  } else if (facePlayer) {
+    beats.push({ at, type: "char_face", actor, followPlayer: true, instant: false });
+  }
+
+  const faceOpt = targetActor || target ? false : facePlayer;
+  if (emotion === "angry") {
+    beats.push({ at: +(at + 0.08).toFixed(3), type: "char_anim", actor, anim: "angry", duration, facePlayer: faceOpt });
+    beats.push({ at: +(at + 0.1).toFixed(3), type: "char_arm", actor, gesture: "scold", duration: Math.min(duration, 1.5), facePlayer: faceOpt });
+    beats.push({ at: +(at + 0.15).toFixed(3), type: "sfx", sound: sfx || "bonk", volume });
+  } else if (emotion === "sad") {
+    beats.push({ at: +(at + 0.08).toFixed(3), type: "char_arm", actor, gesture: "sad", duration, facePlayer: faceOpt });
+    beats.push({ at: +(at + 0.1).toFixed(3), type: "char_gesture", actor, gesture: "sad", duration });
+    beats.push({ at: +(at + 0.15).toFixed(3), type: "sfx", sound: sfx || "aww", volume });
+  } else if (emotion === "shock") {
+    beats.push({ at: +(at + 0.05).toFixed(3), type: "char_gesture", actor, gesture: "double_take", duration: Math.min(duration, 1.0) });
+    beats.push({ at: +(at + 0.1).toFixed(3), type: "sfx", sound: sfx || "vine_boom", volume });
+  } else if (emotion === "idk") {
+    beats.push({ at: +(at + 0.08).toFixed(3), type: "char_arm", actor, gesture: "idk", duration, facePlayer: faceOpt });
+    if (bubble) beats.push({ at: +(at + 0.15).toFixed(3), type: "char_bubble", actor, icon: bubble, duration: Math.max(1.6, duration), facePlayer: faceOpt });
+  } else if (emotion === "offer") {
+    beats.push({ at: +(at + 0.08).toFixed(3), type: "char_arm", actor, gesture: "offer", duration, facePlayer: faceOpt });
+    if (sfx) beats.push({ at: +(at + 0.15).toFixed(3), type: "sfx", sound: sfx, volume });
+  } else {
+    beats.push({ at: +(at + 0.08).toFixed(3), type: "char_arm", actor, gesture: "clap", duration, facePlayer: faceOpt });
+    if (sfx) beats.push({ at: +(at + 0.15).toFixed(3), type: "sfx", sound: sfx, volume });
+  }
+  return beats;
+}
+
+/**
+ * Turns `actor` squarely toward surface `to`, lowers arm (`place_down`), and glides `prop` onto it.
+ * Guarantees actors never put props behind their back while staring at the player.
+ */
+export function placeOnSurface({ at, actor, prop, to, duration = 1.0, arc = 0.12, sfx = "ding2", volume = 0.6 } = {}) {
+  const beats = [
+    { at, type: "char_face", actor, target: to, duration: 0.2 },
+    { at: +(at + 0.12).toFixed(3), type: "char_arm", actor, gesture: "place_down", duration: duration + 0.1, facePlayer: false, target: to },
+    { at: +(at + 0.18).toFixed(3), type: "prop_action", prop, action: "glide", fromActor: actor, to, duration, arc },
+  ];
+  if (sfx) beats.push({ at: +(at + duration + 0.15).toFixed(3), type: "sfx", sound: sfx, volume });
+  return beats;
+}
+
+/**
+ * Active "Best Buds" Player reaction: turns to `lookTarget`, performs gesture (`nod_yes` / `shake_no`),
+ * optionally steps to `stepTo` or briefly zooms FOV (auto-resetting cleanly after `duration`).
+ */
+export function playerReply({ at, lookTarget = null, gesture = "nod_yes", duration = 0.75, track = true, stepTo = null } = {}) {
+  const beats = [];
+  if (stepTo) beats.push({ at, type: "player_walk", to: stepTo, duration: Math.max(0.8, duration) });
+  if (lookTarget) beats.push({ at: +(at + 0.02).toFixed(3), type: "player_look", target: lookTarget, duration: 0.35, track });
+  if (gesture) beats.push({ at: +(at + 0.2).toFixed(3), type: "player_gesture", gesture, duration });
+  return beats;
+}
+
+/**
+ * Steps the Player clearly aside (`playerStepTo`), then sprints `runner` fast (`ghostPlayer: true`)
+ * so characters never crash into the lens or run in slow motion.
+ */
+export function chasePast({
+  at,
+  runner,
+  to,
+  via = [],
+  playerStepTo = null,
+  playerLookTarget = null,
+  anim = "run",
+  duration = 2.6,
+  sfx = "footsteps_fast",
+} = {}) {
+  const beats = [];
+  if (playerStepTo) {
+    beats.push({ at, type: "player_walk", to: playerStepTo, duration: 0.85 });
+  }
+  const runAt = playerStepTo ? +(at + 0.7).toFixed(3) : at;
+  const move = { at: runAt, type: "char_move", actor: runner, to, anim, duration, ghostPlayer: true, facePlayer: false };
+  if (via.length) move.via = [...via];
+  beats.push(move);
+  if (playerLookTarget) {
+    beats.push({ at: +(runAt + 0.1).toFixed(3), type: "player_look", target: playerLookTarget, duration: 0.35, track: true });
+  }
+  if (sfx) beats.push({ at: +(runAt + 0.1).toFixed(3), type: "sfx", sound: sfx, volume: 0.55 });
+  return beats;
+}
+
+/**
+ * Dual-subject "Best Buds" glance so camera doesn't lock robotically onto 1 character.
+ */
+export function bestBudsGlance({ at, primary, secondary, gap = 1.0 } = {}) {
+  return [
+    { at, type: "player_look", target: primary, duration: 0.35, track: true },
+    { at: +(at + gap).toFixed(3), type: "player_look", target: secondary, duration: 0.35, track: true },
   ];
 }
 

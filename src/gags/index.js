@@ -11,7 +11,13 @@ export {
   panic,
   handItemTo,
   cookAndServe,
+  greetAndNod,
   dialogueExchange,
+  reactFast,
+  placeOnSurface,
+  playerReply,
+  chasePast,
+  bestBudsGlance,
 } from "./helpers.js";
 export { ballRace } from "./ballRace.js";
 export { cookieHeist } from "./cookieHeist.js";

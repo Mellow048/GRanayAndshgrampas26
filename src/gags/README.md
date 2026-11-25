@@ -10,7 +10,7 @@ Do **not** write giant monolithic `after`/`await` timelines. Write a small gag f
 
 ```js
 import { GAG_LOCATIONS } from "./locations.js";
-import { react, sneakUp, chase, lookAt, propAction, walkTo, panic } from "./helpers.js";
+import { reactFast, sneakUp, chasePast, lookAt, propAction, playerReply, placeOnSurface } from "./helpers.js";
 
 export function myGag({
   victim = "grandpa",
@@ -29,21 +29,23 @@ export function myGag({
       [chaser]: { spawn: loc.chaserSpawn, facing: loc.mid },
     },
     props: [
-      { id: "my_prop", type: "cookie_jar", spawn: loc.start, yOffset: 0.72, visible: true },
+      { id: "my_prop", type: "cookie_jar", spawn: "dining_table_top", visible: true },
     ],
     beats: [
       { at: 0.0, type: "bgm", sound: "fluffing_a_duck", volume: 0.24 },
-      ...lookAt({ at: 0.0, target: victim, duration: 0.22, track: true }),
+      ...lookAt({ at: 0.0, target: victim, duration: 0.3, track: true }),
 
-      // Action every <= 2.0s (no dead air!)
-      ...sneakUp({ at: 0.3, actor: victim, to: loc.start, duration: 1.8, icon: "food", sfx: "pop" }),
+      // Fast, clear acting every <= 2.0s (no dead air, no banned chat icons!)
+      ...sneakUp({ at: 0.3, actor: victim, to: loc.start, duration: 1.8, sfx: "pop" }),
       ...propAction({ at: 2.2, prop: "my_prop", action: "bounce", sfx: "eat" }),
 
-      ...react({ at: 4.5, actor: chaser, anim: "idle", icon: "angry", sfx: "granny_i_see_you", cutBgm: true }),
-      ...chase({ at: 6.0, victim, chaser, via: loc.via, to: loc.exit, duration: 2.4, stagger: 0.35, bgm: "run_amok" }),
-      ...walkTo({ at: 6.4, to: loc.hit, duration: 1.8, lookTarget: victim }),
-      ...panic({ at: 10.5, gesture: "nod_yes", duration: 0.6 }),
-      ...propAction({ at: 12.0, prop: "my_prop", action: "hide" }),
+      ...reactFast({ at: 3.4, actor: chaser, emotion: "angry", targetActor: victim, sfx: "granny_i_see_you" }),
+      ...reactFast({ at: 5.2, actor: victim, emotion: "sad", targetActor: chaser }),
+      ...chasePast({ at: 6.8, runner: chaser, via: loc.via, to: loc.exit, playerStepTo: loc.hit, playerLookTarget: chaser, duration: 2.4 }),
+      ...placeOnSurface({ at: 9.6, actor: victim, prop: "my_prop", to: "dining_table_top", duration: 1.0 }),
+      ...reactFast({ at: 11.0, actor: chaser, emotion: "happy", facePlayer: true, sfx: "tada" }),
+      ...playerReply({ at: 11.4, lookTarget: chaser, gesture: "nod_yes", duration: 0.8 }),
+      { at: 13.0, type: "fade", to: 1, duration: 0.8 },
     ],
   };
 }
@@ -66,14 +68,20 @@ export function myGag({
 
 | Helper | What it emits |
 | --- | --- |
-| `react({ at, actor, anim, loop, icon, bubbleDur, sfx, cutBgm, facePlayer })` | Auto-facing `char_anim` + `char_bubble` + optional `sfx`/BGM duck |
+| `reactFast({ at, actor, emotion, targetActor, facePlayer, bubble, sfx })` | Crisp emotion (`"angry"`, `"sad"`, `"shock"`, `"idk"`, `"offer"`, `"happy"`) + SFX |
+| `placeOnSurface({ at, actor, prop, to, duration, sfx })` | Faces surface `to`, lowers arm (`place_down`), and glides `prop` cleanly onto it |
+| `playerReply({ at, lookTarget, gesture, stepTo, duration })` | Player turns politely to look + `nod_yes` / `shake_no` (or steps aside) |
+| `chasePast({ at, runner, to, via, playerStepTo, duration })` | Steps Player aside first, then sprints `runner` fast (`>= 3.6 m/s`, `ghostPlayer: true`) |
+| `bestBudsGlance({ at, primary, secondary, gap })` | Natural two-buddy glance breaking robotic 1-subject focus |
+| `cookAndServe({ at, chef, guest, plateProp, serveWp, tableWp })` | Stir -> carry -> offer under nose -> face surface -> set down cleanly |
+| `handItemTo({ at, giver, receiver, prop, targetHeight })` | Turn & offer prop straight into receiver's hand/nose |
 | `launchProp({ at, prop, from, to, travelDuration, yOffset, sfx, track })` | `pop_out` flight across room + `whoosh` + camera `track` |
 | `chase({ at, victim, chaser, via, to, duration, stagger, anim, bgm })` | Staggered two-actor chase (`stagger: 0.35–0.45` avoids body clipping) |
 | `sneakUp({ at, actor, to, via, duration, icon, sfx })` | Sneak walk (`anim: "sneak"`) + optional thought bubble & SFX |
 | `walkTo({ at, to, via, duration, speed, lookTarget })` | First-person `player_walk` + quick `player_look` |
 | `propAction({ at, prop, action, waypoint, yOffset, sfx })` | Shorthand for `show`, `hide`, `open`, `close`, `bounce`, `pickup`, `stop` |
 | `holdProp({ at, prop, use, duration, sfx })` | Pick up / use FPS held item (auto-cleared on next `CUT`) |
-| `lookAt({ at, target, duration, track })` | Whip-pan camera look (`0.18–0.30s`) |
+| `lookAt({ at, target, duration, track })` | Whip-pan camera look (`0.18–0.45s`) |
 | `panic({ at, duration, gesture, sfx })` | Camera gesture (`shake_panic`, `nod_yes`, `shake_no`, `shake_earthquake`) |
 
 ---

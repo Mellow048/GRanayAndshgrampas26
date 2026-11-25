@@ -242,6 +242,25 @@ export function hasTargetLineOfSight(world, eye, targetPos) {
   return !hitHi || hitHi.distance >= checkDist;
 }
 
+/**
+ * Computes comfortable first-person vertical look pitch along a walk polyline:
+ * looks downward (~-24 deg) when descending stairs, comfortably upward when
+ * climbing stairs, and slightly below horizontal (-0.04 rad) on flat floor.
+ */
+export function computeWalkSlopePitch(fromPos, aheadPos, isStair = false) {
+  if (!fromPos || !aheadPos) return -0.04;
+  const dx = num(aheadPos.x) - num(fromPos.x);
+  const dz = num(aheadPos.z) - num(fromPos.z);
+  const dy = num(aheadPos.y) - num(fromPos.y);
+  const horiz = Math.hypot(dx, dz);
+  if (isStair || Math.abs(dy) > 0.14) {
+    const rawSlope = Math.atan2(dy, Math.max(0.45, horiz));
+    const target = dy < -0.05 ? rawSlope * 0.58 - 0.08 : rawSlope * 0.52 + 0.03;
+    return clamp(target, -0.46, 0.26);
+  }
+  return -0.04;
+}
+
 /* ------------------------------------------------------------------ *
  * 3. Camera placement
  * ------------------------------------------------------------------ */
@@ -774,6 +793,7 @@ export const stagingSafety = {
   segmentClear,
   sightlineClear,
   hasTargetLineOfSight,
+  computeWalkSlopePitch,
   findSafeCameraSpot,
   aabbFrom,
   pointInAabb,

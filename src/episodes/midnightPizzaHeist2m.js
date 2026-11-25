@@ -144,7 +144,8 @@ export const MIDNIGHT_PIZZA_HEIST_2M = {
         { at: 1.7, type: "char_arm", actor: "grandpa", gesture: "wave", duration: 1.2, facePlayer: true },
         { at: 1.9, type: "player_gesture", gesture: "nod_yes", duration: 0.65 },
 
-        // Continuous real-time stairs walk: when stairwell wall blocks Grandpa, LOS releases -> Player scans naturally
+        // Continuous real-time stairs walk: Player follows right behind Grandpa without sudden re-look flicks;
+        // once Grandpa rounds past the stairwell wall, LOS drops smoothly and autoLook pitches ~-24 deg down the steps!
         {
           at: 3.0,
           type: "char_move",
@@ -156,16 +157,15 @@ export const MIDNIGHT_PIZZA_HEIST_2M = {
           facePlayer: false,
         },
         {
-          at: 4.6,
+          at: 4.1,
           type: "player_walk",
           via: ["upstairs_hall_center", "upstairs_landing", "stairs_top", "stairs_middle", "stairs_bottom", "dining_corner", "dining_table_side", "dining_table_front"],
           to: "dining_center",
-          duration: 9.8,
+          duration: 10.2,
         },
-        { at: 4.8, type: "player_look", target: "grandpa", duration: 0.45, track: true },
         { at: 8.4, type: "sfx", sound: "footsteps_slow", volume: 0.42 },
 
-        // After rounding the stairwell wall out of LOS, Player naturally checks the room then spots Grandpa in the kitchen
+        // After clearing the stairwell into dining room, Player glances right then spots Grandpa in the kitchen
         { at: 12.6, type: "player_look", yawOffset: 0.36, pitchOffset: -0.02, duration: 0.45 },
         { at: 13.8, type: "player_look", target: "grandpa", duration: 0.45, track: true },
 

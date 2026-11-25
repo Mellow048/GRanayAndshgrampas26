@@ -3,7 +3,7 @@ import { isHeadGesture } from "./headGestures.js";
 import { isArmGesture } from "./armGestures.js";
 import { pushOutOfFurniture, detourAroundFurniture } from "./furnitureColliders.js";
 import { CONFIG, SET_MAP, NAV_GRAPH } from "./config.js";
-import { route as planFloorRoute, snap as snapToFloor } from "./nav/houseNav.js";
+import { route as planFloorRoute, snap as snapToFloor, stringPullRoute } from "./nav/houseNav.js";
 import { findTaggedObject, getObjectBounds } from "./assetLoader.js";
 import { validateAndRepair, formatStagingReport } from "./episodeSafety.js";
 import {
@@ -455,17 +455,27 @@ export class EpisodeRunner {
         segments: [{ isJumpArc: false, arcHeight: 0 }],
       };
     }
-    const flatDetoured = allPoints.every((p) => !isElevatedSurfacePos(p) && Math.abs((p.y ?? 0) - (allPoints[0].y ?? 0)) <= 0.25)
-      ? detourAroundFurniture(allPoints, 0.36)
+    let finalPts = allPoints;
+    let finalSegs = allSegments;
+    const flatDetoured = finalPts.every((p) => !isElevatedSurfacePos(p) && Math.abs((p.y ?? 0) - (finalPts[0].y ?? 0)) <= 0.25)
+      ? detourAroundFurniture(finalPts, 0.36)
       : null;
-    if (flatDetoured && flatDetoured.length !== allPoints.length) {
-      const vecPts = flatDetoured.map((p) => new THREE.Vector3(p.x, p.y ?? 0, p.z));
-      return {
-        points: vecPts,
-        segments: vecPts.slice(1).map(() => ({ isJumpArc: false, arcHeight: 0 })),
-      };
+    if (flatDetoured && flatDetoured.length !== finalPts.length) {
+      finalPts = flatDetoured.map((p) => new THREE.Vector3(p.x, p.y ?? 0, p.z));
+      finalSegs = finalPts.slice(1).map(() => ({ isJumpArc: false, arcHeight: 0 }));
     }
-    return { points: allPoints, segments: allSegments };
+    // Smooth stitched flat-floor waypoints (preserving stairs & jump arcs) so multi-stop `via` chains don't zigzag.
+    if (finalPts.length > 2 && !finalSegs.some((s) => s?.isJumpArc)) {
+      const world = this.house?.stagingWorld || null;
+      const pulled = stringPullRoute(finalPts, (a, b) =>
+        !world || segmentClear(world, a, b, { radius: 0.2, heights: [0.45, 1.15] })
+      );
+      if (pulled.length >= 2 && pulled.length < finalPts.length) {
+        finalPts = pulled.map((p) => (p.isVector3 ? p : new THREE.Vector3(p.x, p.y ?? 0, p.z)));
+        finalSegs = finalPts.slice(1).map(() => ({ isJumpArc: false, arcHeight: 0 }));
+      }
+    }
+    return { points: finalPts, segments: finalSegs };
   }
 
   _computeMoveTiming(
@@ -501,8 +511,9 @@ export class EpisodeRunner {
       const b = points[i];
       const segLen = a.distanceTo(b);
       const dy = Math.abs(b.y - a.y);
+      const horizSeg = Math.max(0.05, Math.hypot(b.x - a.x, b.z - a.z));
       const meta = segments[i - 1] || { isJumpArc: false, arcHeight: 0 };
-      const isStair = !meta.isJumpArc && dy > 0.15;
+      const isStair = !meta.isJumpArc && dy > 0.03 && dy / horizSeg > 0.22;
 
       let minSegDur;
       if (meta.isJumpArc) {

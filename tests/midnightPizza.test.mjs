@@ -7,8 +7,9 @@ import { SET_MAP, NAV_GRAPH } from "../src/config.js";
 import { greetAndNod, dialogueExchange, handItemTo } from "../src/gags/helpers.js";
 import { chunkEpisode } from "../scripts/chunk-episode.mjs";
 import { pointInFurniture, pushOutOfFurniture, findSegmentFurnitureHit } from "../src/furnitureColliders.js";
-import { hasTargetLineOfSight } from "../src/stagingSafety.js";
+import { hasTargetLineOfSight, computeWalkSlopePitch } from "../src/stagingSafety.js";
 import { stringPullRoute } from "../src/nav/houseNav.js";
+import { reactFast, placeOnSurface, playerReply, chasePast, bestBudsGlance } from "../src/gags/helpers.js";
 
 test("midnight_pizza_heist_2m passes strict validation with zero warnings, zero furniture collisions, active player walking/gestures, strategic ??? portrait bubbles, and 4/4 story spine", () => {
   const res = validateAndRepair(MIDNIGHT_PIZZA_HEIST_2M, {
@@ -127,6 +128,53 @@ test("hasTargetLineOfSight releases lock when an opaque wall blocks both sight r
     hasTargetLineOfSight(wallWorld, { x: -1.9, y: 2.2, z: 2.5 }, { x: -5.8, y: 1.5, z: 0.8 }),
     false
   );
+});
+
+test("staircase slope pitch looks clearly down stairs descending, up stairs climbing, and level on flat floor", () => {
+  const downPitch = computeWalkSlopePitch({ x: -1.9, y: 2.85, z: 1.25 }, { x: -1.9, y: 1.54, z: 2.5 }, true);
+  assert.ok(downPitch <= -0.35 && downPitch >= -0.48, `expected -20..-27 deg down stairs, got ${downPitch}`);
+
+  const upPitch = computeWalkSlopePitch({ x: -1.9, y: 0.0, z: 4.0 }, { x: -1.9, y: 1.54, z: 2.5 }, true);
+  assert.ok(upPitch >= 0.18 && upPitch <= 0.28, `expected upward slope pitch, got ${upPitch}`);
+
+  const flatPitch = computeWalkSlopePitch({ x: -3.6, y: 0, z: 0.4 }, { x: -3.6, y: 0, z: -1.2 }, false);
+  assert.equal(flatPitch, -0.04);
+});
+
+test("v4 Arena helpers & safety guards enforce faceDest, polite player reply, and no nodding dialogue spam", () => {
+  const beats = [
+    ...reactFast({ at: 0, actor: "granny", emotion: "angry", targetActor: "grandpa" }),
+    ...reactFast({ at: 2, actor: "grandpa", emotion: "sad", targetActor: "granny" }),
+    ...reactFast({ at: 4, actor: "grandpa", emotion: "offer", facePlayer: true }),
+    ...playerReply({ at: 5, lookTarget: "grandpa", gesture: "nod_yes" }),
+    ...placeOnSurface({ at: 6, actor: "grandpa", prop: "cookie_jar", to: "dining_table_top" }),
+    ...chasePast({ at: 8, runner: "granny", via: ["dining_center"], to: "living_room_view", playerStepTo: "dining_lane" }),
+    ...bestBudsGlance({ at: 12, primary: "granny", secondary: "grandpa" }),
+  ];
+  assert.ok(beats.some((b) => b.type === "char_face" && b.target === "dining_table_top"), "placeOnSurface turns actor to table first");
+  assert.ok(beats.some((b) => b.type === "char_move" && b.ghostPlayer === true), "chasePast uses safe fast sprint");
+
+  const badEp = {
+    title: "Bad Etiquette & Behind Back Test",
+    transitions: "continuous",
+    playerSpawn: "dining_center",
+    playerFacing: "grandpa",
+    cast: [{ id: "grandpa", asset: "grandpa", spawn: "kitchen", facing: "dining_center" }],
+    props: [{ id: "cookie_jar", type: "cookie_jar", spawn: "kitchen_counter_top", visible: true }],
+    skits: [{
+      name: "Bad",
+      startAt: 0,
+      duration: 10,
+      beats: [
+        { at: 0, type: "char_arm", actor: "grandpa", gesture: "offer", duration: 1.5, facePlayer: true },
+        { at: 5, type: "prop_action", prop: "cookie_jar", action: "glide", fromActor: "grandpa", to: "kitchen_counter_top", duration: 1.0, faceDest: false },
+        { at: 8.5, type: "fade", to: 1, duration: 1.0 },
+      ],
+    }],
+  };
+  const checked = validateAndRepair(badEp, { setMap: SET_MAP, navGraph: NAV_GRAPH, autoFix: false });
+  assert.ok(checked.issues.some((i) => i.code === "UNACKNOWLEDGED_OFFER"), "flags ignoring character offer/clap");
+  assert.ok(checked.issues.some((i) => i.code === "PLACE_BEHIND_BACK"), "flags behind-the-back prop placement");
 });
 
 test("physical communication helpers keep actors facing each other instead of snapping to camera", () => {

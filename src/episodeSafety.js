@@ -1804,6 +1804,88 @@ export function validateEpisode(episode, options = {}) {
     }
   }
 
+  // 5) PLACE_BEHIND_BACK: Never explicitly set props down while staring at the camera behind your back
+  for (const b of beats) {
+    if (b.type === "prop_action" && (b.action === "glide" || b.action === "place") && (b.fromActor || b.actor) && b.faceDest === false) {
+      issues.push(
+        issue(
+          "PLACE_BEHIND_BACK",
+          "warn",
+          b.at,
+          `${b.fromActor || b.actor} sets prop "${b.prop}" with faceDest: false — actor will place prop behind their back.`,
+          { actor: b.fromActor || b.actor, ...fixNote(false, "Remove faceDest: false or use placeOnSurface() so the actor faces the surface.") }
+        )
+      );
+    }
+    if (b.type === "char_arm" && b.gesture === "place_down" && b.facePlayer === true && !b.target) {
+      issues.push(
+        issue(
+          "PLACE_BEHIND_BACK",
+          "warn",
+          b.at,
+          `${b.actor} performs place_down while forced to face the player instead of the surface.`,
+          { actor: b.actor, ...fixNote(false, "Pass target: '<surface_waypoint>' and facePlayer: false.") }
+        )
+      );
+    }
+  }
+
+  // 6) UNACKNOWLEDGED_OFFER & ROBOTIC_DIALOGUE_NODDING (continuous non-legacy shows)
+  if (!isLegacyPreset && ep.transitions === "continuous") {
+    for (const b of beats) {
+      if (b.type === "char_arm" && (b.gesture === "offer" || b.gesture === "clap") && b.facePlayer === true) {
+        const t = Number(b.at) || 0;
+        const replied = beats.some(
+          (other) =>
+            (other.at ?? 0) >= t + 0.05 &&
+            (other.at ?? 0) <= t + 4.0 &&
+            (other.type === "player_gesture" || (other.type === "player_look" && other.target === b.actor))
+        );
+        if (!replied) {
+          issues.push(
+            issue(
+              "UNACKNOWLEDGED_OFFER",
+              "warn",
+              t,
+              `Player never looks at or reacts to ${b.actor}'s "${b.gesture}" at ${formatTime(t)} — use playerReply() so the player feels alive and polite.`,
+              { actor: b.actor, ...fixNote(false, `Add player_look (target: "${b.actor}") + player_gesture ("nod_yes" / "shake_no") within 3.5s.`) }
+            )
+          );
+        }
+      }
+    }
+
+    const actorNods = beats.filter(
+      (b) => b.type === "char_gesture" && (b.gesture === "nod" || b.gesture === "nod_yes") && b.actor
+    );
+    const EXPRESSIVE_BODY = new Set(["angry", "scold", "angry_hips", "sad", "offer", "point", "idk", "shrug", "clap", "wave"]);
+    for (let ni = 3; ni < actorNods.length; ni += 1) {
+      const winStart = Number(actorNods[ni - 3].at) || 0;
+      const winEnd = Number(actorNods[ni].at) || 0;
+      if (winEnd - winStart <= 4.5) {
+        const hasEmotion = beats.some(
+          (other) =>
+            (other.at ?? 0) >= winStart - 0.5 &&
+            (other.at ?? 0) <= winEnd + 0.5 &&
+            ((other.type === "char_arm" && EXPRESSIVE_BODY.has(other.gesture)) ||
+              (other.type === "char_anim" && EXPRESSIVE_BODY.has(other.anim)))
+        );
+        if (!hasEmotion) {
+          issues.push(
+            issue(
+              "ROBOTIC_DIALOGUE_NODDING",
+              "warn",
+              winEnd,
+              `4+ actor nods in ${(winEnd - winStart).toFixed(1)}s with no clear emotion — viewers cannot tell what they are talking about.`,
+              { ...fixNote(false, "Use reactFast() (angry/scold/sad/offer/idk) instead of slow nodding loops.") }
+            )
+          );
+          break;
+        }
+      }
+    }
+  }
+
   /* ---------------- 8. Ending on motion ---------------- */
 
   const lastBeat = beats[beats.length - 1];

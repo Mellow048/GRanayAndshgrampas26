@@ -11,6 +11,7 @@ import {
   findSafeCameraSpot,
   ensureRoute,
   hasTargetLineOfSight,
+  computeWalkSlopePitch,
   direction2D,
   dist2D,
 } from "./stagingSafety.js";
@@ -124,6 +125,7 @@ export class PlayerCamera {
     this.lookDuration = 0.25;
     this.trackingRef = null;
     this._losBlockedTime = 0;
+    this._losRecoverTimer = 0;
     this.fovStart = aspectSpec.fov;
     this.fovTarget = aspectSpec.fov;
     this.fovElapsed = 1;
@@ -249,6 +251,7 @@ export class PlayerCamera {
     this.panicTimer = 0;
     this.trackingRef = null;
     this._losBlockedTime = 0;
+    this._losRecoverTimer = 0;
 
     this.baseEyeHeight = PLAYER_EYE_HEIGHT;
     this.crouchStartHeight = PLAYER_EYE_HEIGHT;
@@ -317,6 +320,7 @@ export class PlayerCamera {
     this.activeGesture = null;
     this.trackingRef = null;
     this._losBlockedTime = 0;
+    this._losRecoverTimer = 0;
     this.panicTimer = 0;
 
     this.playerPos.set(position.x, position.y ?? 0, position.z);
@@ -661,9 +665,11 @@ export class PlayerCamera {
       const b = resolvedPoints[i];
       const segLen = a.distanceTo(b);
       const dy = Math.abs(b.y - a.y);
+      const horizSeg = Math.max(0.05, Math.hypot(b.x - a.x, b.z - a.z));
       const meta = segments?.[i - 1] || {};
       const isJumpArc = Boolean(meta.isJumpArc);
-      const isStair = !isJumpArc && dy > 0.15;
+      // Match both single-segment stairs and 22-step subdivided houseNav staircases (dy ~ 0.12m/step).
+      const isStair = !isJumpArc && dy > 0.03 && dy / horizSeg > 0.22;
 
       let segDur = 0;
       if (isJumpArc) {
@@ -717,9 +723,11 @@ export class PlayerCamera {
 
     // Only auto-look along the path when the script has not explicitly locked gaze onto a target.
     if (!resolvedFaceTarget && autoLook && !this.trackingRef && totalLength > 0.08) {
-      const lookAhead = this._sampleAlongWalk(this.activeWalk, Math.min(totalLength, 1.25));
-      lookAhead.y = this.playerPos.y + this.baseEyeHeight - 0.05;
-      this.lookAtPosition(lookAhead, { duration: 0.35, trackRef: null });
+      const lookAhead = this._sampleAlongWalk(this.activeWalk, Math.min(totalLength, 1.45));
+      const slopePitch = computeWalkSlopePitch(this.playerPos, lookAhead, segMeta[0]?.isStair);
+      const lookHoriz = Math.max(0.4, Math.hypot(lookAhead.x - this.playerPos.x, lookAhead.z - this.playerPos.z));
+      lookAhead.y = this.playerPos.y + this.baseEyeHeight + Math.tan(slopePitch) * lookHoriz;
+      this.lookAtPosition(lookAhead, { duration: 0.42, trackRef: null });
     }
     return donePromise;
   }
@@ -802,6 +810,16 @@ export class PlayerCamera {
       });
     }
     if (this._resolveTargetPosition(ref, resolver, this._tmpTargetPos)) {
+      if (this.activeWalk && fromBeat && !this._hasLineOfSight(this._tmpTargetPos)) {
+        // Target is already occluded by a wall/floor slab during a walk — don't whip into the wall.
+        this.activeWalk.manualLookOverride = false;
+        this.trackingRef = null;
+        return Promise.resolve();
+      }
+      if (track && this.trackingRef === ref) {
+        // Already tracking this visible target smoothly — keep tracking without restarting a sudden whip-pan.
+        return Promise.resolve();
+      }
       return this.lookAtPosition(this._tmpTargetPos, {
         duration,
         trackRef: track ? ref : null,
@@ -1058,18 +1076,21 @@ export class PlayerCamera {
           !this.trackingRef &&
           this.lookElapsed >= this.lookDuration
         ) {
-          const lookDist = Math.min(this.activeWalk.totalLength, targetDist + 1.15);
+          const lookDist = Math.min(this.activeWalk.totalLength, targetDist + 1.45);
           const ahead = this._sampleAlongWalk(this.activeWalk, lookDist);
           const dx = ahead.x - this.playerPos.x;
           const dz = ahead.z - this.playerPos.z;
           const horiz = Math.hypot(dx, dz);
+          if (this._losRecoverTimer > 0) {
+            this._losRecoverTimer = Math.max(0, this._losRecoverTimer - dt);
+          }
+          const recoverFactor = this._losRecoverTimer > 0 ? 1 - this._losRecoverTimer / 0.75 : 1;
+          const yawGain = 1.6 + recoverFactor * 3.2;
           if (horiz > 0.12) {
             const desiredYaw = Math.atan2(-dx, -dz);
-            this.yaw += wrapAngleDiff(desiredYaw, this.yaw) * Math.min(1, dt * 5.2);
+            this.yaw += wrapAngleDiff(desiredYaw, this.yaw) * Math.min(1, dt * yawGain);
           }
-          const desiredPitch = meta.isStair
-            ? clamp(Math.atan2(pB.y - pA.y, Math.max(0.4, Math.hypot(pB.x - pA.x, pB.z - pA.z))) * 0.42, -0.26, 0.22)
-            : -0.04;
+          const desiredPitch = computeWalkSlopePitch(this.playerPos, ahead, meta.isStair);
           this.pitch += (desiredPitch - this.pitch) * Math.min(1, dt * 4.5);
         }
       }
@@ -1149,6 +1170,7 @@ export class PlayerCamera {
             if (this.activeWalk) {
               this.activeWalk.manualLookOverride = false;
               this.activeWalk.faceTarget = null;
+              this._losRecoverTimer = 0.75;
             }
           }
         } else {

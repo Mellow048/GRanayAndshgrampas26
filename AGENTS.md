@@ -142,8 +142,17 @@ Never leave actors standing motionless with a thought bubble or teleport props o
 1. **Invent ANY 3D prop inline (`type: "custom"`):** Never edit `comedyProps.js` just to add a toy car, cake, pizza box, or broom. Declare `parts: [{ shape: "box"|"cylinder"|"sphere"|"cone"|"torus", size: [...], pos: [...], rot?: [...], color: 0x... }]` (plus optional `steam: true`) directly inside `props: [...]`.
 2. **Lock props to live hands (`prop_action: "attach"` / `"detach"`):** Attach any prop to an actor's hand (`{ type: "prop_action", prop: "plate", action: "attach", actor: "granny", offset: [0, 0.05, 0.24] }`) so it moves 100% locked to their hand while walking and turning, then `glide` or `place` it smoothly.
 3. **Invent ANY arm/torso motion inline (`char_arm` with `gesture: "custom"`):** Pass `rUpper`, `rFore`, `lUpper`, `lFore`, `spine` (`[x, y, z]` radians) + optional `oscillate: [x, y, z]` and `cycles` right inside a `char_arm` beat.
-4. **High-level physical macros (`src/gags/helpers.js`):** Use `cookAndServe()`, `handItemTo()`, and `dialogueExchange()` to author rich physical scenes in 1 line.
-5. **Instant scaffolding & strict zero-warning gate:**
+4. **High-level FunnyHorrorAnimation v4 macros (`src/gags/helpers.js`):**
+   - `reactFast({ at, actor, emotion: "angry"|"sad"|"shock"|"idk"|"happy"|"offer" })` — crisp, fast physical emotions (replace slow nodding loops!).
+   - `placeOnSurface({ at, actor, prop, to })` — always turns squarely toward the table/sofa before placing (never behind their back).
+   - `playerReply({ at, lookTarget, gesture, stepTo })` — turns camera to acknowledge Grandma/Grandpa (`nod_yes` / `shake_no`) or steps aside cleanly.
+   - `chasePast({ at, runner, to, via, playerStepTo })` — steps Player aside first, then sprints fast (`>= 3.6 m/s`, `ghostPlayer: true`).
+   - `bestBudsGlance({ at, primary, secondary })` — breaks 1-subject lock by glancing naturally between buddies.
+   - Also available: `cookAndServe()`, `handItemTo()`, `walkTo()`, `lookAt()`.
+5. **Camera staircase & wall safety (automatic in `PlayerCamera`):**
+   - Stair slopes automatically angle pitch comfortably down (`~-24°`) when descending stairs and up (`~+14°`) when ascending stairs (`computeWalkSlopePitch`).
+   - Tracking automatically drops with smooth ease recovery (`_losRecoverTimer`) whenever a wall or floor slab blocks view — never flicking back or staring through walls.
+6. **Instant scaffolding & strict zero-warning gate:**
    ```bash
    npm run new:episode -- --name my_scene --mode gag   # or --mode show
    npm run validate:strict -- --preset <your_preset>   # fails on ANY error OR warning

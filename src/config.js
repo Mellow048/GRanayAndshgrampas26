@@ -395,6 +395,8 @@ export const ASSET_MANIFEST = {
     shake_no: { procedural: "head_gesture", gesture: "shake", loop: false, duration: 0.9 },
     tilt: { procedural: "head_gesture", gesture: "tilt", loop: false, duration: 1.2 },
     double_take: { procedural: "head_gesture", gesture: "double_take", loop: false, duration: 0.9 },
+    sad: { procedural: "head_gesture", gesture: "sad", loop: false, duration: 1.4 },
+    hang_head: { procedural: "head_gesture", gesture: "hang_head", loop: false, duration: 1.4 },
   },
 };
 
