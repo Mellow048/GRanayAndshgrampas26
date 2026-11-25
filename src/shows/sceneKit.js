@@ -87,6 +87,15 @@ export function argueBeats({
       duration: Math.min(1.6, Math.max(0.8, interval)),
       facePlayer: false,
     });
+    // Pair expressive body acting with bubbles so scenes stay clear without punching or terrifying.
+    beats.push({
+      at: +(t + 0.04).toFixed(3),
+      type: "char_arm",
+      actor: who,
+      gesture: i % 2 === 0 ? "angry_hips" : "point",
+      duration: Math.min(1.4, Math.max(0.8, interval)),
+      facePlayer: false,
+    });
     // They keep talking to each other, not to us.
     if (other) {
       beats.push({ at: +t.toFixed(3), type: "char_face", actor: who, targetActor: other, duration: 0.25 });

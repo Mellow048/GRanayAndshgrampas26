@@ -1,7 +1,7 @@
 /**
  * Calibrated ground-floor room staging packs for reusable multi-location gags.
- * Every waypoint & `via` spine here is verified on the real baked house floor (`src/nav/houseNav.js`).
- * Note: GrannyHouse.fbx has no staircase, so all packs stay strictly on the ground floor.
+ * Every waypoint & `via` spine here is verified on the real baked house floor (`src/nav/houseNav.js`)
+ * and keeps safe clearance around solid tables, counters, and sofas (`src/furnitureColliders.js`).
  */
 export const GAG_LOCATIONS = {
   kitchen_to_hall: {

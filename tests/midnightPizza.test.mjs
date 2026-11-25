@@ -10,6 +10,7 @@ import { pointInFurniture, pushOutOfFurniture, findSegmentFurnitureHit } from ".
 import { hasTargetLineOfSight, computeWalkSlopePitch } from "../src/stagingSafety.js";
 import { stringPullRoute } from "../src/nav/houseNav.js";
 import { reactFast, placeOnSurface, playerReply, chasePast, bestBudsGlance } from "../src/gags/helpers.js";
+import { buildEpisode } from "../src/episodeBuilder.js";
 
 test("midnight_pizza_heist_2m passes strict validation with zero warnings, zero furniture collisions, active player walking/gestures, strategic ??? portrait bubbles, and 4/4 story spine", () => {
   const res = validateAndRepair(MIDNIGHT_PIZZA_HEIST_2M, {
@@ -175,6 +176,36 @@ test("v4 Arena helpers & safety guards enforce faceDest, polite player reply, an
   const checked = validateAndRepair(badEp, { setMap: SET_MAP, navGraph: NAV_GRAPH, autoFix: false });
   assert.ok(checked.issues.some((i) => i.code === "UNACKNOWLEDGED_OFFER"), "flags ignoring character offer/clap");
   assert.ok(checked.issues.some((i) => i.code === "PLACE_BEHIND_BACK"), "flags behind-the-back prop placement");
+});
+
+test("buildEpisode preserves cast prop/scale/visible/headTrack and flags robotic nodding loops", () => {
+  const built = buildEpisode({
+    title: "Builder Meta Check",
+    transitions: "continuous",
+    playerFov: 54,
+    gags: [{
+      name: "G1",
+      duration: 6,
+      playerSpawn: "dining_center",
+      playerFacing: "grandpa",
+      cast: {
+        grandpa: { spawn: "kitchen", facing: "dining_center", prop: "none", scale: 1.05, visible: true },
+        granny: { spawn: "dining_table_front", facing: "kitchen" },
+      },
+      beats: [
+        { at: 0.2, type: "char_gesture", actor: "granny", gesture: "nod_yes", duration: 0.8 },
+        { at: 1.0, type: "char_gesture", actor: "grandpa", gesture: "nod_yes", duration: 0.8 },
+        { at: 1.8, type: "char_gesture", actor: "granny", gesture: "nod", duration: 0.8 },
+        { at: 2.6, type: "char_gesture", actor: "grandpa", gesture: "nod", duration: 0.8 },
+        { at: 4.8, type: "fade", to: 1, duration: 0.8 },
+      ],
+    }],
+  });
+  assert.equal(built.playerFov, 54);
+  assert.equal(built.cast.find((c) => c.id === "grandpa").prop, "none");
+  assert.equal(built.cast.find((c) => c.id === "grandpa").scale, 1.05);
+  const res = validateAndRepair(built, { setMap: SET_MAP, navGraph: NAV_GRAPH, autoFix: false });
+  assert.ok(res.issues.some((i) => i.code === "ROBOTIC_DIALOGUE_NODDING"), "flags silent nodding-to-talk loop");
 });
 
 test("physical communication helpers keep actors facing each other instead of snapping to camera", () => {

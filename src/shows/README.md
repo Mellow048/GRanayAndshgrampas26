@@ -104,11 +104,12 @@ Studio previews:
 | `player_hold { prop }` | bottom-right held item (`"none"` stows it) |
 | `char_face { actor, followPlayer, instant }` | turns the body **and** heads the lens — always use before a taunt |
 | `char_face { actor, targetActor }` | turns an actor toward **another actor** (arguments, conversations) |
-| `char_anim { actor, anim, loop }` | `idle walk run run2 sneak jump laugh punch sit terrified panic` |
+| `char_anim { actor, anim, loop }` | `idle walk run run2 sneak jump laugh punch sit terrified panic angry talk kick` |
+| `char_arm { actor, gesture }` | `stir offer carry place_down wave point sniff idk angry_hips scold sad clap reach_both` |
 | `char_move { actor, to, via, anim, duration }` | staged walking, auto-detoured around walls, bodies and props |
-| `char_bubble { actor, icon, duration }` | `key question exclamation zzz angry laugh food heart` |
-| `prop_action { prop, action }` | `show hide pickup place open close bounce pop_out stop` — `open/close` swings a `fridge` door |
-| `sfx { sound, volume }` | 28 clips; movement, pans and bubbles are automatic |
+| `char_bubble { actor, icon, duration }` | sparse `where_granny` / `where_grandpa` / `exclamation` / `question` / `shh` / `pizza` (never chat icons) |
+| `prop_action { prop, action }` | `show hide pickup place glide attach detach steam open close bounce pop_out stop` — `open/close` swings a `fridge` door |
+| `sfx { sound, volume }` | SFX catalog (`bonk`, `vine_boom`, `aww`, `ding2`, `grandpa_aha`, `lets_go`, `yummy`, etc.) |
 | `fade { to, duration }` | fades are for story beats, CUTs are for scene changes |
 
 ## The character walks on measured floor, not on numbers you typed
@@ -119,8 +120,7 @@ Studio previews:
 
 - a route cannot cross a wall — there is no edge through it;
 - a route cannot float — the height of every point comes from the floor;
-- a route to somewhere that does not exist (the second floor, with no
-  staircase) returns `null`, and the gate reports `NO_WALKABLE_ROUTE`.
+- a route to an unreachable void outside the house returns `null`, and the gate reports `NO_WALKABLE_ROUTE`. (Use `stairs_bottom` ↔ `stairs_top` to walk smoothly between Floor 1 and the 2nd-floor Spawn Bedroom!)
 
 Write `to:` and let the router plan. **Do not hand-author `via:` chains** — that
 is how earlier cuts walked through walls.

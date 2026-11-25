@@ -180,12 +180,18 @@ export class PlayerCamera {
     this.scene = scene;
   }
 
-  setAspect(aspectKey) {
+  setAspect(aspectKey, { preserveFov = false } = {}) {
     const spec = CONFIG.aspectModes[aspectKey];
     if (!spec) return spec;
+    const sameAspect = this.aspectKey === aspectKey;
     this.aspectKey = aspectKey;
     this.camera.aspect = spec.aspect;
-    this.camera.fov = spec.fov;
+    if (!preserveFov || !sameAspect) {
+      this.camera.fov = spec.fov;
+      this.fovStart = spec.fov;
+      this.fovTarget = spec.fov;
+      this.fovElapsed = 1;
+    }
     this.camera.updateProjectionMatrix();
     this.viewmodelCamera.aspect = spec.aspect;
     this.viewmodelCamera.fov = spec.fov;
@@ -196,9 +202,6 @@ export class PlayerCamera {
     } else {
       this.heldItemMount.position.set(0.28, -0.22, -0.5);
     }
-    this.fovStart = spec.fov;
-    this.fovTarget = spec.fov;
-    this.fovElapsed = 1;
     return spec;
   }
 
@@ -1097,10 +1100,23 @@ export class PlayerCamera {
 
       if (this.activeWalk.faceTarget) {
         const lookTarget = new THREE.Vector3();
-        if (this._resolveTargetPosition(this.activeWalk.faceTarget, resolver, lookTarget, { liveTrack: true })) {
+        if (
+          this._resolveTargetPosition(this.activeWalk.faceTarget, resolver, lookTarget, { liveTrack: true }) &&
+          this._hasLineOfSight(lookTarget)
+        ) {
           const { yaw, pitch } = this._computeYawPitchTo(lookTarget);
           this.yaw += wrapAngleDiff(yaw, this.yaw) * Math.min(1, dt * 8.0);
           this.pitch += (pitch - this.pitch) * Math.min(1, dt * 8.0);
+        } else if (this.activeWalk.autoLook && this.activeWalk.totalLength > 0.1) {
+          const lookDist = Math.min(this.activeWalk.totalLength, targetDist + 1.45);
+          const ahead = this._sampleAlongWalk(this.activeWalk, lookDist);
+          const dx = ahead.x - this.playerPos.x;
+          const dz = ahead.z - this.playerPos.z;
+          if (Math.hypot(dx, dz) > 0.12) {
+            this.yaw += wrapAngleDiff(Math.atan2(-dx, -dz), this.yaw) * Math.min(1, dt * 3.5);
+          }
+          const desiredPitch = computeWalkSlopePitch(this.playerPos, ahead, false);
+          this.pitch += (desiredPitch - this.pitch) * Math.min(1, dt * 3.5);
         }
       }
 

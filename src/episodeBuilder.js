@@ -240,6 +240,7 @@ export function buildEpisode({
   aspect = "16:9",
   playerSpawn,
   playerFacing,
+  playerFov = undefined,
   maxLookDuration = undefined,
   allowSlowScans = undefined,
   gags = [],
@@ -352,6 +353,10 @@ export function buildEpisode({
           spawn: c.spawn,
           facing: c.facing,
           anim: c.anim || "idle",
+          ...(c.prop !== undefined ? { prop: c.prop } : {}),
+          ...(c.scale !== undefined ? { scale: c.scale } : {}),
+          ...(c.visible !== undefined ? { visible: c.visible } : {}),
+          ...(c.headTrack !== undefined ? { headTrack: c.headTrack } : {}),
         });
       }
     }
@@ -410,6 +415,7 @@ export function buildEpisode({
     aspect,
     playerSpawn: rootSpawn,
     playerFacing: rootFacing,
+    ...(Number.isFinite(playerFov) ? { playerFov } : {}),
     cast: [...cast.values()],
     props: [...props.values()],
     skits,

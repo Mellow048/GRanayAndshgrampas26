@@ -1386,6 +1386,7 @@ export class ComedyPropManager {
         break;
       case "show":
         mesh.visible = true;
+        state.glideActive = false;
         state.bounce = false;
         state.popOut = false;
         state.spin = false;
@@ -1406,6 +1407,7 @@ export class ComedyPropManager {
       case "pickup":
         mesh.visible = false;
         state.attachedActor = null;
+        state.glideActive = false;
         state.bounce = false;
         state.popOut = false;
         state.spin = false;
@@ -1471,6 +1473,7 @@ export class ComedyPropManager {
       case "place": {
         mesh.visible = true;
         state.attachedActor = null;
+        state.glideActive = false;
         state.bounce = false;
         state.popOut = false;
         state.spin = false;

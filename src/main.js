@@ -174,12 +174,12 @@ async function bootstrap() {
 
   let ui = null;
 
-  function resizeRenderer(aspectKey = playerCamera.aspectKey) {
+  function resizeRenderer(aspectKey = playerCamera.aspectKey, { preserveFov = false } = {}) {
     const { width, height } = getStageTargetSize(aspectKey);
     renderer.setSize(width, height, false);
     renderer.domElement.style.width = `${width}px`;
     renderer.domElement.style.height = `${height}px`;
-    playerCamera.setAspect(aspectKey);
+    playerCamera.setAspect(aspectKey, { preserveFov });
     playerCamera.camera.aspect = width / height;
     playerCamera.camera.updateProjectionMatrix();
     playerCamera.viewmodelCamera.aspect = width / height;
@@ -188,7 +188,7 @@ async function bootstrap() {
 
   function loadEpisode(epObj) {
     const info = runner.loadEpisode(epObj);
-    resizeRenderer(playerCamera.aspectKey);
+    resizeRenderer(playerCamera.aspectKey, { preserveFov: true });
 
     // Surface the staging gate: the script is validated & repaired before it plays.
     const staging = info?.staging;
@@ -374,9 +374,9 @@ async function bootstrap() {
       }
       await runner._flushMicrotasks();
       if (aspectOverride && CONFIG.aspectModes[aspectOverride]) {
-        resizeRenderer(aspectOverride);
+        resizeRenderer(aspectOverride, { preserveFov: Number.isFinite(runner.episode?.playerFov) });
       } else {
-        resizeRenderer(playerCamera.aspectKey);
+        resizeRenderer(playerCamera.aspectKey, { preserveFov: true });
       }
       renderFrame();
       return {
