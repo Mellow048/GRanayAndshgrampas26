@@ -830,7 +830,8 @@ export class EpisodeRunner {
     for (const castEntry of this.episode.cast || []) {
       const char = this.characters[castEntry.id];
       if (!char) continue;
-      char.root.visible = true;
+      char.root.visible = castEntry.visible !== false;
+      char.root.scale.setScalar(Number(castEntry.scale) > 0 ? Number(castEntry.scale) : 1);
       const spawn = this.resolveWaypoint(castEntry.spawn || "back_hall");
       char.root.position.set(spawn.x, spawn.y ?? 0, spawn.z);
 
@@ -839,6 +840,12 @@ export class EpisodeRunner {
         char.lookAt(facePt);
       } else {
         char.root.rotation.y = 0;
+      }
+      if (castEntry.prop) {
+        char.setProp(castEntry.prop);
+      }
+      if (castEntry.headTrack) {
+        char.setHeadTrack(true, typeof castEntry.headTrack === "object" ? castEntry.headTrack : {});
       }
       char.playAnim(castEntry.anim || "idle", 0.01, null, true);
       char.mixer.update(0.016);
@@ -1041,7 +1048,7 @@ export class EpisodeRunner {
       }
     }
 
-    // 2. Prevent standing ground-level actors from merging/clipping inside each other
+    // 2. Smoothly prevent standing ground-level actors from merging/clipping inside each other
     const visibleActors = Object.values(this.characters).filter((c) => c.root.visible);
     const movingActorSet = new Set(this.activeCharMoves.map((m) => m.actor));
     for (let i = 0; i < visibleActors.length; i += 1) {
@@ -1059,7 +1066,7 @@ export class EpisodeRunner {
         const dz = b.z - a.z;
         const dist = Math.hypot(dx, dz);
         if (dist > 1e-4 && dist < ACTOR_SEPARATION) {
-          const push = (ACTOR_SEPARATION - dist) * 0.5;
+          const push = Math.min((ACTOR_SEPARATION - dist) * 0.5, Math.max(0.02, dt * 3.5));
           const nx = dx / dist;
           const nz = dz / dist;
           const ax = a.x - nx * push;
@@ -1090,28 +1097,6 @@ export class EpisodeRunner {
     const playerCamPos = playerCam?.position || null;
     for (const char of visibleActors) {
       char.update(dt, playerCamPos, playerCam);
-    }
-    // v3.2 Live actor-to-actor separation: prevent Granny & Grandpa from ever standing inside each other
-    const activeChars = Object.values(this.characters || {}).filter((c) => c?.root?.visible);
-    for (let i = 0; i < activeChars.length; i += 1) {
-      for (let j = i + 1; j < activeChars.length; j += 1) {
-        const a = activeChars[i].root.position;
-        const b = activeChars[j].root.position;
-        if (Math.abs(a.y - b.y) > 1.0) continue;
-        const dx = b.x - a.x;
-        const dz = b.z - a.z;
-        const dist = Math.hypot(dx, dz);
-        const minGap = 0.82;
-        if (dist < minGap) {
-          const nx = dist > 1e-4 ? dx / dist : 1;
-          const nz = dist > 1e-4 ? dz / dist : 0;
-          const push = (minGap - dist) * 0.5;
-          a.x -= nx * push;
-          a.z -= nz * push;
-          b.x += nx * push;
-          b.z += nz * push;
-        }
-      }
     }
 
     // 4b. The cast steps out of the lens's personal space. Positions are
@@ -1225,7 +1210,8 @@ export class EpisodeRunner {
       ? this.playerCamera.getEyeWorldPosition()
       : this.playerCamera?.camera?.position;
     if (!camPos) return;
-    actor.faceTarget(camPos, ev.faceInstant === false ? 10 : 999);
+    const instant = ev.instant === true || ev.faceInstant === true;
+    actor.faceTarget(camPos, instant ? 999 : 12);
   }
 
   async executeBeat(ev, { silentSeek = false, runToken = this._runToken } = {}) {
@@ -1282,13 +1268,28 @@ export class EpisodeRunner {
       const dur = Number.isFinite(cap) ? Math.min(rawDur, cap) : rawDur;
       const lookPromise = this.playerCamera.lookAt(
         ev.target,
-        { duration: dur, track: Boolean(ev.track), maxDuration: cap, fromBeat: true },
+        {
+          duration: dur,
+          track: Boolean(ev.track),
+          maxDuration: cap,
+          fromBeat: true,
+          yawOffset: ev.yawOffset ?? null,
+          pitchOffset: ev.pitchOffset ?? null,
+          fov: ev.fov ?? null,
+        },
         this.resolver
       );
       if (!silentSeek) {
         this.sfxEngine?.notifyWhipPan(dur, this.simTime);
       }
       return lookPromise;
+    }
+
+    if (type === "player_zoom" && this.playerCamera) {
+      return this.playerCamera.setFov({
+        fov: ev.fov ?? null,
+        duration: ev.duration ?? 0.35,
+      });
     }
 
     if (type === "cut" && this.playerCamera) {
@@ -1345,8 +1346,12 @@ export class EpisodeRunner {
 
     if (type === "player_hold" && this.playerCamera) {
       if (ev.prop !== undefined && ev.prop !== this.playerCamera.heldPropType) {
-        this.playerCamera.holdProp(ev.prop ?? null);
-        if (!silentSeek && ev.prop) {
+        const propDef =
+          ev.prop && ev.prop !== "none"
+            ? (this.episode?.props || []).find((p) => p.id === ev.prop) || null
+            : null;
+        this.playerCamera.holdProp(ev.prop === "none" ? null : ev.prop ?? null, propDef);
+        if (!silentSeek && ev.prop && ev.prop !== "none") {
           this.sfxEngine?.notifyPickup(ev.prop, this.simTime);
         }
       }
@@ -1399,6 +1404,24 @@ export class EpisodeRunner {
         oscillate: ev.oscillate,
       });
       return this._waitSim(dur, runToken);
+    }
+
+    if (type === "char_head_track") {
+      const actor = this.characters[ev.actor];
+      if (!actor) return;
+      const enabled = ev.enabled !== false;
+      let customTarget = null;
+      if (enabled && ev.target && ev.target !== "player") {
+        const wp = this.resolveWaypoint(ev.target);
+        customTarget = { x: wp.x, y: (wp.y ?? 0) + 1.4, z: wp.z };
+      }
+      actor.setHeadTrack?.(enabled, {
+        ...(ev.maxYaw !== undefined ? { maxYaw: ev.maxYaw } : {}),
+        ...(ev.maxPitch !== undefined ? { maxPitch: ev.maxPitch } : {}),
+        ...(ev.weight !== undefined ? { weight: ev.weight } : {}),
+        target: customTarget,
+      });
+      return this._waitSim(ev.duration ?? 0, runToken);
     }
 
     if (type === "char_gesture") {
@@ -1508,7 +1531,9 @@ export class EpisodeRunner {
       if (!ev.keepFacing) {
         actor.lookAtPlayer(false);
       }
-      actor.root.position.set(from.x, from.y ?? 0, from.z);
+      if (ev.from && (ev.teleportFrom === true || Math.hypot(from.x - actor.root.position.x, from.z - actor.root.position.z) > 0.25)) {
+        actor.root.position.set(from.x, from.y ?? 0, from.z);
+      }
       actor.playAnim(anim, 0.14, animSpeed, true);
 
       const moveId = this.nextMoveId++;

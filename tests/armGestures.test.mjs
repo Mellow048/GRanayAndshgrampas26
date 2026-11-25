@@ -7,8 +7,8 @@ import {
   sampleArmGesture,
 } from "../src/armGestures.js";
 
-test("arm gesture catalogue exposes cooking, offering, carrying, placing, waving, pointing, and sniffing", () => {
-  for (const name of ["stir", "offer", "reach_out", "carry", "place_down", "wave", "point", "sniff"]) {
+test("arm gesture catalogue exposes cooking, offering, carrying, placing, waving, pointing, sniffing, shrug, angry_hips, clap, reach_both", () => {
+  for (const name of ["stir", "offer", "reach_out", "carry", "place_down", "wave", "point", "sniff", "shrug", "angry_hips", "clap", "reach_both"]) {
     assert.ok(isArmGesture(name), `${name} is registered`);
     assert.ok(ARM_GESTURES[name].label, `${name} has a description`);
   }

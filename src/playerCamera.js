@@ -112,7 +112,7 @@ export class PlayerCamera {
     this.crouchElapsed = 1;
     this.crouchDuration = 0.35;
 
-    // Look yaw/pitch state
+    // Look yaw/pitch & dynamic FOV zoom state
     this.yaw = 0;
     this.pitch = 0;
     this.lookStartYaw = 0;
@@ -122,6 +122,10 @@ export class PlayerCamera {
     this.lookElapsed = 1;
     this.lookDuration = 0.25;
     this.trackingRef = null;
+    this.fovStart = aspectSpec.fov;
+    this.fovTarget = aspectSpec.fov;
+    this.fovElapsed = 1;
+    this.fovDuration = 0.35;
 
     // Walk polyline state
     this.activeWalk = null;
@@ -188,6 +192,9 @@ export class PlayerCamera {
     } else {
       this.heldItemMount.position.set(0.28, -0.22, -0.5);
     }
+    this.fovStart = spec.fov;
+    this.fovTarget = spec.fov;
+    this.fovElapsed = 1;
     return spec;
   }
 
@@ -735,10 +742,40 @@ export class PlayerCamera {
     });
   }
 
-  lookAt(ref, { duration = 0.25, track = false, maxDuration = null, fromBeat = false } = {}, resolver) {
+  setFov({ fov = null, duration = 0.35 } = {}) {
+    const defaultFov = CONFIG.aspectModes[this.aspectKey]?.fov ?? 68;
+    const nextFov = fov == null ? defaultFov : clamp(Number(fov) || defaultFov, 28, 95);
+    this.fovStart = this.camera.fov;
+    this.fovTarget = nextFov;
+    this.fovElapsed = 0;
+    this.fovDuration = Math.max(0.05, Number(duration) || 0.35);
+    return Promise.resolve();
+  }
+
+  lookAt(ref, { duration = 0.25, track = false, maxDuration = null, fromBeat = false, yawOffset = null, pitchOffset = null, fov = null } = {}, resolver) {
     if (fromBeat && this.activeWalk) {
       // An explicit player_look beat owns the camera for the rest of this walk so autoLook never yanks it back.
       this.activeWalk.manualLookOverride = true;
+    }
+    if (fov !== null && fov !== undefined) {
+      this.setFov({ fov, duration });
+    }
+    if (yawOffset !== null || pitchOffset !== null) {
+      if (this._lookResolve) {
+        this._lookResolve();
+        this._lookResolve = null;
+      }
+      this.lookStartYaw = this.yaw;
+      this.lookStartPitch = this.pitch;
+      this.lookTargetYaw = this.yaw + (Number(yawOffset) || 0);
+      this.lookTargetPitch = clamp(this.pitch + (Number(pitchOffset) || 0), MIN_CAMERA_PITCH, MAX_CAMERA_PITCH);
+      this.lookElapsed = 0;
+      const cap = maxDuration ?? CONFIG.maxLookDuration ?? Number.POSITIVE_INFINITY;
+      this.lookDuration = Math.max(0.01, Math.min(duration, cap));
+      this.trackingRef = null;
+      return new Promise((resolve) => {
+        this._lookResolve = resolve;
+      });
     }
     if (this._resolveTargetPosition(ref, resolver, this._tmpTargetPos)) {
       return this.lookAtPosition(this._tmpTargetPos, {
@@ -828,7 +865,7 @@ export class PlayerCamera {
     });
   }
 
-  holdProp(propType = null) {
+  holdProp(propType = null, propDef = null) {
     if (this.heldPropMesh) {
       this.heldItemMount.remove(this.heldPropMesh);
       this.heldPropMesh.traverse((n) => {
@@ -847,7 +884,8 @@ export class PlayerCamera {
     this.heldPropType = propType || null;
     if (!propType) return;
 
-    const mesh = createPropMesh(propType);
+    const meshType = propDef?.type || propType;
+    const mesh = createPropMesh(meshType, propDef);
     // Auto-normalize held FPS prop size by its real bounding box so large/custom props
     // (like cars or chests) never fill half the screen.
     mesh.updateMatrixWorld(true);
@@ -1028,15 +1066,18 @@ export class PlayerCamera {
 
       if (rawT >= 1) {
         const finished = this.activeWalk;
-        this.playerPos.copy(finished.points[finished.points.length - 1]);
+        const endPt = finished.points[finished.points.length - 1];
+        if (dist2D(this.playerPos, endPt) < 0.25) {
+          this.playerPos.copy(endPt);
+        } else {
+          this.playerPos.y = endPt.y;
+        }
         this.activeWalk = null;
         this.isWalking = false;
         if (finished.faceTarget) {
           const finalTarget = new THREE.Vector3();
           if (this._resolveTargetPosition(finished.faceTarget, resolver, finalTarget, { liveTrack: true })) {
-            const { yaw, pitch } = this._computeYawPitchTo(finalTarget);
-            this.yaw = yaw;
-            this.pitch = pitch;
+            this.lookAtPosition(finalTarget, { duration: 0.16, trackRef: null });
           }
         }
         if (finished._resolve) finished._resolve();
@@ -1050,6 +1091,17 @@ export class PlayerCamera {
       this.poseElapsed = Math.min(this.poseDuration, this.poseElapsed + dt);
       const pt = easeInOutSine(this.poseElapsed / this.poseDuration);
       this.poseRoll = this.poseStartRoll + (this.poseTargetRoll - this.poseStartRoll) * pt;
+    }
+
+    // Smooth FOV zoom interpolation
+    if (this.fovElapsed < this.fovDuration) {
+      this.fovElapsed = Math.min(this.fovDuration, this.fovElapsed + dt);
+      const ft = easeInOutSine(this.fovElapsed / this.fovDuration);
+      const nextFov = this.fovStart + (this.fovTarget - this.fovStart) * ft;
+      if (Math.abs(this.camera.fov - nextFov) > 1e-4) {
+        this.camera.fov = nextFov;
+        this.camera.updateProjectionMatrix();
+      }
     }
 
     // Look tracking / whip-pan (auto-releases if a tracked prop or actor becomes hidden)

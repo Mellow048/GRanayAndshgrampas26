@@ -1130,13 +1130,15 @@ export class ComedyPropManager {
         state.attachedActor = null;
         break;
       case "glide": {
+        const wasAttachedToFrom =
+          mesh.visible && params.fromActor && state.attachedActor === params.fromActor;
         mesh.visible = true;
         state.attachedActor = null;
         state.bounce = false;
         state.popOut = false;
         state.spin = false;
         state.float = false;
-        if (params.fromPos) {
+        if (params.fromPos && !wasAttachedToFrom) {
           basePos.set(params.fromPos.x, params.fromPos.y, params.fromPos.z);
           mesh.position.copy(basePos);
         } else if (params.from && this.waypoints[params.from]) {

@@ -316,23 +316,59 @@ function createProceduralIdleClip(targetRoot, spec) {
   const times = new Float32Array([0, 0.6, 1.2, 1.8, 2.4]);
   const tracks = [];
 
+  // Save bind pose so we leave targetRoot pristine after baking idle keyframes
+  const savedQuats = new Map();
+  targetRoot.traverse((n) => {
+    if (n.isBone) savedQuats.set(n, n.quaternion.clone());
+  });
+  targetRoot.updateMatrixWorld(true);
+
+  const findMapped = (mixamoName) => {
+    const entry = Object.entries(spec.boneMap || {}).find(([, v]) => v === mixamoName);
+    return entry ? targetRoot.getObjectByName(entry[0]) : null;
+  };
+
+  // Relax T-pose / A-pose arms down to a natural standing posture in parent-before-child order
+  const relaxTargets = [
+    [findMapped("mixamorigLeftArm"), new THREE.Vector3(0.14, -0.98, 0.08)],
+    [findMapped("mixamorigLeftForeArm"), new THREE.Vector3(0.06, -0.94, 0.32)],
+    [findMapped("mixamorigRightArm"), new THREE.Vector3(-0.14, -0.98, 0.08)],
+    [findMapped("mixamorigRightForeArm"), new THREE.Vector3(-0.06, -0.94, 0.32)],
+  ];
+  const tmpParentW = new THREE.Quaternion();
+  const tmpLocalDelta = new THREE.Quaternion();
+  for (const [bone, desiredDir] of relaxTargets) {
+    if (!bone || !bone.parent) continue;
+    const curDir = getBoneChildDirection(bone);
+    if (!curDir) continue;
+    const goal = desiredDir.clone().normalize();
+    const worldAlign = new THREE.Quaternion().setFromUnitVectors(curDir, goal);
+    bone.parent.getWorldQuaternion(tmpParentW);
+    tmpLocalDelta.copy(tmpParentW).invert().multiply(worldAlign).multiply(tmpParentW);
+    bone.quaternion.premultiply(tmpLocalDelta).normalize();
+    bone.updateMatrixWorld(true);
+  }
+
   const spineBone =
+    findMapped("mixamorigSpine") ||
     targetRoot.getObjectByName("Spine1") ||
     targetRoot.getObjectByName("Bip01_Spine1");
   const headBone = targetRoot.getObjectByName(spec.headBoneName);
 
-  const addSwayTrack = (bone, eulerAngles) => {
-    if (!bone) return;
+  const addWorldSwayTrack = (bone, worldEulers) => {
+    if (!bone || !bone.parent) return;
     const baseQ = bone.quaternion.clone();
+    bone.parent.getWorldQuaternion(tmpParentW);
     const values = new Float32Array(times.length * 4);
-    const deltaQ = new THREE.Quaternion();
+    const deltaWorld = new THREE.Quaternion();
     const euler = new THREE.Euler();
 
     for (let i = 0; i < times.length; i++) {
-      const [rx, ry, rz] = eulerAngles[i];
-      euler.set(rx, ry, rz);
-      deltaQ.setFromEuler(euler);
-      const finalQ = baseQ.clone().multiply(deltaQ).normalize();
+      const [rx, ry, rz] = worldEulers[i];
+      euler.set(rx, ry, rz, "YXZ");
+      deltaWorld.setFromEuler(euler);
+      tmpLocalDelta.copy(tmpParentW).invert().multiply(deltaWorld).multiply(tmpParentW);
+      const finalQ = tmpLocalDelta.clone().multiply(baseQ).normalize();
       values[i * 4 + 0] = finalQ.x;
       values[i * 4 + 1] = finalQ.y;
       values[i * 4 + 2] = finalQ.z;
@@ -344,7 +380,7 @@ function createProceduralIdleClip(targetRoot, spec) {
     );
   };
 
-  addSwayTrack(spineBone, [
+  addWorldSwayTrack(spineBone, [
     [0, 0, 0],
     [0.028, 0.015, 0],
     [0, 0, 0],
@@ -352,13 +388,36 @@ function createProceduralIdleClip(targetRoot, spec) {
     [0, 0, 0],
   ]);
 
-  addSwayTrack(headBone, [
+  addWorldSwayTrack(headBone, [
     [0, 0, 0],
     [-0.02, 0.05, 0],
     [0, 0, 0],
     [0.015, -0.05, 0],
     [0, 0, 0],
   ]);
+
+  // Key every remaining mapped bone (arms, legs, hips, shoulders) so crossFadeTo("idle")
+  // cleanly blends all joints instead of leaving arms/legs frozen from the previous clip.
+  const keyedNames = new Set(tracks.map((t) => t.name));
+  for (const targetName of Object.keys(spec.boneMap || {})) {
+    if (keyedNames.has(`${targetName}.quaternion`)) continue;
+    const bone = targetRoot.getObjectByName(targetName);
+    if (!bone) continue;
+    const q = bone.quaternion;
+    const values = new Float32Array(times.length * 4);
+    for (let i = 0; i < times.length; i++) {
+      values[i * 4 + 0] = q.x;
+      values[i * 4 + 1] = q.y;
+      values[i * 4 + 2] = q.z;
+      values[i * 4 + 3] = q.w;
+    }
+    tracks.push(new THREE.QuaternionKeyframeTrack(`${targetName}.quaternion`, times, values));
+  }
+
+  for (const [bone, q] of savedQuats.entries()) {
+    bone.quaternion.copy(q);
+  }
+  targetRoot.updateMatrixWorld(true);
 
   return new THREE.AnimationClip("idle", duration, tracks);
 }

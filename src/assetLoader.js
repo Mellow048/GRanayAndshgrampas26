@@ -977,27 +977,51 @@ export function instantiateCharacter(id, template, animationClips) {
   const handBone = rigHolder.getObjectByName(handBoneName) || null;
 
   // Procedural arm & upper-spine bones for expressive acting (`src/armGestures.js`).
-  const armBones = {
-    rUpper: rigHolder.getObjectByName(isBip01 ? "Bip01_R_UpperArm" : "upArm_R_001") || null,
-    rFore: rigHolder.getObjectByName(isBip01 ? "Bip01_R_Forearm" : "loArm_R_001") || null,
-    lUpper: rigHolder.getObjectByName(isBip01 ? "Bip01_L_UpperArm" : "upArm_L") || null,
-    lFore: rigHolder.getObjectByName(isBip01 ? "Bip01_L_Forearm" : "loArm_L") || null,
-    spine:
-      rigHolder.getObjectByName(isBip01 ? "Bip01_Spine1" : "Spine1") ||
-      rigHolder.getObjectByName("spine_01") ||
-      null,
+  // Resolve via boneMap first so Bip01, Grandpa Blender (`lowArm_R_001`), and future rigs all bind accurately.
+  const findMappedBone = (mixamoName, fallbacks = []) => {
+    const mapped = Object.entries(template.spec.boneMap || {}).find(([, v]) => v === mixamoName)?.[0];
+    for (const candidate of [mapped, ...fallbacks].filter(Boolean)) {
+      const found = rigHolder.getObjectByName(candidate);
+      if (found) return found;
+    }
+    return null;
   };
-  const armRestQuats = {
-    rUpper: armBones.rUpper ? armBones.rUpper.quaternion.clone() : null,
-    rFore: armBones.rFore ? armBones.rFore.quaternion.clone() : null,
-    lUpper: armBones.lUpper ? armBones.lUpper.quaternion.clone() : null,
-    lFore: armBones.lFore ? armBones.lFore.quaternion.clone() : null,
-    spine: armBones.spine ? armBones.spine.quaternion.clone() : null,
+  const armBones = {
+    rUpper: findMappedBone("mixamorigRightArm", [isBip01 ? "Bip01_R_UpperArm" : "upArm_R_001"]),
+    rFore: findMappedBone("mixamorigRightForeArm", [isBip01 ? "Bip01_R_Forearm" : "lowArm_R_001"]),
+    lUpper: findMappedBone("mixamorigLeftArm", [isBip01 ? "Bip01_L_UpperArm" : "upArm_L"]),
+    lFore: findMappedBone("mixamorigLeftForeArm", [isBip01 ? "Bip01_L_Forearm" : "lowArm_L"]),
+    spine: findMappedBone("mixamorigSpine", [isBip01 ? "Bip01_Spine1" : "Spine1", "spine_01"]),
+  };
+  const armPrevQuats = {
+    rUpper: new THREE.Quaternion(),
+    rFore: new THREE.Quaternion(),
+    lUpper: new THREE.Quaternion(),
+    lFore: new THREE.Quaternion(),
+    spine: new THREE.Quaternion(),
+  };
+  const armLastQuats = {
+    rUpper: new THREE.Quaternion(),
+    rFore: new THREE.Quaternion(),
+    lUpper: new THREE.Quaternion(),
+    lFore: new THREE.Quaternion(),
+    spine: new THREE.Quaternion(),
+  };
+  const armPoseApplied = {
+    rUpper: false,
+    rFore: false,
+    lUpper: false,
+    lFore: false,
+    spine: false,
   };
   let activeArmGesture = null;
-  let armGestureApplied = false;
-  const tmpArmEuler = new THREE.Euler(0, 0, 0, "XYZ");
-  const tmpArmQuat = new THREE.Quaternion();
+  const tmpArmEuler = new THREE.Euler(0, 0, 0, "YXZ");
+  const tmpArmCharQuat = new THREE.Quaternion();
+  const tmpArmWorldDelta = new THREE.Quaternion();
+  const tmpArmRootWorld = new THREE.Quaternion();
+  const tmpArmRootInv = new THREE.Quaternion();
+  const tmpArmParentWorld = new THREE.Quaternion();
+  const tmpArmLocalDelta = new THREE.Quaternion();
   let lastBuiltInPropMode = "cane";
 
   // Embedded character hand/head sub-meshes (Grandpa's Shotgun vs Cane, spare Glasses, Granny's Bat)
@@ -1068,9 +1092,10 @@ export function instantiateCharacter(id, template, animationClips) {
   let faceTargetGoal = null;
   let faceTurnSpeed = 12;
 
-  // Head-tracking ("look at me") state: the head aims at the lens independently
-  // of the animation clip, clamped so the neck never breaks.
+  // Head-tracking ("look at me") state: the head aims at the lens (or custom target)
+  // independently of the animation clip, clamped so the neck never breaks.
   let headTrack = { enabled: false, weight: 1, maxYaw: 0.95, maxPitch: 0.42 };
+  let headCustomTarget = null;
   let headTrackYaw = 0;
   let headTrackPitch = 0;
 
@@ -1209,8 +1234,20 @@ export function instantiateCharacter(id, template, animationClips) {
       ...opts,
       enabled: Boolean(enabled),
     };
+    if (opts.target !== undefined) {
+      headCustomTarget = opts.target ? { x: opts.target.x, y: opts.target.y, z: opts.target.z } : null;
+    } else if (!headTrack.enabled) {
+      headCustomTarget = null;
+    }
     if (!headTrack.enabled) {
       clearHeadAim();
+    }
+  }
+
+  function setHeadTarget(targetPos = null) {
+    headCustomTarget = targetPos ? { x: targetPos.x, y: targetPos.y, z: targetPos.z } : null;
+    if (headCustomTarget) {
+      headTrack.enabled = true;
     }
   }
 
@@ -1313,6 +1350,10 @@ export function instantiateCharacter(id, template, animationClips) {
    * playing underneath; passing null stops whatever is running.
    */
   function playArmGesture(name, { duration = 1.4, amplitude, cycles, rUpper, rFore, lUpper, lFore, spine, oscillate } = {}) {
+    if (name == null) {
+      activeArmGesture = null;
+      return false;
+    }
     const spec = armGestureSpec(name, { amplitude, cycles, rUpper, rFore, lUpper, lFore, spine, oscillate });
     if (!spec) return false;
     activeArmGesture = {
@@ -1324,26 +1365,68 @@ export function instantiateCharacter(id, template, animationClips) {
     return true;
   }
 
+  function stopArmGesture() {
+    activeArmGesture = null;
+  }
+
+  /**
+   * Applies character-space anatomical arm/spine rotations in world-converted
+   * parent-before-child order so Granny (Bip01) and Grandpa (Blender) deform identically,
+   * without ever snapping unkeyed bones back to T-pose when finished.
+   */
   function applyArmGesturePose(sample) {
+    const order = ["spine", "rUpper", "rFore", "lUpper", "lFore"];
     if (!sample || sample.envelope <= 1e-6) {
-      if (armGestureApplied) {
-        for (const k of Object.keys(armBones)) {
-          if (armBones[k] && armRestQuats[k]) armBones[k].quaternion.copy(armRestQuats[k]);
+      for (const k of order) {
+        const bone = armBones[k];
+        if (!bone || !armPoseApplied[k]) continue;
+        // Only restore pre-gesture pose if the animation mixer did NOT overwrite this bone
+        if (bone.quaternion.angleTo(armLastQuats[k]) < 1e-5) {
+          bone.quaternion.copy(armPrevQuats[k]);
         }
-        armGestureApplied = false;
+        armPoseApplied[k] = false;
       }
       return;
     }
-    for (const k of ["rUpper", "rFore", "lUpper", "lFore", "spine"]) {
+
+    root.updateMatrixWorld(true);
+    root.getWorldQuaternion(tmpArmRootWorld);
+    tmpArmRootInv.copy(tmpArmRootWorld).invert();
+
+    for (const k of order) {
       const bone = armBones[k];
       const rot = sample[k];
-      if (!bone || !rot) continue;
-      if (Math.abs(rot.x) + Math.abs(rot.y) + Math.abs(rot.z) < 1e-5) continue;
-      tmpArmEuler.set(rot.x, rot.y, rot.z, "XYZ");
-      tmpArmQuat.setFromEuler(tmpArmEuler);
-      bone.quaternion.multiply(tmpArmQuat);
+      if (!bone || !bone.parent) continue;
+
+      if (armPoseApplied[k] && bone.quaternion.angleTo(armLastQuats[k]) < 1e-5) {
+        bone.quaternion.copy(armPrevQuats[k]);
+      } else {
+        armPrevQuats[k].copy(bone.quaternion);
+      }
+
+      if (!rot || Math.abs(rot.x) + Math.abs(rot.y) + Math.abs(rot.z) < 1e-5) {
+        armPoseApplied[k] = false;
+        continue;
+      }
+
+      tmpArmEuler.set(rot.x, rot.y, rot.z, "YXZ");
+      tmpArmCharQuat.setFromEuler(tmpArmEuler);
+      // Convert character-local delta to world delta: qRoot * qCharDelta * qRoot^-1
+      tmpArmWorldDelta.copy(tmpArmRootWorld).multiply(tmpArmCharQuat).multiply(tmpArmRootInv);
+
+      bone.parent.updateMatrixWorld(true);
+      bone.parent.getWorldQuaternion(tmpArmParentWorld);
+      tmpArmLocalDelta
+        .copy(tmpArmParentWorld)
+        .invert()
+        .multiply(tmpArmWorldDelta)
+        .multiply(tmpArmParentWorld);
+
+      bone.quaternion.premultiply(tmpArmLocalDelta).normalize();
+      bone.updateMatrixWorld(true);
+      armLastQuats[k].copy(bone.quaternion);
+      armPoseApplied[k] = true;
     }
-    armGestureApplied = true;
   }
 
   function playHeadGesture(name, duration = 0.8, overrides = {}) {
@@ -1504,8 +1587,9 @@ export function instantiateCharacter(id, template, animationClips) {
       : null;
 
     // Head-only aim on top of whatever the clip is doing (taunts, laughs, idle).
-    if ((headTrack.enabled && playerCameraPos) || gestureSample) {
-      applyHeadPose(playerCameraPos, dt, gestureSample);
+    const activeHeadTarget = headCustomTarget || playerCameraPos;
+    if ((headTrack.enabled && activeHeadTarget) || gestureSample) {
+      applyHeadPose(activeHeadTarget, dt, gestureSample);
     }
 
     // Procedural arm & upper-spine acting layer on top of any clip.
@@ -1523,7 +1607,7 @@ export function instantiateCharacter(id, template, animationClips) {
         );
         applyArmGesturePose(armSample);
       }
-    } else if (armGestureApplied) {
+    } else if (armPoseApplied.rUpper || armPoseApplied.rFore || armPoseApplied.lUpper || armPoseApplied.lFore || armPoseApplied.spine) {
       applyArmGesturePose(null);
     }
 
@@ -1619,6 +1703,10 @@ export function instantiateCharacter(id, template, animationClips) {
     jumpOffsetY = 0;
     lookAtPlayerEnabled = false;
     faceTargetGoal = null;
+    headCustomTarget = null;
+    activeArmGesture = null;
+    headGesture = null;
+    for (const k of Object.keys(armPoseApplied)) armPoseApplied[k] = false;
     setHeadTrack(false);
     bubbleTimer = 0;
     bubbleSprite.visible = false;
@@ -1663,6 +1751,7 @@ export function instantiateCharacter(id, template, animationClips) {
     playAnimation,
     playHeadGesture,
     playArmGesture,
+    stopArmGesture,
     getHandWorldPosition,
     stopHeadGesture,
     actOnHeldProp,
@@ -1674,6 +1763,7 @@ export function instantiateCharacter(id, template, animationClips) {
     lookAt,
     lookAtPlayer,
     setHeadTrack,
+    setHeadTarget,
     clearHeadAim,
     get headTracking() {
       return { ...headTrack };

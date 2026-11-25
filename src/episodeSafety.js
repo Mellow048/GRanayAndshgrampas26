@@ -696,9 +696,10 @@ export function validateEpisode(episode, options = {}) {
 
     const fromName = beat.from || (isWalk ? playerState?.name : actorState.get(beat.actor)?.name);
     let toName = typeof beat.to === "string" ? beat.to : null;
+    const coordTo = beat.to && typeof beat.to === "object" && Number.isFinite(beat.to.x) ? beat.to : null;
     const startPos = resolved(fromName) || (isWalk ? playerState : actorState.get(beat.actor));
     let plannedRoute = null;
-    let endWp = toName ? resolved(toName) : null;
+    let endWp = toName ? resolved(toName) : coordTo;
 
     if (toName && !endWp && !actorState.has(toName)) {
       issues.push(
@@ -1137,7 +1138,7 @@ export function validateEpisode(episode, options = {}) {
   const activity = [];
   for (const beat of beats) {
     const moves = beat.type === "char_move" || beat.type === "move" || beat.type === "player_walk";
-    const acts = ["char_anim", "anim", "player_look", "player_gesture", "char_gesture", "char_bubble", "prop_action", "player_hold", "player_pose", "char_face", "fade", "sfx", "char_prop"].includes(beat.type);
+    const acts = ["char_anim", "anim", "player_look", "player_gesture", "player_zoom", "char_gesture", "char_arm", "char_head_track", "char_bubble", "prop_action", "player_hold", "player_pose", "char_face", "fade", "sfx", "char_prop"].includes(beat.type);
     if (moves || acts) activity.push({ at: beat.at, end: beat.at + Math.max(0.15, beat.duration || 0), type: beat.type, beat });
   }
   activity.sort((a, b) => a.at - b.at);
