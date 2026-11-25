@@ -7,10 +7,19 @@ import {
   sampleArmGesture,
 } from "../src/armGestures.js";
 
-test("arm gesture catalogue exposes cooking, offering, carrying, placing, waving, pointing, sniffing, shrug, angry_hips, clap, reach_both", () => {
-  for (const name of ["stir", "offer", "reach_out", "carry", "place_down", "wave", "point", "sniff", "shrug", "angry_hips", "clap", "reach_both"]) {
+test("arm gesture catalogue exposes cooking, offering, carrying, placing, waving, pointing, sniffing, shrug, idk, angry_hips, clap, reach_both", () => {
+  for (const name of ["stir", "offer", "reach_out", "carry", "place_down", "wave", "point", "sniff", "shrug", "idk", "angry_hips", "clap", "reach_both"]) {
     assert.ok(isArmGesture(name), `${name} is registered`);
     assert.ok(ARM_GESTURES[name].label, `${name} has a description`);
+  }
+});
+
+test("shrug and idk lift both shoulders upward in a clear confused shrug", () => {
+  for (const name of ["shrug", "idk"]) {
+    const pose = sampleArmGesture(name, 0.75, 1.5);
+    assert.ok(pose.rShoulder.z < -0.2, `${name} hikes right shoulder up`);
+    assert.ok(pose.lShoulder.z > 0.2, `${name} hikes left shoulder up`);
+    assert.ok(pose.rFore.x < -0.8 && pose.lFore.x < -0.8, `${name} lifts forearms`);
   }
 });
 

@@ -26,7 +26,7 @@ test("every animation that claims a file actually has one on disk", () => {
 
 test("the templates the user uploaded are registered", () => {
   const keys = listAnimations().map((a) => a.key);
-  for (const key of ["angry", "talk", "kick", "mma_kick", "trip"]) {
+  for (const key of ["angry", "talk", "kick", "mma_kick", "trip", "chicken_dance", "crawling", "hip_hop_dance", "sitting_laughing"]) {
     assert.ok(keys.includes(key), `${key} is registered`);
   }
 });

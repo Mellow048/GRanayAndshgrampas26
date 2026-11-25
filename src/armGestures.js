@@ -77,7 +77,13 @@ export const ARM_GESTURES = {
     hold: false,
   },
   shrug: {
-    label: "raise both forearms outward in a classic confused cartoon shrug",
+    label: "hike both shoulders upward and splay forearms outward in an unmistakable idk shrug",
+    cycles: 1,
+    amplitude: 1.0,
+    hold: true,
+  },
+  idk: {
+    label: "alias of shrug — raise shoulders and turn hands out",
     cycles: 1,
     amplitude: 1.0,
     hold: true,
@@ -139,6 +145,8 @@ export function armEnvelope(progress, hold = false) {
 }
 
 const ZERO_POSE = Object.freeze({
+  rShoulder: { x: 0, y: 0, z: 0 },
+  lShoulder: { x: 0, y: 0, z: 0 },
   rUpper: { x: 0, y: 0, z: 0 },
   rFore: { x: 0, y: 0, z: 0 },
   lUpper: { x: 0, y: 0, z: 0 },
@@ -148,8 +156,8 @@ const ZERO_POSE = Object.freeze({
 });
 
 /**
- * Sample character-space Euler radian deltas for right/left upper arm, forearm,
- * and spine at `elapsed` seconds inside a `duration` window.
+ * Sample character-space Euler radian deltas for clavicles, upper arms,
+ * forearms, and spine at `elapsed` seconds inside a `duration` window.
  * Starts and ends at exact zero so bones never pop.
  */
 export function sampleArmGesture(name, elapsed, duration, overrides = {}) {
@@ -162,6 +170,8 @@ export function sampleArmGesture(name, elapsed, duration, overrides = {}) {
   const amp = spec.amplitude * env;
   const phase = p * spec.cycles * TAU;
   const out = {
+    rShoulder: { x: 0, y: 0, z: 0 },
+    lShoulder: { x: 0, y: 0, z: 0 },
     rUpper: { x: 0, y: 0, z: 0 },
     rFore: { x: 0, y: 0, z: 0 },
     lUpper: { x: 0, y: 0, z: 0 },
@@ -223,12 +233,16 @@ export function sampleArmGesture(name, elapsed, duration, overrides = {}) {
     }
 
     case "shrug":
-      out.rUpper.z = -0.38 * amp;
-      out.lUpper.z = 0.38 * amp;
-      out.rFore.x = -0.95 * amp;
-      out.rFore.z = -0.35 * amp;
-      out.lFore.x = -0.95 * amp;
-      out.lFore.z = 0.35 * amp;
+    case "idk":
+      // Hike BOTH clavicles up toward ears (+Y), spread upper arms slightly out, and turn forearms/palms up!
+      out.rShoulder.z = -0.34 * amp;
+      out.lShoulder.z = 0.34 * amp;
+      out.rUpper.z = -0.4 * amp;
+      out.lUpper.z = 0.4 * amp;
+      out.rFore.x = -1.05 * amp;
+      out.rFore.y = -0.38 * amp;
+      out.lFore.x = -1.05 * amp;
+      out.lFore.y = 0.38 * amp;
       break;
 
     case "angry_hips":
@@ -268,6 +282,8 @@ export function sampleArmGesture(name, elapsed, duration, overrides = {}) {
         target.y = (clampR(arr[1]) + (addOsc ? clampR(osc[1]) * wave : 0)) * amp;
         target.z = (clampR(arr[2]) + (addOsc ? clampR(osc[2]) * wave : 0)) * amp;
       };
+      applyVec(out.rShoulder, spec.rShoulder, false);
+      applyVec(out.lShoulder, spec.lShoulder, false);
       applyVec(out.rUpper, spec.rUpper, true);
       applyVec(out.rFore, spec.rFore, true);
       applyVec(out.lUpper, spec.lUpper, false);

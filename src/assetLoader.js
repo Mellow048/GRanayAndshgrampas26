@@ -987,6 +987,8 @@ export function instantiateCharacter(id, template, animationClips) {
     return null;
   };
   const armBones = {
+    rShoulder: findMappedBone("mixamorigRightShoulder", [isBip01 ? "Bip01_R_Clavicle" : "Shoulder_R"]),
+    lShoulder: findMappedBone("mixamorigLeftShoulder", [isBip01 ? "Bip01_L_Clavicle" : "Shoulder_L"]),
     rUpper: findMappedBone("mixamorigRightArm", [isBip01 ? "Bip01_R_UpperArm" : "upArm_R_001"]),
     rFore: findMappedBone("mixamorigRightForeArm", [isBip01 ? "Bip01_R_Forearm" : "lowArm_R_001"]),
     lUpper: findMappedBone("mixamorigLeftArm", [isBip01 ? "Bip01_L_UpperArm" : "upArm_L"]),
@@ -994,6 +996,8 @@ export function instantiateCharacter(id, template, animationClips) {
     spine: findMappedBone("mixamorigSpine", [isBip01 ? "Bip01_Spine1" : "Spine1", "spine_01"]),
   };
   const armPrevQuats = {
+    rShoulder: new THREE.Quaternion(),
+    lShoulder: new THREE.Quaternion(),
     rUpper: new THREE.Quaternion(),
     rFore: new THREE.Quaternion(),
     lUpper: new THREE.Quaternion(),
@@ -1001,6 +1005,8 @@ export function instantiateCharacter(id, template, animationClips) {
     spine: new THREE.Quaternion(),
   };
   const armLastQuats = {
+    rShoulder: new THREE.Quaternion(),
+    lShoulder: new THREE.Quaternion(),
     rUpper: new THREE.Quaternion(),
     rFore: new THREE.Quaternion(),
     lUpper: new THREE.Quaternion(),
@@ -1008,6 +1014,8 @@ export function instantiateCharacter(id, template, animationClips) {
     spine: new THREE.Quaternion(),
   };
   const armPoseApplied = {
+    rShoulder: false,
+    lShoulder: false,
     rUpper: false,
     rFore: false,
     lUpper: false,
@@ -1328,12 +1336,16 @@ export function instantiateCharacter(id, template, animationClips) {
       return;
     }
 
-    tmpHeadQuat
-      .setFromAxisAngle(WORLD_UP, totalYaw)
-      .multiply(tmpHeadQuatB.setFromAxisAngle(WORLD_RIGHT, totalPitch));
-    if (Math.abs(gestureRoll) > 1e-5) {
-      tmpHeadQuat.multiply(tmpHeadQuatC.setFromAxisAngle(WORLD_FORWARD, gestureRoll));
-    }
+    // Convert pitch/yaw/roll in character-local space (+X left/pitch, +Y up/yaw, +Z forward/roll)
+    // so nodding is always pure up/down regardless of which way the character faces!
+    root.updateMatrixWorld(true);
+    root.getWorldQuaternion(tmpArmRootWorld);
+    tmpArmRootInv.copy(tmpArmRootWorld).invert();
+    tmpArmEuler.set(totalPitch, totalYaw, gestureRoll, "YXZ");
+    tmpArmCharQuat.setFromEuler(tmpArmEuler);
+    tmpHeadQuat.copy(tmpArmRootWorld).multiply(tmpArmCharQuat).multiply(tmpArmRootInv);
+
+    headBone.parent.updateMatrixWorld(true);
     headBone.parent.getWorldQuaternion(tmpParentQuat);
     tmpLocalQuat
       .copy(tmpParentQuat)
@@ -1375,7 +1387,7 @@ export function instantiateCharacter(id, template, animationClips) {
    * without ever snapping unkeyed bones back to T-pose when finished.
    */
   function applyArmGesturePose(sample) {
-    const order = ["spine", "rUpper", "rFore", "lUpper", "lFore"];
+    const order = ["spine", "rShoulder", "rUpper", "rFore", "lShoulder", "lUpper", "lFore"];
     if (!sample || sample.envelope <= 1e-6) {
       for (const k of order) {
         const bone = armBones[k];
@@ -1659,27 +1671,34 @@ export function instantiateCharacter(id, template, animationClips) {
       }
 
       const defaultLocalY =
-        template.spec.targetHeight + 0.24 + clipJumpLift + Math.sin(bubblePopPhase * 4.2) * 0.035;
+        template.spec.targetHeight + 0.18 + clipJumpLift + Math.sin(bubblePopPhase * 4.2) * 0.03;
       bubbleSprite.position.set(0, defaultLocalY, 0);
 
       if (camera && typeof camera.updateMatrixWorld === "function") {
         camera.updateMatrixWorld(true);
         root.updateMatrixWorld(true);
-        tmpBubbleWorld.set(0, defaultLocalY, 0).applyMatrix4(root.matrixWorld);
+        tmpCamRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+        tmpBubbleWorld
+          .set(0, defaultLocalY, 0)
+          .applyMatrix4(root.matrixWorld)
+          .addScaledVector(tmpCamRight, 0.34);
         tmpBubbleNdc.copy(tmpBubbleWorld).project(camera);
-        if (tmpBubbleNdc.z > -1 && tmpBubbleNdc.z < 1 && tmpBubbleNdc.y > 0.66) {
-          const overflow = tmpBubbleNdc.y - 0.66;
-          tmpBubbleNdc.y = 0.66;
+        if (tmpBubbleNdc.z > -1 && tmpBubbleNdc.z < 1) {
+          if (tmpBubbleNdc.y > 0.62) {
+            tmpBubbleNdc.y = 0.62;
+          }
+          if (tmpBubbleNdc.x > 0.72) {
+            tmpBubbleNdc.x = 0.72;
+          } else if (tmpBubbleNdc.x < -0.72) {
+            tmpBubbleNdc.x = -0.72;
+          }
           tmpBubbleNdc.unproject(camera);
-          // Shift slightly to camera-right so lowered bubble sits beside the head instead of over the face
-          tmpCamRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
-          tmpBubbleNdc.addScaledVector(tmpCamRight, Math.min(0.42, overflow * 0.9 + 0.18));
           root.worldToLocal(tmpBubbleNdc);
           bubbleSprite.position.copy(tmpBubbleNdc);
         }
       }
 
-      bubbleSprite.scale.set(0.56 * popScale, 0.42 * popScale, 1);
+      bubbleSprite.scale.set(0.84 * popScale, 0.58 * popScale, 1);
       if (bubbleTimer === 0) {
         bubbleSprite.visible = false;
       }

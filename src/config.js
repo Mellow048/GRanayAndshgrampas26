@@ -366,6 +366,26 @@ export const ASSET_MANIFEST = {
       loop: false,
       defaultSpeed: 1.0,
     },
+    chicken_dance: {
+      path: "./Assets/AnimationTemplates/Chicken Dance.fbx",
+      loop: true,
+      defaultSpeed: 1.0,
+    },
+    crawling: {
+      path: "./Assets/AnimationTemplates/Crawling.fbx",
+      loop: true,
+      defaultSpeed: 1.0,
+    },
+    hip_hop_dance: {
+      path: "./Assets/AnimationTemplates/Locking Hip Hop Dance.fbx",
+      loop: true,
+      defaultSpeed: 1.0,
+    },
+    sitting_laughing: {
+      path: "./Assets/AnimationTemplates/Sitting Laughing.fbx",
+      loop: true,
+      defaultSpeed: 1.0,
+    },
     // ── Procedural head gestures: no FBX on disk, the rig layered them at
     //    runtime from src/headGestures.js. Usable anywhere `anim` is allowed.
     nod: { procedural: "head_gesture", gesture: "nod", loop: false, duration: 0.8 },
@@ -411,6 +431,12 @@ export const SFX_MANIFEST = {
   fluffing_a_duck: { path: "./SoundEffects/backroundMusics/Fluffing-a-Duck(chosic.com).mp3", category: "bgm", defaultVolume: 0.24 },
   monkeys_spinning_monkeys: { path: "./SoundEffects/backroundMusics/Monkeys-Spinning-Monkeys(chosic.com).mp3", category: "bgm", defaultVolume: 0.24 },
   run_amok: { path: "./SoundEffects/backroundMusics/Run-Amok(chosic.com).mp3", category: "bgm", defaultVolume: 0.26 },
+  ding2: { path: "./SoundEffects/ding-sound-effect_2_bICB0mr.mp3", category: "pop", defaultVolume: 0.72 },
+  grandpa_aha: { path: "./SoundEffects/Grandpa AHA! voice.mp3", category: "voice", defaultVolume: 0.9 },
+  lets_go: { path: "./SoundEffects/Lets go (1).mp3", category: "voice", defaultVolume: 0.85 },
+  lets_go_csgo: { path: "./SoundEffects/Lets go (2, CSGO version).mp3", category: "voice", defaultVolume: 0.85 },
+  yummy: { path: "./SoundEffects/roblox-yummy.mp3", category: "comedy", defaultVolume: 0.8 },
+  snoring: { path: "./SoundEffects/snoring.mp3", category: "comedy", defaultVolume: 0.65 },
 };
 
 /**

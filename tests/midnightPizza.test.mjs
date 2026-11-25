@@ -6,7 +6,7 @@ import { validateStorySpine } from "../src/storySpine.js";
 import { SET_MAP, NAV_GRAPH } from "../src/config.js";
 import { greetAndNod, dialogueExchange, handItemTo } from "../src/gags/helpers.js";
 
-test("midnight_pizza_heist_2m passes strict validation with zero warnings, zero bubbles, zero random laugh/sit, and full 3/3 story spine", () => {
+test("midnight_pizza_heist_2m passes strict validation with zero warnings, strategic non-spammy bubbles, zero random sit/laugh, player interaction, and full 3/3 story spine", () => {
   const res = validateAndRepair(MIDNIGHT_PIZZA_HEIST_2M, {
     setMap: SET_MAP,
     navGraph: NAV_GRAPH,
@@ -17,7 +17,11 @@ test("midnight_pizza_heist_2m passes strict validation with zero warnings, zero 
 
   const allBeats = (MIDNIGHT_PIZZA_HEIST_2M.skits || []).flatMap((s) => s.beats || []);
   const bubbles = allBeats.filter((b) => b.type === "char_bubble");
-  assert.equal(bubbles.length, 0, "episode must use zero thought bubbles");
+  assert.ok(bubbles.length >= 1 && bubbles.length <= 6, `expected 1..6 strategic thought bubbles, got ${bubbles.length}`);
+  assert.ok(bubbles.some((b) => b.icon === "where_grandpa"), "uses portrait + ??? thought bubble");
+
+  const playerGestures = allBeats.filter((b) => b.type === "player_gesture");
+  assert.ok(playerGestures.length >= 3, "player actively nods/shakes/interacts with characters");
 
   const weirdAnims = allBeats.filter(
     (b) => b.type === "char_anim" && (b.anim === "laugh" || b.anim === "sit")

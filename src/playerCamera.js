@@ -1142,10 +1142,17 @@ export class PlayerCamera {
       this.activeGesture.elapsed += dt;
       const gt = clamp(this.activeGesture.elapsed / this.activeGesture.duration, 0, 1);
       const envelope = Math.sin(gt * Math.PI);
-      if (this.activeGesture.type === "nod_yes") {
-        gesturePitch = Math.sin(gt * Math.PI * 4) * 0.18 * envelope;
-      } else if (this.activeGesture.type === "shake_no") {
-        gestureYaw = Math.sin(gt * Math.PI * 4) * 0.24 * envelope;
+      if (this.activeGesture.type === "nod_yes" || this.activeGesture.type === "nod") {
+        gesturePitch = Math.sin(gt * Math.PI * 5) * 0.24 * envelope;
+      } else if (this.activeGesture.type === "shake_no" || this.activeGesture.type === "shake") {
+        gestureYaw = Math.sin(gt * Math.PI * 5) * 0.34 * envelope;
+      } else if (this.activeGesture.type === "shrug" || this.activeGesture.type === "idk") {
+        gestureYaw = Math.sin(gt * Math.PI * 2) * 0.16 * envelope;
+        gestureRoll = Math.sin(gt * Math.PI * 2) * 0.09 * envelope;
+        gesturePitch = 0.06 * envelope;
+      } else if (this.activeGesture.type === "double_take") {
+        gesturePitch = Math.sin(gt * Math.PI * 2) * 0.18 * envelope;
+        gestureRoll = Math.sin(gt * Math.PI) * 0.06 * envelope;
       } else if (this.activeGesture.type === "peek_lean") {
         gestureLeanX = Math.sin(gt * Math.PI) * 0.32;
         gestureRoll = -Math.sin(gt * Math.PI) * 0.12;

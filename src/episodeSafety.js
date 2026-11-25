@@ -81,6 +81,10 @@ export const AVAILABLE_ANIMS = Object.freeze([
   "hit",
   "look",
   "granny_walk",
+  "chicken_dance",
+  "crawling",
+  "hip_hop_dance",
+  "sitting_laughing",
 ]);
 
 /**
@@ -122,15 +126,32 @@ export const CUE_ACTION_RULES = Object.freeze({
   },
   vine_boom: { anyAnim: true, label: "a visible reaction" },
   rizz: {
-    anims: ["laugh", "look", "sit", "jump", "punch"],
+    anims: ["laugh", "look", "sit", "jump", "punch", "hip_hop_dance", "chicken_dance"],
     armGestures: ["sniff", "offer", "wave", "clap", "point", "reach_both"],
     charGestures: ["nod", "nod_yes", "nod_once", "tilt"],
     label: "a charm beat",
   },
+  yummy: {
+    anims: ["look", "chicken_dance", "hip_hop_dance", "laugh"],
+    armGestures: ["sniff", "offer", "carry", "reach_both", "clap"],
+    charGestures: ["nod", "nod_yes", "nod_once"],
+    label: "a delicious reaction",
+  },
+  grandpa_aha: {
+    anims: ["look", "chicken_dance", "hip_hop_dance"],
+    armGestures: ["point", "shrug", "idk", "clap"],
+    charGestures: ["double_take", "nod_yes", "nod"],
+    label: "an aha! realization",
+  },
+  snoring: {
+    anims: ["sit", "crawling", "idle"],
+    armGestures: ["sniff"],
+    label: "a sleeping beat",
+  },
 });
 
 /** Reactions that must be sold facing the lens. */
-const PLAYER_FACING_REACTIONS = new Set(["laugh", "punch", "terrified", "panic", "hit"]);
+const PLAYER_FACING_REACTIONS = new Set(["laugh", "punch", "terrified", "panic", "hit", "sitting_laughing", "chicken_dance", "hip_hop_dance"]);
 
 /** Hand props that should be stowed before a friendly/neutral beat. */
 const HAND_WEAPONS = new Set(["shotgun", "bat"]);
@@ -1590,13 +1611,13 @@ export function validateEpisode(episode, options = {}) {
       );
     }
   }
-  const maxBubbles = episodeEnd <= 90 ? 2 : 4;
+  const maxBubbles = episodeEnd <= 90 ? 4 : 6;
   const remainingBubbles = bubbleBeats.filter((b) => !BANNED_CHAT_ICONS.has(b.icon));
   let keptBubbles = 0;
   let lastKeptAt = -Infinity;
   for (const b of remainingBubbles) {
     const t = Number(b.at) || 0;
-    const tooClose = t - lastKeptAt < 15.0;
+    const tooClose = t - lastKeptAt < 8.0;
     const overCap = keptBubbles >= maxBubbles;
     if (tooClose || overCap) {
       let applied = false;

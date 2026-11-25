@@ -2,53 +2,283 @@ import * as THREE from "three";
 import { resolvePropPlacement, isEmbedded } from "./stagingSafety.js";
 
 const BUBBLE_ICONS = {
+  where_granny: { symbol: "???", bg: "#ffffff", accent: "#0f172a", draw: "where_granny" },
+  granny_question: { symbol: "???", bg: "#ffffff", accent: "#0f172a", draw: "where_granny" },
+  where_grandpa: { symbol: "???", bg: "#ffffff", accent: "#0f172a", draw: "where_grandpa" },
+  grandpa_question: { symbol: "???", bg: "#ffffff", accent: "#0f172a", draw: "where_grandpa" },
+  where_pizza: { symbol: "???", bg: "#ffffff", accent: "#d97706", draw: "where_pizza" },
+  pizza: { symbol: "PIZZA", bg: "#fff7ed", accent: "#d97706", draw: "pizza" },
+  where_cookie: { symbol: "???", bg: "#ffffff", accent: "#b45309", draw: "where_cookie" },
+  cookie: { symbol: "COOKIE", bg: "#ffedd5", accent: "#c2410c", draw: "cookie" },
+  food: { symbol: "COOKIE", bg: "#ffedd5", accent: "#c2410c", draw: "cookie" },
   key: { symbol: "KEY", bg: "#fef08a", accent: "#ca8a04", draw: "key" },
-  question: { symbol: "?", bg: "#e0f2fe", accent: "#0284c7", draw: "text" },
-  exclamation: { symbol: "!", bg: "#fee2e2", accent: "#dc2626", draw: "text" },
+  question: { symbol: "? ? ?", bg: "#ffffff", accent: "#0284c7", draw: "question" },
+  exclamation: { symbol: "! !", bg: "#fee2e2", accent: "#dc2626", draw: "exclamation" },
   zzz: { symbol: "Zzz", bg: "#ede9fe", accent: "#6d28d9", draw: "zzz" },
   angry: { symbol: "GRR!", bg: "#fecaca", accent: "#b91c1c", draw: "angry" },
   laugh: { symbol: "HAHA", bg: "#fef9c3", accent: "#ea580c", draw: "laugh" },
-  food: { symbol: "COOKIE", bg: "#ffedd5", accent: "#c2410c", draw: "cookie" },
   heart: { symbol: "LOVE", bg: "#fce7f3", accent: "#db2777", draw: "heart" },
+  idea: { symbol: "!", bg: "#fef9c3", accent: "#eab308", draw: "idea" },
+  shh: { symbol: "SHH!", bg: "#e0f2fe", accent: "#0369a1", draw: "shh" },
+  panic: { symbol: "!!", bg: "#fee2e2", accent: "#dc2626", draw: "panic" },
+  thumbs_up: { symbol: "OK!", bg: "#dcfce7", accent: "#16a34a", draw: "thumbs_up" },
 };
+
+function drawThoughtCloud(ctx, cx, cy, rx, ry, fillColor) {
+  // Overlapping outer circles to form an authentic scalloped comic thought cloud
+  const bumps = [
+    [cx - rx * 0.62, cy - ry * 0.25, ry * 0.56],
+    [cx - rx * 0.18, cy - ry * 0.52, ry * 0.62],
+    [cx + rx * 0.34, cy - ry * 0.44, ry * 0.58],
+    [cx + rx * 0.68, cy - ry * 0.05, ry * 0.52],
+    [cx + rx * 0.46, cy + ry * 0.42, ry * 0.52],
+    [cx - rx * 0.05, cy + ry * 0.48, ry * 0.54],
+    [cx - rx * 0.54, cy + ry * 0.34, ry * 0.5],
+  ];
+  ctx.lineWidth = 10;
+  ctx.strokeStyle = "#0f172a";
+  for (const [bx, by, br] of bumps) {
+    ctx.beginPath();
+    ctx.arc(bx, by, br, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = fillColor;
+  for (const [bx, by, br] of bumps) {
+    ctx.beginPath();
+    ctx.arc(bx, by, br, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx * 0.72, ry * 0.64, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Three trailing thought-bubble circles leading down-left toward character head
+  for (const [tx, ty, tr] of [
+    [cx - rx * 0.58, cy + ry * 0.92, 11],
+    [cx - rx * 0.74, cy + ry * 1.16, 7.5],
+    [cx - rx * 0.87, cy + ry * 1.34, 5],
+  ]) {
+    ctx.fillStyle = fillColor;
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.arc(tx, ty, tr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+function drawFloatingQuestionMarks(ctx, x, y, text = "? ? ?", fontPx = 40) {
+  ctx.save();
+  ctx.font = `900 ${fontPx}px ui-sans-serif, system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.strokeStyle = "#0f172a";
+  ctx.lineWidth = 7;
+  ctx.lineJoin = "round";
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+function drawGrannyPortrait(ctx, x, y, scale = 1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  // White shawl / shoulder gown silhouette
+  ctx.fillStyle = "#d1d5db";
+  ctx.strokeStyle = "#1f2937";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(-42, 46);
+  ctx.quadraticCurveTo(0, 14, 42, 46);
+  ctx.lineTo(42, 54);
+  ctx.lineTo(-42, 54);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Hair bun + dark wispy hair
+  ctx.fillStyle = "#4b5563";
+  ctx.beginPath();
+  ctx.arc(0, -42, 14, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#6b7280";
+  ctx.beginPath();
+  ctx.ellipse(0, -14, 30, 32, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Pale gray weathered Granny oval face
+  ctx.fillStyle = "#9ca3af";
+  ctx.strokeStyle = "#1f2937";
+  ctx.lineWidth = 3.5;
+  ctx.beginPath();
+  ctx.ellipse(0, -6, 25, 34, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Hollow dark sockets + glowing white pupils
+  ctx.fillStyle = "#111827";
+  ctx.beginPath();
+  ctx.ellipse(-10, -14, 7, 8, 0, 0, Math.PI * 2);
+  ctx.ellipse(10, -14, 7, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#f9fafb";
+  ctx.beginPath();
+  ctx.arc(-10, -14, 2.4, 0, Math.PI * 2);
+  ctx.arc(10, -14, 2.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Wide gaping horrified mouth + blood chin accent
+  ctx.fillStyle = "#450a0a";
+  ctx.beginPath();
+  ctx.ellipse(0, 10, 9, 13, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e5e7eb";
+  ctx.fillRect(-6, 0, 12, 3.5);
+  ctx.fillRect(-5, 16, 10, 3);
+  ctx.restore();
+}
+
+function drawGrandpaPortrait(ctx, x, y, scale = 1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  // Patched brown sweater shoulders
+  ctx.fillStyle = "#785c4a";
+  ctx.strokeStyle = "#1f2937";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(-42, 46);
+  ctx.quadraticCurveTo(0, 14, 42, 46);
+  ctx.lineTo(42, 54);
+  ctx.lineTo(-42, 54);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Peach bald dome head
+  ctx.fillStyle = "#eab696";
+  ctx.strokeStyle = "#1f2937";
+  ctx.lineWidth = 3.5;
+  ctx.beginPath();
+  ctx.ellipse(0, -8, 25, 34, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Iconic thick black glasses
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(-20, -19, 17, 11);
+  ctx.fillRect(3, -19, 17, 11);
+  ctx.fillRect(-3, -16, 6, 4);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(-16, -16, 4, 3);
+  ctx.fillRect(7, -16, 4, 3);
+
+  // Grumpy mustache & frown
+  ctx.fillStyle = "#9ca3af";
+  ctx.beginPath();
+  ctx.ellipse(-6, 5, 8, 4, -0.15, 0, Math.PI * 2);
+  ctx.ellipse(6, 5, 8, 4, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#451a03";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(0, 16, 8, Math.PI * 1.15, Math.PI * 1.85);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPizzaSliceIcon(ctx, x, y, scale = 1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  // Triangle cheese slice
+  ctx.fillStyle = "#facc15";
+  ctx.strokeStyle = "#78350f";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(0, 34);
+  ctx.lineTo(-32, -26);
+  ctx.lineTo(32, -26);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // Golden crust bar
+  ctx.fillStyle = "#d97706";
+  ctx.beginPath();
+  ctx.roundRect(-34, -34, 68, 14, 7);
+  ctx.fill();
+  ctx.stroke();
+  // Bold red pepperoni spots
+  ctx.fillStyle = "#dc2626";
+  for (const [px, py, pr] of [
+    [-11, -9, 6.5],
+    [11, -7, 6.5],
+    [0, 12, 6],
+  ]) {
+    ctx.beginPath();
+    ctx.arc(px, py, pr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
 
 function drawComicBubbleTexture(iconName) {
   const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 192;
+  canvas.width = 320;
+  canvas.height = 224;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
 
   const spec = BUBBLE_ICONS[iconName] || BUBBLE_ICONS.question;
 
-  ctx.clearRect(0, 0, 256, 192);
+  ctx.clearRect(0, 0, 320, 224);
 
-  // Comic cloud / speech bubble body
-  ctx.fillStyle = spec.bg;
-  ctx.strokeStyle = "#0f172a";
-  ctx.lineWidth = 10;
-  ctx.beginPath();
-  ctx.roundRect(22, 16, 212, 128, 42);
-  ctx.fill();
-  ctx.stroke();
+  const isWhere = spec.draw.startsWith("where_");
+  const cloudX = isWhere ? 205 : 162;
+  const cloudY = 82;
+  const cloudRx = isWhere ? 88 : 112;
+  const cloudRy = 64;
 
-  // Thought tail dots
-  for (const [cx, cy, r] of [
-    [118, 158, 12],
-    [104, 178, 7],
-  ]) {
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.lineWidth = 6;
-    ctx.stroke();
+  drawThoughtCloud(ctx, cloudX, cloudY, cloudRx, cloudRy, spec.bg);
+
+  if (isWhere) {
+    // Bold floating "? ? ?" right next to the thought cloud (matches FunnyHorrorAnimation reference!)
+    drawFloatingQuestionMarks(ctx, 56, 86, "? ? ?", 38);
   }
 
   ctx.save();
-  ctx.translate(128, 80);
+  ctx.translate(cloudX, cloudY);
 
-  if (spec.draw === "key") {
-    // Bold golden key icon
+  if (spec.draw === "where_granny") {
+    drawGrannyPortrait(ctx, 0, 2, 0.92);
+  } else if (spec.draw === "where_grandpa") {
+    drawGrandpaPortrait(ctx, 0, 2, 0.92);
+  } else if (spec.draw === "where_pizza" || spec.draw === "pizza") {
+    drawPizzaSliceIcon(ctx, 0, 2, 0.96);
+  } else if (spec.draw === "where_cookie" || spec.draw === "cookie") {
+    ctx.fillStyle = "#d97706";
+    ctx.strokeStyle = "#78350f";
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.arc(0, 0, 38, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#451a03";
+    for (const [cx, cy] of [
+      [-14, -12],
+      [14, -10],
+      [-6, 14],
+      [16, 12],
+      [0, -2],
+    ]) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (spec.draw === "key") {
     ctx.fillStyle = "#facc15";
     ctx.strokeStyle = "#78350f";
     ctx.lineWidth = 7;
@@ -71,7 +301,6 @@ function drawComicBubbleTexture(iconName) {
     ctx.fillRect(52, 8, 12, 14);
     ctx.strokeRect(52, 8, 12, 14);
   } else if (spec.draw === "angry") {
-    // Comic anger vein + furious eyes
     ctx.strokeStyle = "#dc2626";
     ctx.lineWidth = 10;
     ctx.lineCap = "round";
@@ -87,7 +316,6 @@ function drawComicBubbleTexture(iconName) {
     ctx.arc(26, 10, 10, 0, Math.PI * 2);
     ctx.fill();
   } else if (spec.draw === "laugh") {
-    // Bold icon-first laughing emoji face (no small text)
     ctx.fillStyle = "#facc15";
     ctx.strokeStyle = "#854d0e";
     ctx.lineWidth = 7;
@@ -95,7 +323,6 @@ function drawComicBubbleTexture(iconName) {
     ctx.arc(0, 0, 42, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    // Happy > < eyes
     ctx.strokeStyle = "#0f172a";
     ctx.lineWidth = 6;
     ctx.lineCap = "round";
@@ -107,7 +334,6 @@ function drawComicBubbleTexture(iconName) {
     ctx.lineTo(10, -10);
     ctx.lineTo(24, -2);
     ctx.stroke();
-    // Big open laughing mouth
     ctx.fillStyle = "#7f1d1d";
     ctx.beginPath();
     ctx.arc(0, 6, 22, 0, Math.PI);
@@ -117,26 +343,74 @@ function drawComicBubbleTexture(iconName) {
     ctx.beginPath();
     ctx.arc(0, 21, 11, Math.PI, Math.PI * 2);
     ctx.fill();
-  } else if (spec.draw === "cookie") {
-    ctx.fillStyle = "#d97706";
-    ctx.strokeStyle = "#78350f";
-    ctx.lineWidth = 7;
+  } else if (spec.draw === "idea") {
+    ctx.fillStyle = "#fde047";
+    ctx.strokeStyle = "#854d0e";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(0, -8, 28, Math.PI * 0.78, Math.PI * 2.22);
+    ctx.lineTo(13, 24);
+    ctx.lineTo(-13, 24);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#64748b";
+    ctx.fillRect(-11, 24, 22, 12);
+    ctx.strokeRect(-11, 24, 22, 12);
+    ctx.strokeStyle = "#eab308";
+    ctx.lineWidth = 5;
+    for (const [ax, ay, bx, by] of [
+      [-42, -10, -56, -12],
+      [42, -10, 56, -12],
+      [0, -44, 0, -56],
+      [-32, -34, -42, -44],
+      [32, -34, 42, -44],
+    ]) {
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+    }
+  } else if (spec.draw === "panic") {
+    ctx.fillStyle = "#fecaca";
+    ctx.strokeStyle = "#7f1d1d";
+    ctx.lineWidth = 6;
     ctx.beginPath();
     ctx.arc(0, 0, 38, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = "#451a03";
-    for (const [cx, cy] of [
-      [-14, -12],
-      [14, -10],
-      [-6, 14],
-      [16, 12],
-      [0, -2],
-    ]) {
-      ctx.beginPath();
-      ctx.arc(cx, cy, 5, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(-14, -12, 9, 0, Math.PI * 2);
+    ctx.arc(14, -12, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#0f172a";
+    ctx.beginPath();
+    ctx.arc(-14, -12, 3.5, 0, Math.PI * 2);
+    ctx.arc(14, -12, 3.5, 0, Math.PI * 2);
+    ctx.arc(0, 14, 11, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (spec.draw === "shh") {
+    ctx.fillStyle = spec.accent;
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = 7;
+    ctx.font = "900 54px ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.strokeText("SHH!", 0, 2);
+    ctx.fillText("SHH!", 0, 2);
+  } else if (spec.draw === "thumbs_up") {
+    ctx.fillStyle = "#facc15";
+    ctx.strokeStyle = "#78350f";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.roundRect(-24, -4, 46, 36, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.roundRect(-10, -34, 18, 34, 9);
+    ctx.fill();
+    ctx.stroke();
   } else if (spec.draw === "zzz") {
     ctx.strokeStyle = "#0f172a";
     ctx.textAlign = "center";
@@ -170,7 +444,7 @@ function drawComicBubbleTexture(iconName) {
     ctx.fillStyle = spec.accent;
     ctx.strokeStyle = "#0f172a";
     ctx.lineWidth = 8;
-    ctx.font = "900 72px ui-sans-serif, system-ui, sans-serif";
+    ctx.font = "900 64px ui-sans-serif, system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.strokeText(spec.symbol, 0, 4);
